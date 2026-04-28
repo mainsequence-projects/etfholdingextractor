@@ -2,27 +2,34 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "Example Dashboard",
+      "name": "ETFH CLI (MTUM weights)",
       "type": "python",
       "request": "launch",
-      "module": "streamlit",
-      "args": ["run", "${workspaceFolder}/dashboards/sample_app/app.py"],
+      "module": "etfh_extractor",
+      "args": [
+        "https://www.ishares.com/us/products/251614/ishares-msci-usa-momentum-factor-etf"
+      ],
       "env": {
-        "PYTHONPATH": "${workspaceFolder}"
+        "PYTHONPATH": "${workspaceFolder}/src"
       },
       "console": "integratedTerminal",
       "envFile": "${workspaceFolder}/.env",
       "justMyCode": true
     },
     {
-      "name": "Example Script",
+      "name": "ETFH CLI (MTUM full payload)",
       "type": "python",
       "request": "launch",
-      "program": "${workspaceFolder}/scripts/test_script.py",
+      "module": "etfh_extractor",
+      "args": [
+        "https://www.ishares.com/us/products/251614/ishares-msci-usa-momentum-factor-etf",
+        "--format",
+        "full"
+      ],
       "console": "integratedTerminal",
       "envFile": "${workspaceFolder}/.env",
       "env": {
-        "PYTHONPATH": "${workspaceFolder}"
+        "PYTHONPATH": "${workspaceFolder}/src"
       },
       "justMyCode": true
     }

@@ -3,15 +3,22 @@ requires = ["setuptools>=69", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "etfholdingextractor"
-version = "0.1.0"
+name = "etfh-extractor"
+version = "0.1.1"
+description = "Extract ticker weights from iShares ETF fund pages."
 readme = "README.md"
 requires-python = ">=3.11"
-dependencies = ["mainsequence"]
+dependencies = ["certifi>=2024.2.2"]
+
+[project.scripts]
+etfh-read = "etfh_extractor.__main__:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
 
 [tool.setuptools.packages.find]
-where = ["."]
-include = ["src*", "agents*", "api*",]
+where = ["src"]
+include = ["etfh_extractor*"]
 
 [tool.ruff]
 line-length = 100                 # Max line length for Ruff/Black.
@@ -62,6 +69,6 @@ ignore = ["E203", "E501"]
 
 [tool.ruff.lint.isort]
 # Treat these as your own packages so they sort as "first-party".
-known-first-party = ["mainsequence","src","agents"]
+known-first-party = ["etfh_extractor"]
 # (If you use a src/ layout, also set: src-paths = ["src"])
-src-paths = ["src", "agents"]
+src-paths = ["src", "tests"]

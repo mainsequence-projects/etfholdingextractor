@@ -2,42 +2,29 @@
   "version": "0.0.1",
   "tasks": [
       {
-        "label": "Create .venv (matching pyproject)",
+        "label": "Create .venv",
         "type": "shell",
-        "command": "bash -lc 'for v in python3.11 python3.10 python3; do command -v $v >/dev/null && PYBIN=$v && break; done; ${PYBIN:-python} -m venv .venv'",
+        "command": "uv venv ${workspaceFolder}/.venv",
         "problemMatcher": []
       },
       {
-        "label": "Install uv",
+        "label": "Install project",
         "type": "shell",
-        "command": "${workspaceFolder}/.venv/bin/python -m pip install uv",
+        "command": "uv pip install --python ${workspaceFolder}/.venv/bin/python -e ${workspaceFolder}",
         "problemMatcher": []
       },
       {
-        "label": "Install requirements (using uv)",
+        "label": "Run CLI (MTUM)",
         "type": "shell",
-        "command": "${workspaceFolder}/.venv/bin/uv pip install -r ${workspaceFolder}/requirements.txt",
-        "problemMatcher": []
-      },
-      {
-        "label": "Run Streamlit (Dashboard)",
-        "type": "shell",
-        "command": "${workspaceFolder}/.venv/bin/streamlit run ${workspaceFolder}/dashboards/sample_app/app.py",
+        "command": "${workspaceFolder}/.venv/bin/python -m etfh_extractor https://www.ishares.com/us/products/251614/ishares-msci-usa-momentum-factor-etf",
         "group": "build",
-        "problemMatcher": []
-      },
-      {
-        "label": "Run Example Script",
-        "type": "shell",
-        "command": "${workspaceFolder}/.venv/bin/python ${workspaceFolder}/scripts/test_script.py",
         "problemMatcher": []
       },
       {
         "label": "Setup environment",
         "dependsOn": [
-          "Create .venv (matching pyproject)",
-          "Install uv",
-          "Install requirements (using uv)"
+          "Create .venv",
+          "Install project"
         ],
         "dependsOrder": "sequence",
         "problemMatcher": []
