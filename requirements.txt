@@ -33,7 +33,7 @@ idna==3.13
     # via requests
 importlib-metadata==8.7.1
     # via opentelemetry-api
-mainsequence==3.18.18
+mainsequence==3.18.19
     # via etfh-extractor
 markdown-it-py==4.0.0
     # via rich
@@ -74,6 +74,8 @@ opentelemetry-semantic-conventions==0.62b1
     # via opentelemetry-sdk
 pandas==3.0.2
     # via mainsequence
+pip==26.1
+    # via etfh-extractor
 portalocker==3.2.0
     # via concurrent-log-handler
 protobuf==6.33.6
