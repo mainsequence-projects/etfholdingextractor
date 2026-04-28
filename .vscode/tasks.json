@@ -1,0 +1,46 @@
+{
+  "version": "0.0.1",
+  "tasks": [
+      {
+        "label": "Create .venv (matching pyproject)",
+        "type": "shell",
+        "command": "bash -lc 'for v in python3.11 python3.10 python3; do command -v $v >/dev/null && PYBIN=$v && break; done; ${PYBIN:-python} -m venv .venv'",
+        "problemMatcher": []
+      },
+      {
+        "label": "Install uv",
+        "type": "shell",
+        "command": "${workspaceFolder}/.venv/bin/python -m pip install uv",
+        "problemMatcher": []
+      },
+      {
+        "label": "Install requirements (using uv)",
+        "type": "shell",
+        "command": "${workspaceFolder}/.venv/bin/uv pip install -r ${workspaceFolder}/requirements.txt",
+        "problemMatcher": []
+      },
+      {
+        "label": "Run Streamlit (Dashboard)",
+        "type": "shell",
+        "command": "${workspaceFolder}/.venv/bin/streamlit run ${workspaceFolder}/dashboards/sample_app/app.py",
+        "group": "build",
+        "problemMatcher": []
+      },
+      {
+        "label": "Run Example Script",
+        "type": "shell",
+        "command": "${workspaceFolder}/.venv/bin/python ${workspaceFolder}/scripts/test_script.py",
+        "problemMatcher": []
+      },
+      {
+        "label": "Setup environment",
+        "dependsOn": [
+          "Create .venv (matching pyproject)",
+          "Install uv",
+          "Install requirements (using uv)"
+        ],
+        "dependsOrder": "sequence",
+        "problemMatcher": []
+      }
+  ]
+}
