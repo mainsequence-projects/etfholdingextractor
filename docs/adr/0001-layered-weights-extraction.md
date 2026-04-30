@@ -14,6 +14,12 @@ We want a more defensive extraction flow that preserves the current deterministi
 second interpretation layer when a local LLM is available, and otherwise stores enough evidence for
 human inspection and replay.
 
+Current implementation status:
+
+- provider-agnostic artifact persistence is implemented for all supported providers
+- deterministic extraction remains the active runtime path
+- the optional Ollama-assisted second layer remains future work
+
 ## Decision
 
 The planned standard flow will be:
@@ -62,18 +68,18 @@ Planned role of Ollama:
   understand
 - act as a second layer, not a replacement for deterministic extraction
 
-### 3. Local Artifact Persistence Without Ollama
+### 3. Provider-Agnostic Local Artifact Persistence
 
-If `OLLAMA_URL` is not present, the CLI should persist recent extraction artifacts in `data/temp/`.
+The extractor persists recent extraction artifacts in `data/temp/` across supported providers.
 
-Planned artifacts per run:
+Implemented artifacts per run:
 
 - downloaded source file
 - best-effort CSV
 - JSON result returned to the user
 - small metadata file with source URL, extraction timestamp, and parser mode
 
-Planned file naming:
+Implemented file naming:
 
 - use a timestamp plus a fund slug or short hash to avoid collisions
 - keep the layout easy to inspect manually
@@ -112,5 +118,6 @@ Tradeoffs:
 
 ## Implementation Notes
 
-This ADR is planning only. It defines the target flow and artifact strategy, but it does not by
-itself change the runtime extraction path yet.
+Artifact persistence is implemented and shared across providers.
+
+The optional Ollama validation layer is still planned and is not part of the current runtime path.

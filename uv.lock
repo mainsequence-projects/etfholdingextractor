@@ -182,7 +182,7 @@ wheels = [
 
 [[package]]
 name = "etfh-extractor"
-version = "0.1.4"
+version = "0.1.5"
 source = { editable = "." }
 dependencies = [
     { name = "certifi" },
@@ -283,7 +283,7 @@ wheels = [
 
 [[package]]
 name = "mainsequence"
-version = "3.18.19"
+version = "3.18.21"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "cachetools" },
@@ -304,9 +304,9 @@ dependencies = [
     { name = "typer" },
     { name = "urllib3" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/73/ce/d667a7f9cf277a43756a45f6f7063e33009a2abe44cc4c15353d81debb56/mainsequence-3.18.19.tar.gz", hash = "sha256:e5c3d8f8fc3400c96d29afe71ef832cb84c086c3e41191cb3f3f7364cde92085", size = 1169902, upload-time = "2026-04-28T15:08:03.631Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/c7/63/83bb285240144e66e8d55db30c606e98c899254de95209e58e4c4a7f247f/mainsequence-3.18.21.tar.gz", hash = "sha256:f904f2dd612f2b8090fdbecc430e8fe237c0ecdb0ba70cc8b2ddfc90d7fc569d", size = 1174692, upload-time = "2026-04-29T21:02:44.818Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/3d/f8/f6781c1127c4df6fcf680de2302d93e85c6a9c08d4b3f40932fdba127ad9/mainsequence-3.18.19-py3-none-any.whl", hash = "sha256:cbb1928cbb683dcfe7ff3c6eaf4d79474e4840ab521688102ae2e1b09397375d", size = 1175799, upload-time = "2026-04-28T15:08:01.686Z" },
+    { url = "https://files.pythonhosted.org/packages/3e/ad/fc2d6422b25f310fc0f61260f13dd2376d91ce3bff6ba58101dc06213703/mainsequence-3.18.21-py3-none-any.whl", hash = "sha256:f12df913424d559f433549e582abf3f076783f74a51272f2574fefea1df7cdcd", size = 1179572, upload-time = "2026-04-29T21:02:42.497Z" },
 ]
 
 [[package]]

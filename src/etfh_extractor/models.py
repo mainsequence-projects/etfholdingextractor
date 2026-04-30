@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from typing import Any
 
 
@@ -32,6 +32,7 @@ class FundHoldings:
     fund_name: str
     as_of_date: str
     holdings: tuple[Holding, ...]
+    artifact_directory: str | None = None
 
     def ticker_weights(self) -> dict[str, float]:
         weights: dict[str, float] = {}
@@ -39,8 +40,11 @@ class FundHoldings:
             weights[holding.ticker] = round(weights.get(holding.ticker, 0.0) + holding.weight, 8)
         return weights
 
+    def with_artifact_directory(self, artifact_directory: str) -> FundHoldings:
+        return replace(self, artifact_directory=artifact_directory)
+
     def to_dict(self) -> dict[str, Any]:
-        return {
+        payload = {
             "url": self.url,
             "download_url": self.download_url,
             "fund_name": self.fund_name,
@@ -48,3 +52,6 @@ class FundHoldings:
             "holdings": [holding.to_dict() for holding in self.holdings],
             "ticker_weights": self.ticker_weights(),
         }
+        if self.artifact_directory is not None:
+            payload["artifact_directory"] = self.artifact_directory
+        return payload

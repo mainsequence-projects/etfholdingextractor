@@ -33,7 +33,7 @@ idna==3.13
     # via requests
 importlib-metadata==8.7.1
     # via opentelemetry-api
-mainsequence==3.18.19
+mainsequence==3.18.21
     # via etfh-extractor
 markdown-it-py==4.0.0
     # via rich

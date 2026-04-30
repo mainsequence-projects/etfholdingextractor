@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "etfh-extractor"
-version = "0.1.4"
-description = "Extract ticker weights from iShares ETF fund pages."
+version = "0.1.5"
+description = "Extract ETF holdings weights from providers and sync MainSequence holdings categories."
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
@@ -15,6 +15,7 @@ dependencies = [
 ]
 
 [project.scripts]
+etfh = "etfh_extractor.__main__:main"
 etfh-read = "etfh_extractor.__main__:main"
 
 [tool.setuptools]
