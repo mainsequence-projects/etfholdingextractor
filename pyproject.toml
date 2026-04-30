@@ -15,7 +15,7 @@ dependencies = [
 ]
 
 [project.scripts]
-etfh = "etfh_extractor.__main__:main"
+etfh = "etfh_extractor.cli:main"
 etfh-read = "etfh_extractor.__main__:main"
 
 [tool.setuptools]

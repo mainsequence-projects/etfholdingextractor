@@ -51,8 +51,6 @@ The CLI now exposes one command path per surface:
   `etfh extract-url <fund-url> [<fund-url> ...]`
 - Extraction from ticker plus provider:
   `etfh extract-ticker --provider <provider> --ticker <ticker> [--ticker <ticker> ...]`
-- Category planning:
-  `etfh category-plan --ticker <etf-ticker> --fund-url <fund-url>`
 - Category sync:
   `etfh category-sync --ticker <etf-ticker> --fund-url <fund-url>`
 
@@ -81,21 +79,6 @@ etfh extract-ticker --provider ishares --ticker IVV
   "AAPL": 7.12,
   "MSFT": 6.84,
   "NVDA": 6.21
-}
-```
-
-```bash
-etfh category-plan --ticker IVV --fund-url https://www.ishares.com/us/products/239726/ishares-core-sp-500-etf
-```
-
-```json
-{
-  "category_unique_identifier": "HOLDINGS__IVV",
-  "component_symbols": ["AAPL", "MSFT", "NVDA"],
-  "existing_asset_ids_by_symbol": {"AAPL": 101, "MSFT": 102},
-  "missing_registered_symbols": ["NVDA"],
-  "ambiguous_registered_symbols": [],
-  "has_blockers": true
 }
 ```
 

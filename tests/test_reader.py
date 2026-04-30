@@ -162,41 +162,13 @@ class ETFHoldingsReaderTests(unittest.TestCase):
         self.assertEqual(exit_code, 0)
         self.assertEqual(payload["AAPL"], 7.0)
 
-    def test_cli_category_plan_subcommand_returns_plan_summary(self) -> None:
-        buffer = io.StringIO()
-        reader = Mock()
-        reader.read.return_value = build_sample_fund_holdings()
-
-        with patch(
-            "etfh_extractor.__main__.build_holdings_asset_category_plan"
-        ) as build_plan_mock, redirect_stdout(buffer):
-            plan = Mock()
-            plan.summary.return_value = {
-                "category_unique_identifier": "HOLDINGS__IVV",
-                "component_symbols": ["AAPL", "MSFT"],
-            }
-            plan.has_blockers.return_value = False
-            build_plan_mock.return_value = plan
-
-            exit_code = main(
-                ["category-plan", "--ticker", "IVV", "--fund-url", IVV_URL],
-                reader=reader,
-            )
-
-        payload = json.loads(buffer.getvalue())
-        self.assertEqual(exit_code, 0)
-        self.assertEqual(payload["category_unique_identifier"], "HOLDINGS__IVV")
-        self.assertFalse(payload["has_blockers"])
-
     def test_cli_category_sync_subcommand_chains_plan_and_sync(self) -> None:
         buffer = io.StringIO()
         reader = Mock()
         reader.read.return_value = build_sample_fund_holdings()
 
-        with patch(
-            "etfh_extractor.__main__.build_holdings_asset_category_plan"
-        ) as build_plan_mock, patch(
-            "etfh_extractor.__main__.sync_holdings_asset_category"
+        with patch("etfh_extractor.cli.build_holdings_asset_category_plan") as build_plan_mock, patch(
+            "etfh_extractor.cli.sync_holdings_asset_category"
         ) as sync_category_mock, redirect_stdout(buffer):
             plan = Mock()
             plan.summary.return_value = {
@@ -228,10 +200,8 @@ class ETFHoldingsReaderTests(unittest.TestCase):
         reader = Mock()
         reader.read.return_value = build_sample_fund_holdings()
 
-        with patch(
-            "etfh_extractor.__main__.build_holdings_asset_category_plan"
-        ) as build_plan_mock, patch(
-            "etfh_extractor.__main__.sync_holdings_asset_category"
+        with patch("etfh_extractor.cli.build_holdings_asset_category_plan") as build_plan_mock, patch(
+            "etfh_extractor.cli.sync_holdings_asset_category"
         ) as sync_category_mock, redirect_stdout(buffer):
             plan = Mock()
             plan.summary.return_value = {
