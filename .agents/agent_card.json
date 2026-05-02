@@ -1,0 +1,58 @@
+{
+  "name": "etfholdingextractor-161",
+  "description": "Agent for extracting ETF holdings weights from supported providers and planning or syncing MainSequence holdings categories through the repository CLI and library surfaces.",
+  "version": "0.1.5",
+  "supportedInterfaces": [],
+  "provider": {
+    "organization": "",
+    "url": ""
+  },
+  "documentationUrl": "",
+  "capabilities": {
+    "streaming": false,
+    "pushNotifications": false,
+    "extendedAgentCard": false
+  },
+  "securitySchemes": {},
+  "securityRequirements": [],
+  "defaultInputModes": [
+    "application/json"
+  ],
+  "defaultOutputModes": [
+    "application/json"
+  ],
+  "skills": [
+    {
+      "id": "weights_extraction",
+      "name": "ETF Holdings Weights Extraction",
+      "description": "Extract ETF holdings weights from supported provider fund URLs or explicit provider and ticker inputs.",
+      "tags": [],
+      "examples": [
+        "Extract ticker weights for IVV from iShares.",
+        "Read holdings weights from a supported ETF fund URL."
+      ],
+      "inputModes": [
+        "application/json"
+      ],
+      "outputModes": [
+        "application/json"
+      ]
+    },
+    {
+      "id": "holdings_category_sync",
+      "name": "Holdings Category Sync",
+      "description": "Build or sync a MainSequence holdings asset category from ETF holdings extracted by this repository.",
+      "tags": [],
+      "examples": [
+        "Build a holdings category plan for IVV.",
+        "Sync the HOLDINGS__IVV category from extracted holdings."
+      ],
+      "inputModes": [
+        "application/json"
+      ],
+      "outputModes": [
+        "application/json"
+      ]
+    }
+  ]
+}

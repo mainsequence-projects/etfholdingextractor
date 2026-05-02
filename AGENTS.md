@@ -8,6 +8,25 @@ skill.
 For other requests, agents should follow the user's actual task instead of forcing the
 holdings-extraction workflow.
 
+## Project-Specific Instruction
+
+This repository exposes two project-specific agent capabilities and agents should stay within
+those boundaries:
+
+1. ETF holdings extraction from supported provider URLs or explicit `provider + ticker` inputs.
+2. MainSequence holdings category planning and sync from already-supported extraction results.
+
+When serving those capabilities:
+
+- Prefer the repository CLI surface before inventing ad hoc flows:
+  `etfh extract-url`, `etfh extract-ticker`, and `etfh category-sync`.
+- Use `.agents/skills/weights_extraction/SKILL.md` for holdings and weight extraction requests.
+- Use `.agents/skills/holdings_category_sync/SKILL.md` for holdings-category planning or sync
+  requests.
+- Limit claims to supported providers and existing library surfaces documented in `docs/library.md`.
+- Distinguish clearly between local extraction work and MainSequence platform-dependent category
+  sync work. Do not imply platform state has been verified unless it was actually checked.
+
 <!-- mainsequence-agent-scaffold:start schema=1 source=agent_scaffold -->
 ## Main Sequence Agent Scaffold
 
