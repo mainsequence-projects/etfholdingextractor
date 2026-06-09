@@ -14,7 +14,7 @@ This skill must only be used for adding agentic capabilities to an existing proj
 - Create the required files and folders for agentic capabilities.
 - Verify that the project has the required local agent configuration files.
 - Verify that the project has skills that are aligned with its CLI capabilities.
-
+- Important: This skill does not require creation of any agent defintion. Do not create an agents folder nor an agent.py  build around the project capabilities and .agents skills this is a coding agent setup!
 ## This Skill Must Not Claim
 
 - That it knows how to build the entire project unless the work is directly related to adding agentic capabilities.
@@ -95,7 +95,7 @@ The agent card must satisfy the following criteria:
 Agent Card Template
 
 Use this template as the base for .agents/agent_card.json:
-
+Give  a meaningful and brief name to the agent do not user project name use a name that defines the overall capabilities of the Agent 
 ```json
 {
   "name": "YOUR_AGENT_NAME",
@@ -104,18 +104,11 @@ Use this template as the base for .agents/agent_card.json:
 
   "supportedInterfaces": [
     {
-      "url": "http://localhost:8010",
       "protocolBinding": "HTTP+JSON",
       "protocolVersion": "1.0"
     }
   ],
-
-  "provider": {
-    "organization": "YOUR_ORG_OR_WORKSPACE_NAME",
-    "url": "https://example.com"
-  },
-
-  "documentationUrl": "https://example.com/docs/YOUR_AGENT_NAME",
+  
 
   "capabilities": {
     "streaming": false,

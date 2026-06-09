@@ -54,16 +54,16 @@ This skill audits. It does not implement by default.
   `.agents/skills/mainsequence/maintenance/local_journal/SKILL.md`
 - DataNode implementation issues:
   `.agents/skills/mainsequence/data_publishing/data_nodes/SKILL.md`
-- SimpleTable implementation issues:
-  `.agents/skills/mainsequence/data_publishing/simple_tables/SKILL.md`
+- MetaTable implementation issues:
+  `.agents/skills/mainsequence/data_publishing/meta_tables/SKILL.md`
 - API implementation issues:
   `.agents/skills/mainsequence/application_surfaces/api_surfaces/SKILL.md`
 - jobs, images, releases, and runtime environment issues:
   `.agents/skills/mainsequence/platform_operations/orchestration_and_releases/SKILL.md`
 - RBAC and access issues:
   `.agents/skills/mainsequence/platform_operations/access_control_and_sharing/SKILL.md`
-- assets, VFB, pricing, or dashboard domain issues:
-  use the relevant domain skill under `.agents/skills/mainsequence/markets_platform/` or `.agents/skills/mainsequence/dashboards/`
+- dashboard domain issues:
+  `.agents/skills/mainsequence/dashboards/streamlit/SKILL.md`
 
 ## Read First
 

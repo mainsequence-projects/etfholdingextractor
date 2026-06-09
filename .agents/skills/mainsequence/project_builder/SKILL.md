@@ -35,15 +35,15 @@ This skill is for:
 This skill must not claim ownership of:
 
 - DataNode engineering
-- SimpleTable design
+- MetaTable design
 - FastAPI or application API design
 - Command Center workspace payloads
 - AppComponent contracts
 - jobs, schedules, images, resources, or releases
 - RBAC or sharing semantics
-- assets, translation tables, or portfolio construction
+- domain assets, translation tables, or construction logic
 - Streamlit dashboard implementation
-- instruments or pricing-runtime semantics
+- pricing-runtime semantics
 
 Do not let this skill become a domain manual.
 
@@ -51,8 +51,8 @@ Do not let this skill become a domain manual.
 
 - DataNodes:
   `.agents/skills/mainsequence/data_publishing/data_nodes/SKILL.md`
-- SimpleTables:
-  `.agents/skills/mainsequence/data_publishing/simple_tables/SKILL.md`
+- MetaTables:
+  `.agents/skills/mainsequence/data_publishing/meta_tables/SKILL.md`
 - platform data discovery before implementation:
   `.agents/skills/mainsequence/data_access/exploration/SKILL.md`
 - FastAPI and application-facing APIs:
@@ -69,12 +69,6 @@ Do not let this skill become a domain manual.
   `.agents/skills/mainsequence/platform_operations/orchestration_and_releases/SKILL.md`
 - RBAC and sharing:
   `.agents/skills/mainsequence/platform_operations/access_control_and_sharing/SKILL.md`
-- assets, categories, and translation tables:
-  `.agents/skills/mainsequence/markets_platform/assets_and_translation/SKILL.md`
-- Virtual Fund Builder:
-  `.agents/skills/mainsequence/markets_platform/virtualfundbuilder/SKILL.md`
-- instruments and pricing:
-  `.agents/skills/mainsequence/markets_platform/instruments_and_pricing/SKILL.md`
 - Streamlit dashboards:
   `.agents/skills/mainsequence/dashboards/streamlit/SKILL.md`
 

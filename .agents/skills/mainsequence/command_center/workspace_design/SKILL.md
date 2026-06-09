@@ -39,8 +39,8 @@ This skill must not claim ownership of:
   `.agents/skills/mainsequence/command_center/connections/SKILL.md`
 - APIs and FastAPI:
   `.agents/skills/mainsequence/application_surfaces/api_surfaces/SKILL.md`
-- SimpleTables:
-  `.agents/skills/mainsequence/data_publishing/simple_tables/SKILL.md`
+- MetaTables:
+  `.agents/skills/mainsequence/data_publishing/meta_tables/SKILL.md`
 - Jobs, images, resources, and releases:
   `.agents/skills/mainsequence/platform_operations/orchestration_and_releases/SKILL.md`
 - Streamlit dashboards:
@@ -66,9 +66,9 @@ Before producing a workspace design, collect or infer:
 - the business question or workflow the workspace should support
 - the intended users and their decisions
 - the primary data objects:
-  - SimpleTables
-  - assets
-  - portfolios
+  - MetaTables
+  - data assets
+  - domain records
   - jobs
   - APIs
   - agents
@@ -181,12 +181,7 @@ mainsequence cc registered_widget_type detail <WIDGET_ID> --json
 - use the registered statistic widget for KPIs, single-value summaries, status metrics, and compact numerical cards derived from a bound tabular dataset
 - use statistic widgets when the user needs an at-a-glance answer rather than a full chart or table
 - use `echarts-spec` when the visualization is non-standard, needs richer chart semantics, and a general ECharts chart is the right fit; this chart normally needs an AppComponent or API-backed upstream binding
-- use `lightweight-chart-ts-spec` when the visualization is non-standard, time-series heavy, or financial-market oriented; this chart normally needs an AppComponent or API-backed upstream binding
-
-#### Markets and portfolio views:
-
-- use market widgets such as price, positions, curve, and zero-curve widgets when the workspace is about market data, portfolio inspection, or instrument analytics
-- verify the exact market widget ids and contracts from the registry before proposing them
+- use `lightweight-chart-ts-spec` when the visualization is non-standard or time-series heavy; this chart normally needs an AppComponent or API-backed upstream binding
 
 #### Infrastructure and lineage:
 
@@ -259,7 +254,7 @@ If the design needs data or behavior that does not exist yet, route it explicitl
 - new or refreshed time-series/data pipeline:
   data publishing skill
 - operational/application records:
-  SimpleTable skill
+  MetaTable skill
 - widget-facing backend endpoint:
   API surfaces skill
 - custom form or interaction:
