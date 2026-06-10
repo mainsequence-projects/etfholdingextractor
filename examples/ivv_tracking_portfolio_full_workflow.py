@@ -29,7 +29,7 @@ migration provider. The flag-free run does everything else itself:
 5. Optionally sync the `HOLDINGS__<ETF>` asset category (`--with-category-sync`).
 5.5. Publish deterministic demo bars into `DemoBarsTS`
    (`etfhextractor/markets_models.py`, extension-mixin convention, logical id
-   `com.mainsequence.etfhextractor.DemoBarsTS`) and use that DataNode as the portfolio
+   `etfhextractor.DemoBarsTS`) and use that DataNode as the portfolio
    price source — no external market-data feed required.
 6. Publish the tracking portfolio: the `ETFHoldingsSignal` (insert at most once per day,
    only on weight changes) wired into `PortfoliosDataNode` with the price source —
@@ -135,7 +135,7 @@ def _publish_demo_bars(
 
     `DemoBarsStorage` is etfhextractor's own ms-markets table, defined per the
     extension-mixin convention (`etfhextractor/markets_models.py`, logical id
-    `com.mainsequence.etfhextractor.DemoBarsTS`); it must be migrated/registered
+    `etfhextractor.DemoBarsTS`); it must be migrated/registered
     by the SDK migration provider before this write. Bars carry `close` and
     `volume` (the columns the rebalance logic consumes), one row per
     (day, asset), deterministic per identifier so re-runs are stable.
@@ -169,7 +169,7 @@ def _publish_demo_bars(
     _log(
         "prices",
         f"Published {len(rows)} demo bars for {len(asset_identifiers)} assets "
-        "into com.mainsequence.etfhextractor.DemoBarsTS.",
+        "into etfhextractor.DemoBarsTS.",
     )
     return bars_node
 
@@ -421,7 +421,7 @@ def run_full_workflow(
     if use_demo_prices:
         demo_bars_node = _publish_demo_bars(asset_identifiers=sorted(existing.values()))
         summary["demo_prices"] = {
-            "storage": "com.mainsequence.etfhextractor.DemoBarsTS",
+            "storage": "etfhextractor.DemoBarsTS",
             "asset_count": len(existing),
         }
 
@@ -519,7 +519,8 @@ def main(argv: list[str] | None = None) -> int:
         metavar="JSON",
         help=(
             "Per-ticker OpenFIGI disambiguation filter as JSON; repeat per ticker. "
-            'Example: \'{"ticker": "USO", "market_sector": "Equity", "exch_code": "US"}\'.'
+            'Narrow: \'{"ticker": "USO", "exch_code": "US"}\'; alias a provider ticker '
+            'to its OpenFIGI symbol: \'{"ticker": "BRKB", "figi_ticker": "BRK/B"}\'.'
         ),
     )
     parser.add_argument("--timeout", type=float, default=30.0, help="HTTP timeout seconds.")

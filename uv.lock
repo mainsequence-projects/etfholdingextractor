@@ -200,7 +200,7 @@ wheels = [
 
 [[package]]
 name = "etfhextractor"
-version = "0.3.1"
+version = "0.3.2"
 source = { editable = "." }
 dependencies = [
     { name = "certifi" },
@@ -212,7 +212,7 @@ dependencies = [
 requires-dist = [
     { name = "certifi", specifier = ">=2024.2.2" },
     { name = "mainsequence", specifier = ">=3.18.17" },
-    { name = "ms-markets", specifier = ">=0.0.49" },
+    { name = "ms-markets", specifier = ">=0.0.54" },
 ]
 
 [[package]]
@@ -515,7 +515,7 @@ wheels = [
 
 [[package]]
 name = "ms-markets"
-version = "0.0.54"
+version = "0.0.55"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "alembic" },
@@ -533,9 +533,9 @@ dependencies = [
     { name = "sqlalchemy" },
     { name = "uvicorn" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/95/27/c4f09bae2e9ba6801375ce2d1ec871596f61158db443477e1127ed383448/ms_markets-0.0.54.tar.gz", hash = "sha256:a6bafc32202f74209f2bb16b39c8b49a47f10c7181a80edd592434349a34baff", size = 594757, upload-time = "2026-06-10T14:15:24.091Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/64/6f/a0bc46822647202c49d2711d0ba76cb2fccc02908fd23f68e454a6a9b47b/ms_markets-0.0.55.tar.gz", hash = "sha256:94aca7c72b50bbc1ed1b8e87f4d62ac594936486d82b5c0d499f70926d72989c", size = 592065, upload-time = "2026-06-10T16:06:55.001Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/fd/d9/105e1207800bff208b6b678e72f5a739bc665140ab2ce04781096450d813/ms_markets-0.0.54-py3-none-any.whl", hash = "sha256:f43d21e1bf62a70542549516e67a38e0b8d1d4c0677ae854afc211e1eb2aa581", size = 437015, upload-time = "2026-06-10T14:15:22.128Z" },
+    { url = "https://files.pythonhosted.org/packages/f5/f3/2e75b7856c7a4de79c01056addb2928ffbd28a0f8383ef9b1f0462684f30/ms_markets-0.0.55-py3-none-any.whl", hash = "sha256:8ef52c366d7b80e2e97f88c198211f5e91df52a5f42bb96d90556ac40a064b83", size = 428159, upload-time = "2026-06-10T16:06:53.089Z" },
 ]
 
 [[package]]

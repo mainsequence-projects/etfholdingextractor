@@ -78,7 +78,7 @@ def run_registration(
     ), patch("msm.api.assets.Asset", asset_cls), patch(
         "msm.api.assets.AssetType", asset_type_cls
     ), patch("msm.api.assets.OpenFigiDetails", details_cls), patch(
-        "msm.data_nodes.assets.AssetSnapshot", snapshot_cls
+        "etfhextractor.markets_models.BatchVerifiedAssetSnapshot", snapshot_cls
     ):
         result = register_equity_assets_from_tickers(
             tickers=tickers,
@@ -279,6 +279,62 @@ class FigiAssetRegistrationTests(unittest.TestCase):
         self.assertFalse(result.has_failures())
         # Two query groups: the defaults batch and the USO override batch.
         self.assertEqual(mocks["query_figi"].call_count, 2)
+
+    def test_figi_ticker_alias_maps_provider_symbol_to_openfigi_symbol(self) -> None:
+        captured_snapshots: list[dict[str, Any]] = []
+
+        def fake_query_figi(tickers, *, market_sector, exch_code=None, **_):
+            # The alias is what goes to OpenFIGI as idValue.
+            assert "BRK/B" in tickers and "BRKB" not in tickers
+            return [figi_row("BRK/B", "BBG000DWG505")]
+
+        with patch(
+            "etfhextractor.asset_registration._ensure_msm_started",
+            return_value=SimpleNamespace(context=object()),
+        ), patch(
+            "etfhextractor.asset_registration._existing_asset_uids_by_figi", return_value={}
+        ), patch(
+            "etfhextractor.asset_registration._figis_with_snapshots", return_value=set()
+        ), patch("msm.services.assets.openfigi.query_figi", side_effect=fake_query_figi), patch(
+            "msm.services.assets.openfigi.build_asset_snapshot_frame_from_openfigi_result",
+            side_effect=lambda normalized, *, time_index: (
+                captured_snapshots.append(dict(normalized)),
+                pd.DataFrame([{"asset_identifier": normalized["unique_identifier"]}]),
+            )[1],
+        ), patch("msm.api.assets.Asset") as asset_cls, patch(
+            "msm.api.assets.AssetType"
+        ), patch("msm.api.assets.OpenFigiDetails") as details_cls, patch(
+            "etfhextractor.markets_models.BatchVerifiedAssetSnapshot"
+        ) as snapshot_cls:
+            asset_cls.upsert.side_effect = lambda **kwargs: SimpleNamespace(
+                uid=uuid.uuid4(), unique_identifier=kwargs["unique_identifier"]
+            )
+            snapshot_node = snapshot_cls.return_value
+            snapshot_node.set_frame.return_value = snapshot_node
+            snapshot_node.run.return_value = (False, pd.DataFrame())
+
+            result = register_equity_assets_from_tickers(
+                tickers=["BRKB"],
+                disambiguation_filters=[{"ticker": "BRKB", "figi_ticker": "BRK/B"}],
+            )
+
+        # Result keys by the REQUESTED ticker; identity is the FIGI.
+        self.assertEqual(result.registered_figi_by_ticker, {"BRKB": "BBG000DWG505"})
+        self.assertEqual(
+            asset_cls.upsert.call_args.kwargs["unique_identifier"], "BBG000DWG505"
+        )
+        # OpenFIGI's own symbol stays on the details row...
+        self.assertEqual(details_cls.upsert.call_args.kwargs["ticker"], "BRK/B")
+        # ...but the snapshot carries the extraction-side ticker so the snapshot
+        # resolver can match what providers actually produce.
+        self.assertEqual(captured_snapshots[0]["ticker"], "BRKB")
+
+    def test_figi_ticker_alias_collision_raises(self) -> None:
+        with self.assertRaisesRegex(ValueError, "alias collision"):
+            register_equity_assets_from_tickers(
+                tickers=["BRKB", "BRK/B"],
+                disambiguation_filters=[{"ticker": "BRKB", "figi_ticker": "BRK/B"}],
+            )
 
     def test_disambiguation_filter_requires_ticker_key(self) -> None:
         with self.assertRaisesRegex(ValueError, "'ticker' key"):

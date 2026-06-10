@@ -2,7 +2,94 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "ETFH CLI (MTUM weights)",
+      "name": "1. IVV \u2014 RUN FULL EXAMPLE (end to end)",
+      "type": "python",
+      "request": "launch",
+      "program": "${workspaceFolder}/examples/ivv_tracking_portfolio_full_workflow.py",
+      "console": "integratedTerminal",
+      "envFile": "${workspaceFolder}/.env",
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}"
+      },
+      "justMyCode": false,
+      "args": [
+        "--figi-filter",
+        "{\"ticker\": \"BRKB\", \"figi_ticker\": \"BRK/B\"}",
+        "--figi-filter",
+        "{\"ticker\": \"BFB\", \"figi_ticker\": \"BF/B\"}"
+      ]
+    },
+    {
+      "name": "2. IVV \u2014 plan only (no writes)",
+      "type": "python",
+      "request": "launch",
+      "program": "${workspaceFolder}/examples/ivv_tracking_portfolio_full_workflow.py",
+      "args": [
+        "--plan-only"
+      ],
+      "console": "integratedTerminal",
+      "envFile": "${workspaceFolder}/.env",
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}"
+      },
+      "justMyCode": false
+    },
+    {
+      "name": "3. IVV \u2014 signal only (no portfolio)",
+      "type": "python",
+      "request": "launch",
+      "program": "${workspaceFolder}/examples/ivv_tracking_portfolio_full_workflow.py",
+      "args": [
+        "--signal-only"
+      ],
+      "console": "integratedTerminal",
+      "envFile": "${workspaceFolder}/.env",
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}"
+      },
+      "justMyCode": false
+    },
+    {
+      "name": "4. IVV \u2014 category sync (FIGI-register missing)",
+      "type": "python",
+      "request": "launch",
+      "module": "etfhextractor",
+      "args": [
+        "category-sync",
+        "--ticker",
+        "IVV",
+        "--provider",
+        "ishares",
+        "--register-missing"
+      ],
+      "console": "integratedTerminal",
+      "envFile": "${workspaceFolder}/.env",
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}"
+      },
+      "justMyCode": false
+    },
+    {
+      "name": "5. IVV \u2014 extract holdings",
+      "type": "python",
+      "request": "launch",
+      "module": "etfhextractor",
+      "args": [
+        "extract-ticker",
+        "--provider",
+        "ishares",
+        "--ticker",
+        "IVV"
+      ],
+      "console": "integratedTerminal",
+      "envFile": "${workspaceFolder}/.env",
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}"
+      },
+      "justMyCode": true
+    },
+    {
+      "name": "6. MTUM \u2014 extract weights (URL)",
       "type": "python",
       "request": "launch",
       "module": "etfhextractor",
@@ -17,7 +104,7 @@
       "justMyCode": true
     },
     {
-      "name": "ETFH CLI (MTUM full payload)",
+      "name": "7. MTUM \u2014 extract full payload (URL)",
       "type": "python",
       "request": "launch",
       "module": "etfhextractor",
@@ -32,6 +119,38 @@
         "PYTHONPATH": "${workspaceFolder}"
       },
       "justMyCode": true
+    },
+    {
+      "name": "8. DemoBars price table \u2014 prepare schema (alembic)",
+      "type": "python",
+      "request": "launch",
+      "program": "${workspaceFolder}/examples/prepare_demo_bars_schema.py",
+      "console": "integratedTerminal",
+      "envFile": "${workspaceFolder}/.env",
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}"
+      },
+      "justMyCode": false
+    },
+    {
+      "name": "9. Run all tests",
+      "type": "python",
+      "request": "launch",
+      "module": "unittest",
+      "args": [
+        "discover",
+        "-s",
+        "tests",
+        "-p",
+        "test_*.py",
+        "-v"
+      ],
+      "console": "integratedTerminal",
+      "envFile": "${workspaceFolder}/.env",
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}"
+      },
+      "justMyCode": false
     }
   ]
 }

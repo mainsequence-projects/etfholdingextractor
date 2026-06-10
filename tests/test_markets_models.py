@@ -19,13 +19,13 @@ class DemoBarsStorageConventionTests(unittest.TestCase):
         self.assertTrue(EtfhExtractorMarketsStorageMixin.__abstract__)
         self.assertEqual(
             EtfhExtractorMarketsStorageMixin.__metatable_namespace__,
-            "com.mainsequence.etfhextractor",
+            "etfhextractor",
         )
         self.assertEqual(
             EtfhExtractorMarketsStorageMixin.__markets_storage_app__,
             "etfhextractor_markets",
         )
-        self.assertEqual(ETFHEXTRACTOR_METATABLE_NAMESPACE, "com.mainsequence.etfhextractor")
+        self.assertEqual(ETFHEXTRACTOR_METATABLE_NAMESPACE, "etfhextractor")
         self.assertEqual(ETFHEXTRACTOR_MARKETS_STORAGE_APP, "etfhextractor_markets")
 
     def test_logical_identifier_is_namespace_plus_base_identifier(self) -> None:
@@ -33,7 +33,7 @@ class DemoBarsStorageConventionTests(unittest.TestCase):
         # The stable logical identity — never the physical table name.
         self.assertEqual(
             DemoBarsStorage.__metatable_identifier__,
-            "com.mainsequence.etfhextractor.DemoBarsTS",
+            "etfhextractor.DemoBarsTS",
         )
         # Physical naming uses the project storage app, separate from identity.
         self.assertTrue(DemoBarsStorage.__table__.name.startswith("etfhextractor_markets__"))

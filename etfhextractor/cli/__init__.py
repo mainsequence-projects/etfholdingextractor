@@ -54,8 +54,10 @@ def _add_figi_filter_arg(parser: argparse.ArgumentParser) -> None:
         metavar="JSON",
         help=(
             "Per-ticker OpenFIGI disambiguation filter as JSON; repeat per ticker. "
-            'Example: \'{"ticker": "USO", "market_sector": "Equity", "exch_code": "US"}\'. '
-            "Allowed keys: ticker, market_sector, exch_code, security_type, security_type_2."
+            'Narrow: \'{"ticker": "USO", "market_sector": "Equity", "exch_code": "US"}\'; '
+            'alias a provider ticker to its OpenFIGI symbol: \'{"ticker": "BRKB", '
+            '"figi_ticker": "BRK/B"}\'. Allowed keys: ticker, figi_ticker, market_sector, '
+            "exch_code, security_type, security_type_2."
         ),
     )
 

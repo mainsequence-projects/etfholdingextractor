@@ -31,7 +31,12 @@ from .providers.common import normalize_ticker
 # OpenFIGI mapping filters that a disambiguation entry may override per ticker.
 DISAMBIGUATION_FILTER_KEYS = ("market_sector", "exch_code", "security_type", "security_type_2")
 
+# Per-ticker idValue alias: the symbol OpenFIGI knows the ticker by, when the
+# provider's convention differs (e.g. iShares "BRKB" vs OpenFIGI "BRK/B").
+DISAMBIGUATION_ALIAS_KEY = "figi_ticker"
+
 DISAMBIGUATION_EXAMPLE = '{"ticker": "USO", "market_sector": "Equity", "exch_code": "US"}'
+DISAMBIGUATION_ALIAS_EXAMPLE = '{"ticker": "BRKB", "figi_ticker": "BRK/B"}'
 
 
 @dataclass(frozen=True, slots=True)
@@ -81,6 +86,8 @@ class FigiAssetRegistrationResult:
             + "; ".join(parts)
             + ". Narrow ambiguous tickers with a disambiguation filter, e.g. "
             + DISAMBIGUATION_EXAMPLE
+            + '; map unmapped tickers to their OpenFIGI symbol with "figi_ticker", e.g. '
+            + DISAMBIGUATION_ALIAS_EXAMPLE
             + "."
         )
 
@@ -96,25 +103,34 @@ class FigiRegistrationError(RuntimeError):
 def _normalize_disambiguation_filters(
     disambiguation_filters: Sequence[Mapping[str, Any]] | None,
 ) -> dict[str, dict[str, str]]:
-    """Validate per-ticker filter entries into {ticker: {filter: value}}."""
+    """Validate per-ticker filter entries into {ticker: {filter: value}}.
+
+    Besides the OpenFIGI query filters, an entry may carry `figi_ticker` — the
+    idValue alias OpenFIGI knows the symbol by (e.g. `BRKB` → `BRK/B`).
+    """
     overrides_by_ticker: dict[str, dict[str, str]] = {}
     for entry in disambiguation_filters or []:
         if "ticker" not in entry or not str(entry["ticker"]).strip():
             raise ValueError(
                 f"Each disambiguation filter needs a 'ticker' key, e.g. {DISAMBIGUATION_EXAMPLE}."
             )
-        unknown = set(entry) - {"ticker", *DISAMBIGUATION_FILTER_KEYS}
+        unknown = set(entry) - {"ticker", DISAMBIGUATION_ALIAS_KEY, *DISAMBIGUATION_FILTER_KEYS}
         if unknown:
             raise ValueError(
                 f"Unknown disambiguation filter keys {sorted(unknown)}; allowed: "
-                f"ticker, {', '.join(DISAMBIGUATION_FILTER_KEYS)}."
+                f"ticker, {DISAMBIGUATION_ALIAS_KEY}, {', '.join(DISAMBIGUATION_FILTER_KEYS)}."
             )
         ticker = normalize_ticker(str(entry["ticker"]))
-        overrides_by_ticker[ticker] = {
+        overrides = {
             key: str(entry[key])
             for key in DISAMBIGUATION_FILTER_KEYS
             if entry.get(key) not in (None, "")
         }
+        if entry.get(DISAMBIGUATION_ALIAS_KEY) not in (None, ""):
+            overrides[DISAMBIGUATION_ALIAS_KEY] = normalize_ticker(
+                str(entry[DISAMBIGUATION_ALIAS_KEY])
+            )
+        overrides_by_ticker[ticker] = overrides
     return overrides_by_ticker
 
 
@@ -162,38 +178,58 @@ def register_equity_assets_from_tickers(
 
     overrides_by_ticker = _normalize_disambiguation_filters(disambiguation_filters)
 
-    _ensure_msm_started()
-
-    import pandas as pd
-
-    from msm.api.assets import Asset, AssetType, OpenFigiDetails
-    from msm.constants import ASSET_TYPE_EQUITY
-    from msm.data_nodes.assets import AssetSnapshot
-    from msm.services.assets.openfigi import (
-        build_asset_snapshot_frame_from_openfigi_result,
-        query_figi,
-    )
-
-    # Batch tickers per effective OpenFIGI filter set: defaults for most, the
-    # per-ticker disambiguation overrides for the rest.
+    # Build the full query plan (and validate alias collisions) BEFORE touching
+    # the platform: batch tickers per effective OpenFIGI filter set — defaults
+    # for most, per-ticker disambiguation overrides for the rest. The mapping
+    # idValue per ticker is the user-provided `figi_ticker` alias when set
+    # (BRKB → BRK/B), otherwise the ticker itself.
     tickers_by_filters: dict[tuple[str | None, ...], list[str]] = {}
+    requested_by_query_value: dict[str, str] = {}
     for ticker in requested:
+        overrides = dict(overrides_by_ticker.get(ticker, {}))
+        query_value = overrides.pop(DISAMBIGUATION_ALIAS_KEY, ticker)
+        previous = requested_by_query_value.get(query_value)
+        if previous is not None and previous != ticker:
+            raise ValueError(
+                f"figi_ticker alias collision: {previous!r} and {ticker!r} both map to "
+                f"OpenFIGI symbol {query_value!r}."
+            )
+        requested_by_query_value[query_value] = ticker
         effective = {
             "market_sector": market_sector,
             "exch_code": exch_code,
             "security_type": None,
             "security_type_2": None,
         }
-        effective.update(overrides_by_ticker.get(ticker, {}))
+        effective.update(overrides)
         filter_key = tuple(effective[key] for key in DISAMBIGUATION_FILTER_KEYS)
-        tickers_by_filters.setdefault(filter_key, []).append(ticker)
+        tickers_by_filters.setdefault(filter_key, []).append(query_value)
 
+    _ensure_msm_started()
+
+    import pandas as pd
+
+    from msm.api.assets import Asset, AssetType, OpenFigiDetails
+    from msm.constants import ASSET_TYPE_EQUITY
+    from msm.services.assets.openfigi import (
+        build_asset_snapshot_frame_from_openfigi_result,
+        query_figi,
+    )
+
+    from mainsequence.logconf import logger as _ms_logger
+
+    log = _ms_logger.bind(sub_application="etfhextractor", component="asset_registration")
+
+    log.info(
+        f"FIGI mapping: {len(requested)} tickers in {len(tickers_by_filters)} "
+        "OpenFIGI filter group(s)..."
+    )
     rows: list[dict[str, Any]] = []
-    for filter_key, group_tickers in tickers_by_filters.items():
+    for filter_key, group_query_values in tickers_by_filters.items():
         group_filters = dict(zip(DISAMBIGUATION_FILTER_KEYS, filter_key))
         rows.extend(
             query_figi(
-                group_tickers,
+                group_query_values,
                 market_sector=group_filters["market_sector"],
                 exch_code=group_filters["exch_code"],
                 security_type=group_filters["security_type"],
@@ -205,14 +241,16 @@ def register_equity_assets_from_tickers(
     rows_by_ticker: dict[str, dict[str, dict[str, Any]]] = {ticker: {} for ticker in requested}
     for row in rows:
         row_ticker = normalize_ticker(str(row.get("ticker") or ""))
+        requested_ticker = requested_by_query_value.get(row_ticker)
         figi = row.get("figi")
-        if not figi or row_ticker not in rows_by_ticker:
+        if not figi or requested_ticker is None:
             continue
         # Keyed by FIGI: identical FIGIs collapse; distinct FIGIs mean ambiguity.
-        rows_by_ticker[row_ticker].setdefault(str(figi), row)
+        rows_by_ticker[requested_ticker].setdefault(str(figi), row)
 
     figi_by_ticker: dict[str, str] = {}
     normalized_by_figi: dict[str, dict[str, Any]] = {}
+    requested_ticker_by_figi: dict[str, str] = {}
     unmapped_tickers: list[str] = []
     ambiguous_by_ticker: dict[str, list[str]] = {}
 
@@ -226,6 +264,12 @@ def register_equity_assets_from_tickers(
             figi, normalized = next(iter(candidates.items()))
             figi_by_ticker[ticker] = figi
             normalized_by_figi[figi] = normalized
+            requested_ticker_by_figi[figi] = ticker
+
+    log.info(
+        f"FIGI mapping done: {len(figi_by_ticker)} unique, "
+        f"{len(unmapped_tickers)} unmapped, {len(ambiguous_by_ticker)} ambiguous."
+    )
 
     # Resolve smartly: ONE batch lookup of every mapped FIGI against the asset
     # registry, then write only the deltas — never one-by-one re-upserts of
@@ -244,10 +288,18 @@ def register_equity_assets_from_tickers(
         for ticker, figi in figi_by_ticker.items()
         if figi not in existing_uid_by_figi
     }
+    log.info(
+        f"Registry batch check: {len(already_registered_figi_by_ticker)} already "
+        f"registered, {len(registered_figi_by_ticker)} to create, "
+        f"{len(all_figis) - len(figis_with_snapshots)} snapshots to publish."
+    )
 
     if registered_figi_by_ticker:
         AssetType.upsert(asset_type=ASSET_TYPE_EQUITY, display_name="Equity")
-        for figi in sorted(set(registered_figi_by_ticker.values())):
+        to_create = sorted(registered_figi_by_ticker.items())
+        total_to_create = len(to_create)
+        progress_step = max(1, min(25, total_to_create // 10 or 1))
+        for index, (ticker, figi) in enumerate(to_create, start=1):
             normalized = normalized_by_figi[figi]
             asset = Asset.upsert(
                 unique_identifier=normalized["unique_identifier"],
@@ -271,26 +323,48 @@ def register_equity_assets_from_tickers(
                 metadata_text=normalized.get("metadata"),
                 raw_payload=normalized.get("raw_payload"),
             )
+            if index % progress_step == 0 or index == total_to_create:
+                log.info(
+                    f"Registered {index}/{total_to_create} new assets "
+                    f"({index * 100 // total_to_create}%) — last: {ticker} -> {figi}"
+                )
 
     # Snapshots make assets resolvable by ticker; publish them for every mapped
     # FIGI that lacks one (covers assets created here AND assets that exist but
     # were never snapshotted, e.g. an interrupted earlier registration).
     snapshot_target_figis = [figi for figi in all_figis if figi not in figis_with_snapshots]
     if snapshot_target_figis:
+        log.info(
+            f"Publishing {len(snapshot_target_figis)} asset snapshots in one batch "
+            "(single write + single batched duplicate-check read)..."
+        )
         resolved_snapshot_time = snapshot_time or dt.datetime.now(dt.UTC).replace(microsecond=0)
+        # The snapshot carries the REQUESTED ticker (the provider/extraction
+        # convention, e.g. BRKB), not OpenFIGI's symbol (BRK/B) — the snapshot
+        # layer resolves extraction tickers, so an aliased symbol must be stored
+        # under the form extractions actually produce. OpenFIGI's own symbol
+        # stays on OpenFigiDetails.ticker.
         snapshot_frames = [
             build_asset_snapshot_frame_from_openfigi_result(
-                normalized_by_figi[figi],
+                {
+                    **normalized_by_figi[figi],
+                    "ticker": requested_ticker_by_figi[figi],
+                },
                 time_index=resolved_snapshot_time,
             )
             for figi in snapshot_target_figis
         ]
-        snapshot_node = AssetSnapshot().set_frame(pd.concat(snapshot_frames))
+        # Batch-verified node: duplicate-key verification is ONE read, not one
+        # read per row (plain AssetSnapshot does N reads — the request storm).
+        from .markets_models import BatchVerifiedAssetSnapshot
+
+        snapshot_node = BatchVerifiedAssetSnapshot().set_frame(pd.concat(snapshot_frames))
         error_on_last_update, _frame = snapshot_node.run(debug_mode=True, force_update=True)
         if error_on_last_update:
             raise RuntimeError(
                 "AssetSnapshot update failed while publishing FIGI-registered assets."
             )
+        log.info(f"Snapshots published: {len(snapshot_target_figis)} assets now resolvable.")
 
     return FigiAssetRegistrationResult(
         registered_figi_by_ticker=dict(sorted(registered_figi_by_ticker.items())),

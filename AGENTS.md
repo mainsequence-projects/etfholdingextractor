@@ -31,7 +31,7 @@ When serving those capabilities:
   requests.
 - Limit claims to supported providers and existing library surfaces documented in `docs/library.md`.
 - This project owns exactly one ms-markets MetaTable — `DemoBarsStorage`
-  (`com.mainsequence.etfhextractor.DemoBarsTS` in `etfhextractor/markets_models.py`, the example's
+  (`etfhextractor.DemoBarsTS` in `etfhextractor/markets_models.py`, the example's
   demo price source); everything else uses built-in `msm`/`msm_portfolios` models. Every
   project-owned table must follow the extension-mixin convention in `docs/library.md`
   ("Project-Owned ms-markets Tables"): local abstract mixin with

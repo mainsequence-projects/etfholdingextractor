@@ -62,7 +62,7 @@ markupsafe==3.0.3
     # via mako
 mdurl==0.1.2
     # via markdown-it-py
-ms-markets==0.0.54
+ms-markets==0.0.55
     # via etfhextractor
 numpy==2.4.6
     # via

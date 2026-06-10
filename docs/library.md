@@ -268,9 +268,12 @@ ms-markets portfolio that tracks an ETF (implementation task 0002, ADR 0003):
 hard identity rules: **no FIGI → no registration** (`Asset.unique_identifier` is always the FIGI;
 ticker-keyed assets are forbidden), and **a ticker must map to exactly one FIGI** — multiple
 candidates stay unregistered blockers so same-ticker assets are never mixed.
-`register_equity_assets_from_tickers(...)` runs `query_figi` → `Asset.upsert(unique_identifier=figi)`
-+ `OpenFigiDetails.upsert` + one `AssetSnapshot` publication (so the snapshot resolver finds the new
-assets immediately). Failures name the blocked tickers with their FIGI candidates
+`register_equity_assets_from_tickers(...)` resolves smartly — always: batched `query_figi`
+(ticker→FIGI), then **one batch search** of all mapped FIGIs against the asset registry and one
+against the snapshot table, then writes **only the deltas** (`Asset.upsert(unique_identifier=figi)`
++ `OpenFigiDetails.upsert` for missing FIGIs; one `AssetSnapshot` run for FIGIs lacking a
+snapshot). A fully-registered universe re-runs with zero writes. Registered identity is the US
+composite FIGI (e.g. MSFT → `BBG000BPH459`); ticker/share-class/venue live on `OpenFigiDetails`. Failures name the blocked tickers with their FIGI candidates
 (`format_failures()` / `FigiRegistrationError`), and ambiguity is resolved explicitly with
 per-ticker disambiguation filters, e.g.
 `disambiguation_filters=[{"ticker": "USO", "market_sector": "Equity", "exch_code": "US"}]`
@@ -282,7 +285,7 @@ per-ticker disambiguation filters, e.g.
 This project owns exactly **one** ms-markets MetaTable, defined in
 `etfhextractor/markets_models.py` per the extension convention below:
 
-- `DemoBarsStorage` — logical id `com.mainsequence.etfhextractor.DemoBarsTS`, physical table
+- `DemoBarsStorage` — logical id `etfhextractor.DemoBarsTS`, physical table
   `etfhextractor_markets__demobarsts`. Demo `close`/`volume` bars keyed by
   `(time_index, asset_identifier)` with the canonical FK to `AssetTable.unique_identifier`,
   published by the example's `--demo-prices` mode through the thin `DemoBars`
@@ -317,13 +320,13 @@ from msm.base import MarketsBase, MarketsMetaTableMixin, MarketsTimeIndexMetaTab
 
 class EtfhExtractorMarketsMetaTableMixin(MarketsMetaTableMixin):
     __abstract__ = True
-    __metatable_namespace__ = "com.mainsequence.etfhextractor"
+    __metatable_namespace__ = "etfhextractor"
     __markets_storage_app__ = "etfhextractor_markets"
 
 
 class EtfhExtractorMarketsStorageMixin(MarketsTimeIndexMetaTableMixin):
     __abstract__ = True
-    __metatable_namespace__ = "com.mainsequence.etfhextractor"
+    __metatable_namespace__ = "etfhextractor"
     __markets_storage_app__ = "etfhextractor_markets"
 
 
@@ -341,7 +344,7 @@ class MyBarsStorage(EtfhExtractorMarketsStorageMixin, MarketsBase):
 
 Rules:
 
-- The stable logical identifier is `com.mainsequence.etfhextractor.<__markets_base_identifier__>`.
+- The stable logical identifier is `etfhextractor.<__markets_base_identifier__>`.
   Do **not** use table names as identity, do **not** build UID maps, do **not** call row
   `create_schemas()`.
 - Register/migrate through the SDK migration provider, then attach at runtime with

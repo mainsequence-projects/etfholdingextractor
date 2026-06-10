@@ -34,7 +34,7 @@ itself on the default run:
   resolve ambiguous tickers with `--figi-filter`.
 - **The price source** defaults to the **project-owned** `DemoBarsTS` table
   (`etfhextractor/markets_models.py`, logical id
-  `com.mainsequence.etfhextractor.DemoBarsTS`, ms-markets extension-mixin convention):
+  `etfhextractor.DemoBarsTS`, ms-markets extension-mixin convention):
   the example prepares its schema the way the ms-markets examples do
   ([prepare_demo_bars_schema.py](prepare_demo_bars_schema.py) — find-or-generate the
   Alembic revision via the project provider `etfhextractor_migrations:migration`,
@@ -61,9 +61,11 @@ python examples/ivv_tracking_portfolio_full_workflow.py --signal-only
 python examples/ivv_tracking_portfolio_full_workflow.py \
     --price-source-table-uid <UID> --with-category-sync
 
-# Disambiguate a ticker that maps to multiple FIGIs (repeat per ticker).
+# Disambiguate a ticker that maps to multiple FIGIs, or alias a provider ticker
+# to its OpenFIGI symbol (share-class conventions). Repeat per ticker.
 python examples/ivv_tracking_portfolio_full_workflow.py \
-    --figi-filter '{"ticker": "USO", "market_sector": "Equity", "exch_code": "US"}'
+    --figi-filter '{"ticker": "BRKB", "figi_ticker": "BRK/B"}' \
+    --figi-filter '{"ticker": "BFB", "figi_ticker": "BF/B"}'
 ```
 
 The signal is guarded (task 0002): re-running inserts at most once per day and only

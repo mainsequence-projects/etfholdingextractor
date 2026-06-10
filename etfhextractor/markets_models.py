@@ -3,7 +3,7 @@
 Follows the ms-markets extension convention (docs/library.md "Project-Owned
 ms-markets Tables"): one local abstract mixin setting the project namespace and
 storage app, concrete tables identified by ``__markets_base_identifier__``. The
-stable logical identifier is ``com.mainsequence.etfhextractor.<identifier>`` —
+stable logical identifier is ``etfhextractor.<identifier>`` —
 never table names, UID maps, or row ``create_schemas()``.
 
 Tables must be migrated/registered through the SDK migration provider before a
@@ -25,11 +25,15 @@ from sqlalchemy import DateTime, Float, ForeignKey, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from msm.base import MarketsBase, MarketsTimeIndexMetaTableMixin
-from msm.data_nodes.assets import AssetDataNodeConfiguration, AssetTimestampedDataNode
+from msm.data_nodes.assets import (
+    AssetDataNodeConfiguration,
+    AssetSnapshot,
+    AssetTimestampedDataNode,
+)
 from msm.models.assets.core import AssetTable
 from msm.settings import ASSET_IDENTIFIER_DIMENSION
 
-ETFHEXTRACTOR_METATABLE_NAMESPACE = "com.mainsequence.etfhextractor"
+ETFHEXTRACTOR_METATABLE_NAMESPACE = "etfhextractor"
 ETFHEXTRACTOR_MARKETS_STORAGE_APP = "etfhextractor_markets"
 
 
@@ -104,6 +108,47 @@ def _migration_metadata():
 ETFHEXTRACTOR_MIGRATION_METADATA = _migration_metadata()
 
 
+class BatchVerifiedAssetSnapshot(AssetSnapshot):
+    """AssetSnapshot whose duplicate-key verification is ONE batched read.
+
+    The base class verifies `(time_index, asset_identifier)` collisions with one
+    `get_df_between_dates` call **per row** — for an ETF-sized universe that is
+    hundreds of sequential backend reads. This override keeps the exact same
+    verification semantics with a single read over the frame's time range and
+    identifier set (smart resolution rule: batch lookups, never per-row).
+    """
+
+    def existing_backend_index_keys(self, frame: pd.DataFrame) -> list[tuple[str, str]]:
+        validated = self.validate_frame(frame, storage_table=self.storage_table)
+        flat = validated.reset_index()
+        identifiers = sorted({str(value) for value in flat[ASSET_IDENTIFIER_DIMENSION]})
+        times = pd.to_datetime(flat["time_index"], utc=True)
+        candidate_keys = {
+            (pd.Timestamp(time_index).isoformat(), str(identifier))
+            for time_index, identifier in zip(times, flat[ASSET_IDENTIFIER_DIMENSION])
+        }
+
+        existing = self.get_df_between_dates(
+            start_date=times.min().to_pydatetime(),
+            end_date=times.max().to_pydatetime(),
+            great_or_equal=True,
+            less_or_equal=True,
+            dimension_filters={ASSET_IDENTIFIER_DIMENSION: identifiers},
+        )
+        if existing is None or len(existing) == 0:
+            return []
+
+        existing_flat = existing.reset_index()
+        existing_keys = {
+            (pd.Timestamp(time_index).isoformat(), str(identifier))
+            for time_index, identifier in zip(
+                pd.to_datetime(existing_flat["time_index"], utc=True),
+                existing_flat[ASSET_IDENTIFIER_DIMENSION],
+            )
+        }
+        return sorted(existing_keys & candidate_keys)
+
+
 class DemoBarsConfiguration(AssetDataNodeConfiguration):
     """Update-scoped configuration for the demo bars DataNode."""
 
@@ -126,6 +171,7 @@ class DemoBars(AssetTimestampedDataNode):
 
 
 __all__ = [
+    "BatchVerifiedAssetSnapshot",
     "ETFHEXTRACTOR_MARKETS_STORAGE_APP",
     "ETFHEXTRACTOR_METATABLE_NAMESPACE",
     "DemoBars",
