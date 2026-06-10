@@ -10,20 +10,34 @@ holdings-extraction workflow.
 
 ## Project-Specific Instruction
 
-This repository exposes two project-specific agent capabilities and agents should stay within
+This repository exposes four project-specific agent capabilities and agents should stay within
 those boundaries:
 
 1. ETF holdings extraction from supported provider URLs or explicit `provider + ticker` inputs.
 2. MainSequence holdings category planning and sync from already-supported extraction results.
+3. ETF-tracking portfolio publication through the `msm_portfolios` signal pipeline
+   (`ETFHoldingsSignal` + `etfh portfolio-publish`; weights insert at most daily and only on
+   change — see `docs/implementation_task/0002-ms-markets-portfolio-weights.md`).
+4. FIGI registration of missing ETF components (opt-in `--register-missing`): no asset is
+   registered without a FIGI, and only unique ticker→FIGI mappings register — ambiguity stays a
+   blocker (see `docs/adr/0004-figi-only-asset-registration.md`).
 
 When serving those capabilities:
 
 - Prefer the repository CLI surface before inventing ad hoc flows:
-  `etfh extract-url`, `etfh extract-ticker`, and `etfh category-sync`.
+  `etfh extract-url`, `etfh extract-ticker`, `etfh category-sync`, and `etfh portfolio-publish`.
 - Use `.agents/skills/weights_extraction/SKILL.md` for holdings and weight extraction requests.
 - Use `.agents/skills/holdings_category_sync/SKILL.md` for holdings-category planning or sync
   requests.
 - Limit claims to supported providers and existing library surfaces documented in `docs/library.md`.
+- This project owns exactly one ms-markets MetaTable — `DemoBarsStorage`
+  (`com.mainsequence.etfhextractor.DemoBarsTS` in `etfhextractor/markets_models.py`, the example's
+  demo price source); everything else uses built-in `msm`/`msm_portfolios` models. Every
+  project-owned table must follow the extension-mixin convention in `docs/library.md`
+  ("Project-Owned ms-markets Tables"): local abstract mixin with
+  `__metatable_namespace__`/`__markets_storage_app__`, identity via `__markets_base_identifier__`,
+  SDK-provider migration, `msm.start_engine(models=[...])` attachment — never table-name identity,
+  UID maps, or `create_schemas()`.
 - Distinguish clearly between local extraction work and MainSequence platform-dependent category
   sync work. Do not imply platform state has been verified unless it was actually checked.
 

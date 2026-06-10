@@ -3,28 +3,30 @@ requires = ["setuptools>=69", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "etfh-extractor"
-version = "0.1.7"
-description = "Extract ETF holdings weights from providers and sync MainSequence holdings categories."
+name = "etfhextractor"
+version = "0.3.1"
+description = "Extract ETF holdings weights from providers, sync MainSequence holdings categories, and publish ms-markets ETF-tracking portfolios."
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "certifi>=2024.2.2",
     "mainsequence>=3.18.17",
     "ms-markets>=0.0.49",
-    "pip>=26.1",
 ]
 
 [project.scripts]
-etfh = "etfh_extractor.cli:main"
-etfh-read = "etfh_extractor.__main__:main"
-
-[tool.setuptools]
-package-dir = {"" = "src"}
+etfh = "etfhextractor.cli:main"
+etfh-read = "etfhextractor.__main__:main"
 
 [tool.setuptools.packages.find]
-where = ["src"]
-include = ["etfh_extractor*"]
+where = ["."]
+include = ["etfhextractor*"]
+
+[tool.setuptools.package-data]
+etfhextractor = ["py.typed"]
+# Alembic script template must ship in wheels so installed consumers can
+# generate revisions through the project migration provider.
+etfhextractor_migrations = ["script.py.mako"]
 
 [tool.ruff]
 line-length = 100                 # Max line length for Ruff/Black.
@@ -75,6 +77,5 @@ ignore = ["E203", "E501"]
 
 [tool.ruff.lint.isort]
 # Treat these as your own packages so they sort as "first-party".
-known-first-party = ["etfh_extractor"]
-# (If you use a src/ layout, also set: src-paths = ["src"])
-src-paths = ["src", "tests"]
+known-first-party = ["etfhextractor"]
+src-paths = ["etfhextractor", "tests"]

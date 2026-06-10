@@ -7,10 +7,10 @@
 
 This repository now provides a provider-aware ETF holdings workflow:
 
-- `src/etfh_extractor/reader.py` reads supported fund URLs or explicit `(provider, ticker)` inputs
+- `etfhextractor/reader.py` reads supported fund URLs or explicit `(provider, ticker)` inputs
 - provider modules download and parse provider-specific source data
 - `FundHoldings` preserves holdings rows, weights, fund metadata, and download provenance
-- `src/etfh_extractor/mainsequence_categories.py` provides a narrow MainSequence category planning and sync layer
+- `etfhextractor/mainsequence_categories.py` provides a narrow MainSequence category planning and sync layer
 - extraction artifacts are persisted under `data/temp/` across supported providers
 
 That design keeps weighted holdings as the source of truth while supporting provider growth and
@@ -68,10 +68,10 @@ The original iShares logic has been moved behind a provider layer.
 
 Implemented structure:
 
-- `src/etfh_extractor/providers/common.py`
-- `src/etfh_extractor/providers/base.py`
-- `src/etfh_extractor/providers/registry.py`
-- `src/etfh_extractor/providers/ishares.py`
+- `etfhextractor/providers/common.py`
+- `etfhextractor/providers/base.py`
+- `etfhextractor/providers/registry.py`
+- `etfhextractor/providers/ishares.py`
 
 Implemented behavior:
 
@@ -86,7 +86,7 @@ The repository owns provider handling rules explicitly.
 
 Implemented structure:
 
-- `src/etfh_extractor/settings.py`
+- `etfhextractor/settings.py`
 
 Implemented behavior:
 
@@ -118,7 +118,7 @@ The repository includes a MainSequence-facing module with a narrow planning and 
 
 Implemented structure:
 
-- `src/etfh_extractor/mainsequence_categories.py`
+- `etfhextractor/mainsequence_categories.py`
 
 Implemented APIs:
 
@@ -224,16 +224,16 @@ already-extracted holdings.
 
 ### Phase 1: Provider Abstraction
 
-- [x] Create `src/etfh_extractor/providers/base.py` with the provider interface that returns `FundHoldings`.
-- [x] Create `src/etfh_extractor/providers/common.py` for reusable parsing and normalization helpers.
-- [x] Create `src/etfh_extractor/providers/registry.py` to resolve provider implementations by normalized provider name.
-- [x] Move the existing iShares fetch and parse logic into `src/etfh_extractor/providers/ishares.py`.
+- [x] Create `etfhextractor/providers/base.py` with the provider interface that returns `FundHoldings`.
+- [x] Create `etfhextractor/providers/common.py` for reusable parsing and normalization helpers.
+- [x] Create `etfhextractor/providers/registry.py` to resolve provider implementations by normalized provider name.
+- [x] Move the existing iShares fetch and parse logic into `etfhextractor/providers/ishares.py`.
 - [x] Keep `ETFHoldingsReader` as the public compatibility facade and delegate through the provider registry.
 - [x] Keep the current CLI behavior unchanged for direct iShares fund URLs.
 
 ### Phase 2: Provider Configuration
 
-- [x] Create `src/etfh_extractor/settings.py` for provider configuration, URL builders, and provider inference helpers.
+- [x] Create `etfhextractor/settings.py` for provider configuration, URL builders, and provider inference helpers.
 - [x] Support provider inference from fund URLs only.
 - [x] Support explicit providers and fall back to URL-based inference when a fund URL is available.
 - [x] Require explicit providers for ticker-based workflows that do not include a fund URL.
@@ -243,9 +243,9 @@ already-extracted holdings.
 
 ### Phase 3: Additional Providers
 
-- [x] Add `src/etfh_extractor/providers/invesco.py`.
-- [x] Add `src/etfh_extractor/providers/vanguard.py`.
-- [x] Add `src/etfh_extractor/providers/state_street.py`.
+- [x] Add `etfhextractor/providers/invesco.py`.
+- [x] Add `etfhextractor/providers/vanguard.py`.
+- [x] Add `etfhextractor/providers/state_street.py`.
 - [x] Normalize each new provider into `FundHoldings` rather than symbol-only outputs.
 - [x] Introduce optional browser-backed fallback helpers behind a non-core dependency boundary for providers that need them.
 - [x] Document any provider that is temporarily membership-only or missing trustworthy weight extraction.
@@ -259,7 +259,7 @@ Provider implementation note:
 
 ### Phase 4: MainSequence Categories
 
-- [x] Create `src/etfh_extractor/mainsequence_categories.py`.
+- [x] Create `etfhextractor/mainsequence_categories.py`.
 - [x] Implement `build_holdings_asset_category_unique_identifier(...)`.
 - [x] Implement `infer_holdings_component_provider(...)`.
 - [x] Implement `resolve_existing_assets_by_ticker(...)`.
@@ -281,7 +281,7 @@ Provider implementation note:
 - [x] Add provider fixture tests for iShares, Invesco, Vanguard, and State Street parsing behavior.
 - [x] Add tests for derived symbol expansion from `FundHoldings`.
 - [x] Add tests for MainSequence category planning with stubbed asset lookups.
-- [x] Update [reader.md](/Users/jose/mainsequence/main-sequence-workbench/projects/etfholdingextractor-161/docs/reader.md) for provider-aware workflows.
+- [x] Update [reader.md](../reader.md) for provider-aware workflows.
 - [x] Add a new architecture doc describing provider boundaries and category boundaries.
 - [x] Update ADR 0001 to reference provider-agnostic artifact handling once implementation begins.
 - [x] Document the non-goal boundary clearly so future work does not reintroduce registration or execution concerns here.

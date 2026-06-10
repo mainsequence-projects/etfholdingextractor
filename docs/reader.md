@@ -53,7 +53,7 @@ responsibility.
 ### Read from a fund URL
 
 ```python
-from etfh_extractor import ETFHoldingsReader
+from etfhextractor import ETFHoldingsReader
 
 reader = ETFHoldingsReader(timeout=30.0)
 fund = reader.read(
@@ -68,7 +68,7 @@ print(fund.artifact_directory)
 ### Read from provider plus ticker
 
 ```python
-from etfh_extractor import ETFHoldingsReader
+from etfhextractor import ETFHoldingsReader
 
 reader = ETFHoldingsReader(timeout=30.0)
 fund = reader.read_ticker("IVV", provider="ishares")
@@ -82,7 +82,7 @@ print(fund.holdings[0].ticker, fund.holdings[0].weight)
 ```python
 from pathlib import Path
 
-from etfh_extractor import ETFHoldingsReader
+from etfhextractor import ETFHoldingsReader
 
 reader = ETFHoldingsReader(artifact_root=Path("tmp/etf-artifacts"))
 fund = reader.read_ticker("IVV", provider="ishares")
@@ -126,7 +126,7 @@ etfh extract-ticker --provider ishares --ticker IVV --format full
 
 ```bash
 etfh-read https://www.ishares.com/us/products/251614/ishares-msci-usa-momentum-factor-etf
-python -m etfh_extractor --provider ishares --ticker IVV
+python -m etfhextractor --provider ishares --ticker IVV
 ```
 
 ## Output Contract
@@ -144,4 +144,4 @@ The reader does not:
 - sync MainSequence categories
 - run downstream execution workflows
 
-Category registration lives in [mainsequence_categories.py](/Users/jose/mainsequence/main-sequence-workbench/projects/etfholdingextractor-161/src/etfh_extractor/mainsequence_categories.py).
+Category registration lives in [mainsequence_categories.py](../etfhextractor/mainsequence_categories.py).

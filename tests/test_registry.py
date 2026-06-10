@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import unittest
 
-from etfh_extractor.exceptions import UnsupportedProviderError
-from etfh_extractor.providers.registry import (
+from etfhextractor.exceptions import UnsupportedProviderError
+from etfhextractor.providers.registry import (
     build_provider,
     build_provider_from_url,
     supported_providers,

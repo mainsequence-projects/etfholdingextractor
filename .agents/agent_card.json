@@ -1,7 +1,7 @@
 {
   "name": "etfholdingextractor-161",
   "description": "Agent for extracting ETF holdings weights from supported providers and planning or syncing MainSequence holdings categories through the repository CLI and library surfaces.",
-  "version": "0.1.5",
+  "version": "0.3.0",
   "supportedInterfaces": [],
   "provider": {
     "organization": "",

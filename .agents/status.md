@@ -5,7 +5,7 @@ Verified:
 - `AGENTS.md` now includes a `## Project-Specific Instruction` section describing the two supported agent capabilities.
 - The repository now has non-Main Sequence skills for holdings extraction and holdings category sync.
 - `.agents/agent_card.json` exists and lists all non-Main Sequence skills.
-- The agent card version matches `pyproject.toml` version `0.1.5`.
+- The agent card version matches `pyproject.toml` version `0.3.0`.
 
 Assumptions:
 

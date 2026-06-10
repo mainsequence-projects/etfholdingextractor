@@ -1,6 +1,7 @@
-# etfh_extractor
+# etfhextractor
 
-`etfh_extractor` extracts ticker weights from iShares ETF fund pages.
+`etfhextractor` extracts ETF holdings ticker weights from supported providers (iShares, Invesco,
+State Street, Vanguard) and syncs MainSequence `HOLDINGS__<ETF>` asset categories through ms-markets.
 
 ## Installation
 
@@ -29,7 +30,7 @@ Use `--format full` to include fund metadata and the full parsed holdings rows.
 ## Python
 
 ```python
-from etfh_extractor import ETFHoldingsReader
+from etfhextractor import ETFHoldingsReader
 
 url = "https://www.ishares.com/us/products/251614/ishares-msci-usa-momentum-factor-etf"
 reader = ETFHoldingsReader()
@@ -51,3 +52,5 @@ Additional documentation:
 
 - [Library Layout](docs/library.md)
 - [Reader Guide](docs/reader.md)
+- [Implementation Tasks](docs/implementation_task/README.md)
+- [Examples](examples/README.md) — full IVV tracking-portfolio workflow

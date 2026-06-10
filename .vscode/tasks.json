@@ -16,7 +16,7 @@
       {
         "label": "Run CLI (MTUM)",
         "type": "shell",
-        "command": "${workspaceFolder}/.venv/bin/python -m etfh_extractor https://www.ishares.com/us/products/251614/ishares-msci-usa-momentum-factor-etf",
+        "command": "${workspaceFolder}/.venv/bin/python -m etfhextractor https://www.ishares.com/us/products/251614/ishares-msci-usa-momentum-factor-etf",
         "group": "build",
         "problemMatcher": []
       },

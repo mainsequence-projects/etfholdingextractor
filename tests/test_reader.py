@@ -3,22 +3,29 @@ from __future__ import annotations
 import io
 import json
 import unittest
+import uuid
 from contextlib import redirect_stdout
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
-from etfh_extractor import ETFHoldingsReader, extract_ticker_weights
-from etfh_extractor.__main__ import main
-from etfh_extractor.artifacts import ArtifactPayload, persist_extraction_artifacts
-from etfh_extractor.exceptions import UnsupportedProviderError
-from etfh_extractor.mainsequence_categories import (
+from etfhextractor import ETFHoldingsReader, extract_ticker_weights
+from etfhextractor._version import DEFAULT_USER_AGENT
+from etfhextractor.__main__ import main
+from etfhextractor.artifacts import ArtifactPayload, persist_extraction_artifacts
+from etfhextractor.exceptions import UnsupportedProviderError
+from etfhextractor.mainsequence_categories import (
     build_holdings_asset_category_plan,
     build_holdings_asset_category_unique_identifier,
     derive_component_symbols_from_holdings,
+    derive_component_weights_from_holdings,
     infer_holdings_component_provider,
+    resolve_asset_identifiers_by_ticker,
+    resolve_existing_assets_by_ticker,
+    sync_holdings_asset_category,
 )
-from etfh_extractor.models import FundHoldings, Holding
+from etfhextractor.models import FundHoldings, Holding
 
 IVV_URL = "https://www.ishares.com/us/products/239726/ishares-core-sp-500-etf"
 SAMPLE_DOWNLOAD_URL = "https://example.com/holdings_export.xls"
@@ -45,7 +52,7 @@ class ETFHoldingsReaderTests(unittest.TestCase):
         provider.read_url.return_value = fund_holdings
 
         with patch(
-            "etfh_extractor.reader.build_provider_from_url",
+            "etfhextractor.reader.build_provider_from_url",
             return_value=provider,
         ) as build_provider_from_url_mock:
             result = ETFHoldingsReader().read(IVV_URL)
@@ -57,7 +64,7 @@ class ETFHoldingsReaderTests(unittest.TestCase):
             fetcher=None,
             binary_fetcher=None,
             artifact_root=None,
-            user_agent="etfh-extractor/0.1.0",
+            user_agent=DEFAULT_USER_AGENT,
         )
         provider.read_url.assert_called_once_with(IVV_URL)
 
@@ -66,7 +73,7 @@ class ETFHoldingsReaderTests(unittest.TestCase):
         provider.read_url.return_value = build_sample_fund_holdings()
 
         with patch(
-            "etfh_extractor.reader.build_provider_from_url",
+            "etfhextractor.reader.build_provider_from_url",
             return_value=provider,
         ):
             weights = extract_ticker_weights(IVV_URL)
@@ -106,7 +113,7 @@ class ETFHoldingsReaderTests(unittest.TestCase):
         provider.read_ticker.return_value = fund_holdings
 
         with patch(
-            "etfh_extractor.reader.build_provider",
+            "etfhextractor.reader.build_provider",
             return_value=provider,
         ) as build_provider_mock:
             result = ETFHoldingsReader().read_ticker("IVV", provider="ishares")
@@ -118,7 +125,7 @@ class ETFHoldingsReaderTests(unittest.TestCase):
             fetcher=None,
             binary_fetcher=None,
             artifact_root=None,
-            user_agent="etfh-extractor/0.1.0",
+            user_agent=DEFAULT_USER_AGENT,
         )
         provider.read_ticker.assert_called_once_with("IVV")
 
@@ -167,8 +174,11 @@ class ETFHoldingsReaderTests(unittest.TestCase):
         reader = Mock()
         reader.read.return_value = build_sample_fund_holdings()
 
-        with patch("etfh_extractor.cli.build_holdings_asset_category_plan") as build_plan_mock, patch(
-            "etfh_extractor.cli.sync_holdings_asset_category"
+        aapl_uid = uuid.uuid4()
+        msft_uid = uuid.uuid4()
+
+        with patch("etfhextractor.cli.build_holdings_asset_category_plan") as build_plan_mock, patch(
+            "etfhextractor.cli.sync_holdings_asset_category"
         ) as sync_category_mock, redirect_stdout(buffer):
             plan = Mock()
             plan.summary.return_value = {
@@ -176,13 +186,13 @@ class ETFHoldingsReaderTests(unittest.TestCase):
                 "component_symbols": ["AAPL", "MSFT"],
             }
             plan.has_blockers.return_value = False
-            plan.existing_asset_ids_by_symbol = {"AAPL": 101, "MSFT": 102}
+            plan.existing_asset_uids_by_symbol = {"AAPL": aapl_uid, "MSFT": msft_uid}
             build_plan_mock.return_value = plan
 
             sync_result = Mock()
             sync_result.unique_identifier = "HOLDINGS__IVV"
             sync_result.display_name = "HOLDINGS__IVV"
-            sync_result.asset_ids = [101, 102]
+            sync_result.asset_uids = [aapl_uid, msft_uid]
             sync_category_mock.return_value = sync_result
 
             exit_code = main(
@@ -193,15 +203,23 @@ class ETFHoldingsReaderTests(unittest.TestCase):
         payload = json.loads(buffer.getvalue())
         self.assertEqual(exit_code, 0)
         self.assertTrue(payload["synced"])
-        self.assertEqual(payload["sync_result"]["asset_ids"], [101, 102])
+        # UUIDs are serialized as strings via json.dumps(default=str).
+        self.assertEqual(
+            payload["sync_result"]["asset_uids"],
+            [str(aapl_uid), str(msft_uid)],
+        )
+        sync_category_mock.assert_called_once_with(
+            etf_ticker="IVV",
+            asset_uids=[aapl_uid, msft_uid],
+        )
 
     def test_cli_category_sync_subcommand_returns_blockers_without_syncing(self) -> None:
         buffer = io.StringIO()
         reader = Mock()
         reader.read.return_value = build_sample_fund_holdings()
 
-        with patch("etfh_extractor.cli.build_holdings_asset_category_plan") as build_plan_mock, patch(
-            "etfh_extractor.cli.sync_holdings_asset_category"
+        with patch("etfhextractor.cli.build_holdings_asset_category_plan") as build_plan_mock, patch(
+            "etfhextractor.cli.sync_holdings_asset_category"
         ) as sync_category_mock, redirect_stdout(buffer):
             plan = Mock()
             plan.summary.return_value = {
@@ -209,7 +227,7 @@ class ETFHoldingsReaderTests(unittest.TestCase):
                 "missing_registered_symbols": ["NVDA"],
             }
             plan.has_blockers.return_value = True
-            plan.existing_asset_ids_by_symbol = {"AAPL": 101, "MSFT": 102}
+            plan.existing_asset_uids_by_symbol = {"AAPL": uuid.uuid4(), "MSFT": uuid.uuid4()}
             build_plan_mock.return_value = plan
 
             exit_code = main(
@@ -273,6 +291,29 @@ class HoldingsCategoryTests(unittest.TestCase):
             ["AAPL", "MSFT"],
         )
 
+    def test_derive_component_weights_accumulates_with_same_filter(self) -> None:
+        fund_holdings = FundHoldings(
+            url=IVV_URL,
+            download_url=SAMPLE_DOWNLOAD_URL,
+            fund_name="iShares Core S&P 500 ETF",
+            as_of_date="Apr 27, 2026",
+            holdings=(
+                Holding(ticker="msft", name="Microsoft Corp.", weight=6.5, asset_class="Equity"),
+                Holding(ticker="AAPL", name="Apple Inc.", weight=7.0, asset_class="Equity"),
+                Holding(ticker="USD", name="USD CASH", weight=0.1, asset_class="Cash"),
+                Holding(ticker="AAPL", name="Apple Inc.", weight=0.3, asset_class="Equity"),
+            ),
+        )
+
+        weights = derive_component_weights_from_holdings(fund_holdings)
+
+        self.assertEqual(weights, {"AAPL": 7.3, "MSFT": 6.5})
+        # The symbols view and the weights view share one filter.
+        self.assertEqual(
+            sorted(weights),
+            derive_component_symbols_from_holdings(fund_holdings),
+        )
+
     def test_build_holdings_asset_category_plan_uses_holdings_model(self) -> None:
         fund_holdings = FundHoldings(
             url=IVV_URL,
@@ -286,6 +327,8 @@ class HoldingsCategoryTests(unittest.TestCase):
             ),
         )
         captured: dict[str, object] = {}
+        aapl_uid = uuid.uuid4()
+        msft_uid = uuid.uuid4()
 
         def read_holdings_fn(ticker: str, *, provider: str | None = None) -> FundHoldings:
             captured["ticker"] = ticker
@@ -294,7 +337,7 @@ class HoldingsCategoryTests(unittest.TestCase):
 
         def resolve_existing_assets_by_ticker_fn(*, component_symbols):
             captured["component_symbols"] = component_symbols
-            return {"AAPL": 1, "MSFT": 2}, [], []
+            return {"AAPL": aapl_uid, "MSFT": msft_uid}, [], []
 
         plan = build_holdings_asset_category_plan(
             etf_ticker="IVV",
@@ -307,7 +350,7 @@ class HoldingsCategoryTests(unittest.TestCase):
         self.assertEqual(captured["provider"], "ishares")
         self.assertEqual(captured["component_symbols"], ["AAPL", "MSFT"])
         self.assertEqual(plan.component_symbols, ["AAPL", "MSFT"])
-        self.assertEqual(plan.existing_asset_ids_by_symbol, {"AAPL": 1, "MSFT": 2})
+        self.assertEqual(plan.existing_asset_uids_by_symbol, {"AAPL": aapl_uid, "MSFT": msft_uid})
         self.assertEqual(plan.category_unique_identifier, "HOLDINGS__IVV")
 
     def test_build_holdings_asset_category_plan_infers_provider_from_url(self) -> None:
@@ -333,7 +376,7 @@ class HoldingsCategoryTests(unittest.TestCase):
             fund_url=IVV_URL,
             read_holdings_fn=read_holdings_fn,
             resolve_existing_assets_by_ticker_fn=lambda *, component_symbols: (
-                {"AAPL": 1, "MSFT": 2},
+                {"AAPL": uuid.uuid4(), "MSFT": uuid.uuid4()},
                 [],
                 [],
             ),
@@ -342,6 +385,132 @@ class HoldingsCategoryTests(unittest.TestCase):
         self.assertEqual(captured["identifier"], IVV_URL)
         self.assertEqual(captured["provider"], "ishares")
         self.assertEqual(plan.provider, "ishares")
+
+
+class MsmBoundaryTests(unittest.TestCase):
+    """Cover the ms-markets boundary in mainsequence_categories with msm mocked.
+
+    `_ensure_msm_started` is replaced so no real markets runtime is started, and
+    the lazily-imported msm calls are patched at their source modules (the lazy
+    `from msm... import ...` re-reads the patched attribute at call time).
+    """
+
+    def test_resolve_existing_assets_by_ticker_classifies_zero_one_many(self) -> None:
+        aapl_uid = uuid.uuid4()
+        msft_uid_1 = uuid.uuid4()
+        msft_uid_2 = uuid.uuid4()
+
+        snapshots_by_ticker = [
+            {"asset_identifier": "AAPL_ID", "ticker": "AAPL", "time_index": "2026-01-01T00:00:00Z"},
+            {"asset_identifier": "MSFT_ID_1", "ticker": "MSFT", "time_index": "2026-01-01T00:00:00Z"},
+            {"asset_identifier": "MSFT_ID_2", "ticker": "MSFT", "time_index": "2026-01-01T00:00:00Z"},
+        ]
+        latest_snapshots = [
+            {"asset_identifier": "AAPL_ID", "ticker": "AAPL", "time_index": "2026-05-01T00:00:00Z"},
+            {"asset_identifier": "MSFT_ID_1", "ticker": "MSFT", "time_index": "2026-05-01T00:00:00Z"},
+            {"asset_identifier": "MSFT_ID_2", "ticker": "MSFT", "time_index": "2026-05-01T00:00:00Z"},
+        ]
+        asset_rows = [
+            {"unique_identifier": "AAPL_ID", "uid": str(aapl_uid)},
+            {"unique_identifier": "MSFT_ID_1", "uid": str(msft_uid_1)},
+            {"unique_identifier": "MSFT_ID_2", "uid": str(msft_uid_2)},
+        ]
+
+        def fake_search_model(context, *, model, in_filters=None, **kwargs):
+            in_filters = in_filters or {}
+            name = model.__name__
+            if name == "AssetSnapshotsStorage" and "ticker" in in_filters:
+                return {"rows": snapshots_by_ticker}
+            if name == "AssetSnapshotsStorage" and "asset_identifier" in in_filters:
+                return {"rows": latest_snapshots}
+            if name == "AssetTable":
+                return {"rows": asset_rows}
+            return {"rows": []}
+
+        fake_runtime = SimpleNamespace(context=object())
+        with patch(
+            "etfhextractor.mainsequence_categories._ensure_msm_started",
+            return_value=fake_runtime,
+        ), patch("msm.repositories.crud.search_model", side_effect=fake_search_model):
+            existing, missing, ambiguous = resolve_existing_assets_by_ticker(
+                component_symbols=["AAPL", "MSFT", "NVDA"],
+            )
+
+        self.assertEqual(existing, {"AAPL": aapl_uid})
+        self.assertEqual(missing, ["NVDA"])
+        self.assertEqual(ambiguous, ["MSFT"])
+
+    def test_resolve_asset_identifiers_by_ticker_returns_unique_identifiers(self) -> None:
+        snapshots_by_ticker = [
+            {"asset_identifier": "AAPL_ID", "ticker": "AAPL", "time_index": "2026-01-01T00:00:00Z"},
+            {"asset_identifier": "MSFT_ID_1", "ticker": "MSFT", "time_index": "2026-01-01T00:00:00Z"},
+            {"asset_identifier": "MSFT_ID_2", "ticker": "MSFT", "time_index": "2026-01-01T00:00:00Z"},
+        ]
+        latest_snapshots = [
+            {"asset_identifier": "AAPL_ID", "ticker": "AAPL", "time_index": "2026-05-01T00:00:00Z"},
+            {"asset_identifier": "MSFT_ID_1", "ticker": "MSFT", "time_index": "2026-05-01T00:00:00Z"},
+            {"asset_identifier": "MSFT_ID_2", "ticker": "MSFT", "time_index": "2026-05-01T00:00:00Z"},
+        ]
+
+        def fake_search_model(context, *, model, in_filters=None, **kwargs):
+            in_filters = in_filters or {}
+            if model.__name__ == "AssetSnapshotsStorage" and "ticker" in in_filters:
+                return {"rows": snapshots_by_ticker}
+            if model.__name__ == "AssetSnapshotsStorage" and "asset_identifier" in in_filters:
+                return {"rows": latest_snapshots}
+            return {"rows": []}
+
+        fake_runtime = SimpleNamespace(context=object())
+        with patch(
+            "etfhextractor.mainsequence_categories._ensure_msm_started",
+            return_value=fake_runtime,
+        ), patch("msm.repositories.crud.search_model", side_effect=fake_search_model):
+            existing, missing, ambiguous = resolve_asset_identifiers_by_ticker(
+                component_symbols=["AAPL", "MSFT", "NVDA"],
+            )
+
+        self.assertEqual(existing, {"AAPL": "AAPL_ID"})
+        self.assertEqual(missing, ["NVDA"])
+        self.assertEqual(ambiguous, ["MSFT"])
+
+    def test_sync_holdings_asset_category_upserts_then_replaces(self) -> None:
+        category_uid = uuid.uuid4()
+        aapl_uid = uuid.uuid4()
+        msft_uid = uuid.uuid4()
+
+        category = SimpleNamespace(
+            uid=category_uid,
+            unique_identifier="HOLDINGS__IVV",
+            display_name="HOLDINGS__IVV",
+        )
+        memberships = [
+            SimpleNamespace(asset_uid=aapl_uid),
+            SimpleNamespace(asset_uid=msft_uid),
+        ]
+        asset_category_cls = Mock()
+        asset_category_cls.upsert.return_value = category
+        asset_category_cls.replace_memberships.return_value = memberships
+
+        with patch(
+            "etfhextractor.mainsequence_categories._ensure_msm_started",
+            return_value=SimpleNamespace(context=object()),
+        ), patch("msm.api.assets.AssetCategory", asset_category_cls):
+            result = sync_holdings_asset_category(
+                etf_ticker="ivv",
+                # duplicate uid to confirm de-duplication while preserving order
+                asset_uids=[aapl_uid, msft_uid, aapl_uid],
+            )
+
+        asset_category_cls.upsert.assert_called_once_with(
+            unique_identifier="HOLDINGS__IVV",
+            display_name="HOLDINGS__IVV",
+            description="Published holdings assets for ETF IVV.",
+        )
+        replace_kwargs = asset_category_cls.replace_memberships.call_args.kwargs
+        self.assertEqual(replace_kwargs["category_uid"], category_uid)
+        self.assertEqual(replace_kwargs["asset_uids"], [aapl_uid, msft_uid])
+        self.assertEqual(result.unique_identifier, "HOLDINGS__IVV")
+        self.assertEqual(result.asset_uids, [aapl_uid, msft_uid])
 
 
 if __name__ == "__main__":

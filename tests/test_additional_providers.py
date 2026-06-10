@@ -4,9 +4,9 @@ import io
 import unittest
 import zipfile
 
-from etfh_extractor.providers.invesco import InvescoHoldingsProvider
-from etfh_extractor.providers.state_street import StateStreetHoldingsProvider
-from etfh_extractor.providers.vanguard import VanguardHoldingsProvider
+from etfhextractor.providers.invesco import InvescoHoldingsProvider
+from etfhextractor.providers.state_street import StateStreetHoldingsProvider
+from etfhextractor.providers.vanguard import VanguardHoldingsProvider
 
 
 def _build_state_street_workbook() -> bytes:
