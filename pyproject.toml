@@ -4,14 +4,15 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "etfhextractor"
-version = "0.3.2"
+version = "0.3.4"
 description = "Extract ETF holdings weights from providers, sync MainSequence holdings categories, and publish ms-markets ETF-tracking portfolios."
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "certifi>=2024.2.2",
     "mainsequence>=3.18.17",
-    "ms-markets>=0.0.54",
+    "ms-markets>=0.0.58",
+    "pandas-market-calendars>=5.4.0",
 ]
 
 [project.scripts]

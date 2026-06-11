@@ -1,60 +1,107 @@
 # Library Scope
 
-This library does two things only:
+This library does three things, layered so each builds on the previous one:
 
 1. extract ETF holdings weights from supported providers
-2. register or refresh MainSequence holdings categories from already-registered assets
+2. register or refresh MainSequence `HOLDINGS__<ETF>` asset categories from those holdings
+   (FIGI-registering missing components on demand — ADR 0004)
+3. publish an ms-markets **ETF-tracking portfolio** driven by a custom holdings signal
+   (ADRs 0003 / 0005 / 0006)
 
-Everything else in the package exists only to support those two responsibilities.
+Everything else in the package exists only to support those responsibilities.
 
 ## Layout
 
 ```text
 etfhextractor/
-  __init__.py
-  __main__.py
+  __init__.py                 # public exports (extraction + categories + FIGI registration)
+  __main__.py                 # python -m etfhextractor -> CLI
   _version.py
-  artifacts.py
+  artifacts.py                # debug evidence persistence (data/temp/)
+  asset_registration.py       # FIGI-only smart asset registration (ADR 0004)
+  cli/                        # etfh subcommands + legacy etfh-read parser
   exceptions.py
-  mainsequence_categories.py
-  models.py
-  providers/
-  reader.py
-  settings.py
+  mainsequence_categories.py  # snapshot-layer resolution + category sync (msm)
+  markets_models.py           # project-owned ms-markets tables (extension convention)
+  models.py                   # FundHoldings / Holding
+  portfolio_publish.py        # calendar + Portfolio row + PortfoliosDataNode wiring
+  portfolio_signal.py         # ETFHoldingsSignal (custom SignalWeights) + session-grid stamps
+  providers/                  # provider-specific extraction code
+  reader.py                   # ETFHoldingsReader
+  settings.py                 # provider normalization and input rules
+etfhextractor_migrations/     # SDK migration provider for the project-owned tables
 ```
 
 ## Public API
 
 ```python
 from etfhextractor import (
-    ETFHoldingsReader,
-    FundHoldings,
-    Holding,
-    build_holdings_asset_category_plan,
-    extract_ticker_weights,
+    # extraction
+    ETFHoldingsReader, FundHoldings, Holding, SUPPORTED_PROVIDERS,
+    extract_ticker_weights, extract_many_ticker_weights, extract_ticker_weights_for_ticker,
+    # holdings -> components (shared by categories and the signal)
+    derive_component_weights_from_holdings, derive_component_symbols_from_holdings,
+    infer_holdings_component_provider,
+    # snapshot-layer resolution
+    resolve_asset_identifiers_by_ticker, resolve_existing_assets_by_ticker,
+    # category sync
+    HOLDINGS_ASSET_CATEGORY_PREFIX, HoldingsAssetCategoryPlan, AssetCategorySyncResult,
+    build_holdings_asset_category_plan, build_holdings_asset_category_unique_identifier,
     sync_holdings_asset_category,
+    # FIGI registration (ADR 0004)
+    FigiAssetRegistrationResult, FigiRegistrationError, register_equity_assets_from_tickers,
+    # exceptions
+    ETFHoldingsError, FetchError, DownloadLinkNotFoundError, WorkbookParseError,
+    UnsupportedProviderError,
 )
 ```
 
-The package exposes two public surfaces:
+The **portfolio surface is deliberately not exported from `__init__`** (pure extraction never
+imports the msm_portfolios stack); import it explicitly:
 
-- Extraction:
-  `ETFHoldingsReader`, `extract_ticker_weights(...)`, `extract_many_ticker_weights(...)`, `extract_ticker_weights_for_ticker(...)`
-- Category registration:
-  `build_holdings_asset_category_plan(...)`, `sync_holdings_asset_category(...)`
+```python
+from etfhextractor.portfolio_publish import (
+    publish_etf_tracking_portfolio, ensure_trading_calendar,
+    build_etf_tracker_unique_identifier, start_portfolio_engine,
+    US_EQUITY_CALENDAR_KEY, PRICE_SOURCE_TABLE_UID_ENV,
+)
+from etfhextractor.portfolio_signal import (
+    ETFHoldingsSignal, ETFHoldingsSignalConfig, previous_session_close,
+    ALWAYS_OPEN_CALENDAR_KEYS, VALIDITY_HEADROOM_DAYS,
+)
+```
 
 ## CLI Commands
 
-The CLI now exposes one command path per surface:
+One command path per surface (`etfh --help` for the live reference; `--compact` prints compact
+JSON, `--timeout` sets the HTTP timeout on every command):
 
-- Extraction from URL:
-  `etfh extract-url <fund-url> [<fund-url> ...]`
-- Extraction from ticker plus provider:
-  `etfh extract-ticker --provider <provider> --ticker <ticker> [--ticker <ticker> ...]`
-- Category sync:
-  `etfh category-sync --ticker <etf-ticker> --fund-url <fund-url>`
+- **Extraction from URL** — `etfh extract-url <fund-url> [...] [--format weights|full]`
+- **Extraction from ticker + provider** —
+  `etfh extract-ticker --provider <provider> --ticker <ticker> [--ticker ...] [--format weights|full]`
+- **Category sync** —
+  `etfh category-sync --ticker <etf> (--fund-url <url> | --provider <provider>)
+  [--register-missing] [--figi-filter '<json>' ...]`
+  `--register-missing` FIGI-registers unresolved components first (re-plans with the cached
+  holdings, no re-extraction); repeatable `--figi-filter` narrows OpenFIGI per ticker or aliases
+  a provider ticker (`'{"ticker": "BRKB", "figi_ticker": "BRK/B"}'`).
+- **Portfolio publish** —
+  `etfh portfolio-publish --ticker <etf> (--fund-url <url> | --provider <provider>)`
+  with:
+  - `--price-source-table-uid <uid>` — registered bars table with `close`+`volume`
+    (default: `ETFH_PORTFOLIO_PRICE_SOURCE_TABLE_UID`)
+  - `--portfolio-name <name>` — display name (default `ETF Tracker <TICKER>`)
+  - `--calendar-key <key>` — trading calendar (default `NYSE`); persisted via the msm util and
+    attached to the Portfolio row by FK
+  - `--backtest-start-days <n>` — first-observation backtest window (default `60`; `0` disables)
+  - `--signal-validity-days <n>` — forward-fill validity (default `90`; must exceed the backtest
+    window by ≥ 5 days of headroom)
+  - `--min-update-interval-days <f>` — signal insert throttle (default `1.0`)
+  - `--register-missing` / `--figi-filter '<json>'` — as in category-sync
+  - `--no-run` — wire and register without running the data nodes
 
-`etfh-read` still works as the legacy extraction entrypoint. `etfh` is the broader CLI surface.
+`etfh-read <url>` still works as the legacy extraction entrypoint
+(`python -m etfhextractor --provider <p> --ticker <t>` is its module form).
 
 ### CLI Response Examples
 
@@ -91,7 +138,10 @@ etfh category-sync --ticker IVV --fund-url https://www.ishares.com/us/products/2
   "plan": {
     "category_unique_identifier": "HOLDINGS__IVV",
     "component_symbols": ["AAPL", "MSFT"],
-    "existing_asset_ids_by_symbol": {"AAPL": 101, "MSFT": 102},
+    "existing_asset_uids_by_symbol": {
+      "AAPL": "0f2f3f7a-6e1c-4b62-9a51-3f4d2f9b1c10",
+      "MSFT": "7c9e2d44-8b1a-4f3e-bb02-91d34e7a55fe"
+    },
     "missing_registered_symbols": [],
     "ambiguous_registered_symbols": [],
     "has_blockers": false
@@ -100,7 +150,7 @@ etfh category-sync --ticker IVV --fund-url https://www.ishares.com/us/products/2
   "sync_result": {
     "unique_identifier": "HOLDINGS__IVV",
     "display_name": "HOLDINGS__IVV",
-    "asset_ids": [101, 102]
+    "asset_uids": ["0f2f3f7a-6e1c-4b62-9a51-3f4d2f9b1c10", "7c9e2d44-8b1a-4f3e-bb02-91d34e7a55fe"]
   }
 }
 ```
@@ -196,23 +246,23 @@ plan = build_holdings_asset_category_plan(
 )
 print(plan.category_unique_identifier)
 print(plan.component_symbols)
-print(plan.existing_asset_ids_by_symbol)
+print(plan.existing_asset_uids_by_symbol)
 print(plan.missing_registered_symbols)
 print(plan.ambiguous_registered_symbols)
 
 if not plan.has_blockers():
     sync_result = sync_holdings_asset_category(
         etf_ticker="IVV",
-        asset_ids=list(plan.existing_asset_ids_by_symbol.values()),
+        asset_uids=list(plan.existing_asset_uids_by_symbol.values()),
     )
-    print(sync_result.asset_ids)
+    print(sync_result.asset_uids)
 ```
 
 ```json
 {
-  "category_unique_identifier": "HOLDINGS__IVV",
+  "unique_identifier": "HOLDINGS__IVV",
   "display_name": "HOLDINGS__IVV",
-  "asset_ids": [101, 102]
+  "asset_uids": ["0f2f3f7a-6e1c-4b62-9a51-3f4d2f9b1c10", "7c9e2d44-8b1a-4f3e-bb02-91d34e7a55fe"]
 }
 ```
 
@@ -234,7 +284,10 @@ if plan.has_blockers():
 {
   "category_unique_identifier": "HOLDINGS__IVV",
   "component_symbols": ["AAPL", "MSFT", "NVDA"],
-  "existing_asset_ids_by_symbol": {"AAPL": 101, "MSFT": 102},
+  "existing_asset_uids_by_symbol": {
+    "AAPL": "0f2f3f7a-6e1c-4b62-9a51-3f4d2f9b1c10",
+    "MSFT": "7c9e2d44-8b1a-4f3e-bb02-91d34e7a55fe"
+  },
   "missing_registered_symbols": ["NVDA"],
   "ambiguous_registered_symbols": []
 }
@@ -259,6 +312,31 @@ ms-markets portfolio that tracks an ETF (implementation task 0002, ADR 0003):
   price-source table (`APIDataNode.build_from_table_uid`; pass the uid or set
   `ETFH_PORTFOLIO_PRICE_SOURCE_TABLE_UID`) into `PortfoliosDataNode`, resolving portfolio
   identity through the `Portfolio` row alone — its `unique_identifier` keys all portfolio storage; `PortfolioIndex` is only an optional published-index reference (`Portfolio.published_index_uid`, ms-markets >= 0.0.54) and is never created or relied on here. CLI: `etfh portfolio-publish`.
+- **Signal identity is definition-scoped** (ticker/source/normalization/validity — see
+  [ADR 0005](adr/0005-tracking-signal-identity-is-definition-scoped.md)):
+  `ETFHoldingsSignalConfig.asset_list` is updater scope for the 0.0.54 preflight
+  `get_asset_list()` requirement and is neutralized in the `signal_uid` payload, so composition
+  changes never rotate the series. Signal descriptions are plain text.
+- ms-markets >= 0.0.54 pinnings handled by `publish_etf_tracking_portfolio`: portfolio identity
+  set on both resolution paths (`target_portfolio` + `_explicit_portfolio_identifier`), and the
+  resolved component identifiers always supplied as the signal's preflight scope.
+- **Trading calendar — obligatory** ([ADR 0006](adr/0006-trading-calendar-and-backtest-bootstrap.md)):
+  ms-markets >= 0.0.58 requires every Portfolio row to reference a persisted Calendar
+  (`calendar_uid` NOT NULL FK, `ondelete=RESTRICT`; the legacy `calendar_name` field is gone).
+  `calendar_key` defaults to `NYSE` for US ETFs. `ensure_trading_calendar()` persists it through
+  the msm util `Calendar.create_from_pandas_calendar` (Calendar + CalendarDate/CalendarSession
+  rows generated from pandas_market_calendars) and reuses a covering row with zero writes;
+  always-open keys ("24/7") persist an always-open Calendar row for the FK. Portfolio valuations
+  therefore land on real session closes — never weekends/holidays.
+- **Session-grid observations + backtest bootstrap** (ADR 0006): every signal observation is
+  stamped on a `calendar_key` market close (as-of date => that day's close; provider lag =>
+  latest completed close; one observation per session) — never at insertion wall-clock times.
+  `backtest_start_days` (default 60) stamps the first observation on the close at/before
+  `now - 60d` so the first run backtests that window; later runs never backdate. The validator
+  enforces `signal_validity_days >= backtest_start_days + 5` headroom (defaults 90/60), and
+  numerically unchanged weights are re-stamped before validity expires so stable compositions
+  never starve the portfolio forward-fill. Knobs on the CLI: `--calendar-key`,
+  `--backtest-start-days`, `--signal-validity-days`.
 - These modules are not imported by `etfhextractor.__init__`, so pure extraction never loads
   the portfolio stack.
 
@@ -288,9 +366,9 @@ This project owns exactly **one** ms-markets MetaTable, defined in
 - `DemoBarsStorage` — logical id `etfhextractor.DemoBarsTS`, physical table
   `etfhextractor_markets__demobarsts`. Demo `close`/`volume` bars keyed by
   `(time_index, asset_identifier)` with the canonical FK to `AssetTable.unique_identifier`,
-  published by the example's `--demo-prices` mode through the thin `DemoBars`
-  (`AssetTimestampedDataNode`) node so the ETF-tracking portfolio can run end-to-end without an
-  external market-data feed. It must be migrated/registered by the SDK migration provider before
+  published by the example's default self-sufficient mode (no external price table given)
+  through the thin `DemoBars` (`AssetTimestampedDataNode`) node — bars land on the NYSE session
+  closes — so the ETF-tracking portfolio can run end-to-end without an external market-data feed. It must be migrated/registered by the SDK migration provider before
   writes, like any other table.
 
 Its migrations are owned by the project's SDK migration provider
@@ -305,7 +383,8 @@ python -m mainsequence migrations upgrade  --provider etfhextractor_migrations:m
 ```
 
 `examples/prepare_demo_bars_schema.py` wraps that find-or-generate → upgrade → verify flow (the
-full workflow runs it automatically under `--demo-prices`).
+full workflow runs it automatically on the default self-sufficient run; skip with
+`--skip-schema-prep`).
 
 Everything else goes through built-in `msm` / `msm_portfolios` models (the holdings signal uses
 the canonical `SignalWeightsStorage`, dimensioned by `signal_uid`). Built-in tables are used

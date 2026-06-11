@@ -229,6 +229,65 @@ The SDK migration provider must have registered these MetaTables first (same rul
 3. **Re-extraction cadence** — manual CLI runs first; a scheduled job (platform orchestration
    skill) can be a later follow-up.
 
+## 5.5 Live-validation findings (ms-markets 0.0.54) — all implemented
+
+The first live runs surfaced four contracts that now shape the implementation:
+
+1. **Preflight asset scope is mandatory on first runs.** `PortfoliosDataNode` derives the
+   price-source update window from the signal's `get_asset_list()` when no previous weights
+   exist. `ETFHoldingsSignalConfig.asset_list` carries the resolved component identifiers
+   (supplied by the publish preflight or the `asset_identifiers` parameter); publish fails fast
+   with a clear message if no scope can be resolved.
+2. **Signal identity is definition-scoped** ([ADR 0005](../adr/0005-tracking-signal-identity-is-definition-scoped.md)):
+   `asset_list` is updater scope and is neutralized in the `signal_uid` payload
+   (`_signal_uid_payload`), so rebalances/composition changes never rotate the series, reset the
+   insert guards, or churn the portfolio configuration hash. Pinned by a `compute_signal_uid`
+   invariance test.
+3. **Portfolio identity must be pinned on both paths.** `run()` resolves identity from
+   `node.target_portfolio`, but `update()`'s values normalizer reads
+   `_explicit_portfolio_identifier` and otherwise demands an external `portfolio_resolver`;
+   publish sets both to the same `etf_tracker_<ticker>` identity so no resolver is needed.
+4. **Request economy.** Registration resolves smartly (ADR 0004 rule 3) and snapshot publication
+   uses `BatchVerifiedAssetSnapshot` (duplicate-key verification in ONE batched read — plain
+   `AssetSnapshot` issues one read per row, ~503 sequential reads for an ETF universe).
+   Registration logs progress through the platform logger: mapping counts, registry-check split
+   (already registered / to create / snapshots to publish), per-chunk creation percentages, and
+   snapshot-publication markers.
+
+## 5.6 Trading calendar and backtest bootstrap ([ADR 0006](../adr/0006-trading-calendar-and-backtest-bootstrap.md))
+
+The portfolio index is the calendar's session closes, so a US ETF must follow the US trading
+calendar — the original `"24/7"` key valued the tracker at midnight UTC every day including
+weekends/holidays, and the Portfolio row carried no calendar linkage:
+
+1. **Persisted NYSE calendar (default).** `ensure_trading_calendar()` persists the calendar
+   through the msm util `Calendar.create_from_pandas_calendar` (typed `Calendar` row +
+   `CalendarDate`/`CalendarSession` rows from pandas_market_calendars) and reuses a covering row
+   with zero writes; the rebalancer's `resolve_rebalance_calendar` resolves the same key into the
+   persisted sessions (`PersistedCalendarSchedule`).
+2. **Calendar attached by FK — and obligatory.** ms-markets >= 0.0.58 makes the calendar a
+   hard requirement of the portfolio architecture: `PortfolioTable.calendar_uid` is a NOT NULL FK
+   to `CalendarTable.uid` (`ondelete=RESTRICT`), the typed payloads require it, the legacy
+   `calendar_name` field was removed, and `run()`'s pointer update refuses rows without it.
+   `Portfolio.upsert(..., calendar_uid=calendar.uid)`; always-open keys ("24/7") persist an
+   always-open Calendar row for the FK while the rebalancer keeps resolving them synthetically.
+3. **60-day backtest window.** `backtest_start_days` (default 60) stamps the signal's first
+   observation on the session close at/before `now - 60d`; runs with existing history never
+   backdate. The config validator enforces `signal_validity_days >= backtest_start_days + 5`
+   (defaults 90/60) because weights forward-fill at most `maximum_forward_fill()` past an
+   observation and the portfolio index reaches one session past "now" — equality ships a
+   pre-expired bootstrap. This resolves open question 2 (§5): validity defaults to 90d.
+3b. **Observations on the session grid + refresh heartbeat (live-run findings).** Signal
+   observations are stamped on `calendar_key` market closes — as-of date => that day's close,
+   provider lag => latest completed close, one observation per session — never at insertion
+   wall-clock times (a Saturday 20:43:12 stamp made validity arithmetic depend on the run's
+   start minute). Guard (b) re-stamps numerically unchanged weights when the last observation
+   approaches validity expiry, so stable compositions can never starve the portfolio's
+   forward-fill.
+4. **Example alignment.** Demo bars are published on the same NYSE session closes, so the price
+   index and the valuation index match exactly; `--calendar-key` / `--backtest-start-days` are
+   exposed on the CLI and the example.
+
 ## 6. Sequencing
 
 1. W-1 (resolver refactor, non-breaking) → W-2 (signal) with W-4 tests → W-3 (publish wiring) →

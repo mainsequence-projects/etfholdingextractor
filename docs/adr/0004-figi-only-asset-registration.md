@@ -87,4 +87,9 @@ Main Sequence secret.
 - ADR 0002's non-goal is narrowed, not removed: this project registers **ETF component equities
   via FIGI only**. Broader asset-master ownership, non-equity registration workflows, and FIGI
   re-mastering remain out of scope.
+- Snapshot publication goes through `BatchVerifiedAssetSnapshot`
+  (`etfhextractor/markets_models.py`): msm's `AssetSnapshot` verifies duplicate keys with one
+  backend read **per row** (hundreds of sequential reads for an ETF universe); the override keeps
+  identical semantics in ONE batched read. Registration reports progress through the platform
+  logger (mapping counts, registry-check split, per-chunk creation percentages, snapshot markers).
 - The runtime model lists now include `OpenFigiAssetDetailsTable`.

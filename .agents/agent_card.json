@@ -1,7 +1,7 @@
 {
   "name": "etfholdingextractor-161",
-  "description": "Agent for extracting ETF holdings weights from supported providers and planning or syncing MainSequence holdings categories through the repository CLI and library surfaces.",
-  "version": "0.3.0",
+  "description": "Agent for extracting ETF holdings weights from supported providers, planning or syncing MainSequence HOLDINGS__<ETF> asset categories (FIGI-registering missing components on demand), and publishing ms-markets ETF-tracking portfolios through the repository CLI and library surfaces.",
+  "version": "0.3.3",
   "supportedInterfaces": [],
   "provider": {
     "organization": "",
@@ -41,11 +41,29 @@
     {
       "id": "holdings_category_sync",
       "name": "Holdings Category Sync",
-      "description": "Build or sync a MainSequence holdings asset category from ETF holdings extracted by this repository.",
+      "description": "Build or sync a MainSequence holdings asset category from extracted ETF holdings, FIGI-registering missing components on demand (ADR 0004: FIGI-keyed, unique ticker-to-FIGI mappings only).",
       "tags": [],
       "examples": [
         "Build a holdings category plan for IVV.",
-        "Sync the HOLDINGS__IVV category from extracted holdings."
+        "Sync the HOLDINGS__IVV category from extracted holdings.",
+        "FIGI-register the missing IVV components and re-sync the category."
+      ],
+      "inputModes": [
+        "application/json"
+      ],
+      "outputModes": [
+        "application/json"
+      ]
+    },
+    {
+      "id": "etf_tracking_portfolio",
+      "name": "ETF-Tracking Portfolio",
+      "description": "Publish an ms-markets portfolio that tracks an ETF: a guarded holdings signal (session-close observations, daily throttle, change-only inserts with validity re-stamp) wired into PortfoliosDataNode with a persisted trading calendar attached to the Portfolio row by FK and a 60-day backtest bootstrap.",
+      "tags": [],
+      "examples": [
+        "Publish an IVV tracking portfolio with the NYSE calendar.",
+        "Run the self-sufficient IVV tracking-portfolio example end to end.",
+        "Re-run the tracker and verify portfolio values and weights on the platform."
       ],
       "inputModes": [
         "application/json"

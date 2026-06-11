@@ -182,14 +182,35 @@ def build_subcommand_parser() -> argparse.ArgumentParser:
     portfolio_publish_parser.add_argument(
         "--signal-validity-days",
         type=int,
-        default=30,
-        help="How long signal weights stay valid for forward-fill.",
+        default=90,
+        help=(
+            "How long signal weights stay valid for forward-fill (must exceed "
+            "--backtest-start-days by at least 5 days of headroom)."
+        ),
     )
     portfolio_publish_parser.add_argument(
         "--min-update-interval-days",
         type=float,
         default=1.0,
         help="Minimum days between signal insertions (daily throttle guard).",
+    )
+    portfolio_publish_parser.add_argument(
+        "--calendar-key",
+        default="NYSE",
+        help=(
+            "Trading calendar for the rebalance schedule and the Portfolio row's "
+            "calendar FK (default NYSE for US ETFs). Persisted from "
+            "pandas_market_calendars via the ms-markets calendar util."
+        ),
+    )
+    portfolio_publish_parser.add_argument(
+        "--backtest-start-days",
+        type=int,
+        default=60,
+        help=(
+            "Backdate the signal's first observation this many days so the portfolio "
+            "backtests that window (0 disables backdating)."
+        ),
     )
     portfolio_publish_parser.add_argument(
         "--no-run",
@@ -367,6 +388,8 @@ def _run_subcommand(
             portfolio_name=args.portfolio_name,
             signal_validity_days=args.signal_validity_days,
             min_update_interval_days=args.min_update_interval_days,
+            calendar_key=args.calendar_key,
+            backtest_start_days=args.backtest_start_days,
             timeout=args.timeout,
             run=not args.no_run,
             register_missing=args.register_missing,

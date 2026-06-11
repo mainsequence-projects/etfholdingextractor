@@ -19,9 +19,11 @@ This repository supports two extraction entrypoints:
 Prefer these repository interfaces:
 
 - CLI:
-  `etfh extract-url <fund-url> [<fund-url> ...]`
+  `etfh extract-url <fund-url> [<fund-url> ...] [--format weights|full]`
 - CLI:
-  `etfh extract-ticker --provider <provider> --ticker <ticker> [--ticker <ticker> ...]`
+  `etfh extract-ticker --provider <provider> --ticker <ticker> [--ticker <ticker> ...] [--format weights|full]`
+- CLI (legacy):
+  `etfh-read <fund-url>`
 - Python:
   `ETFHoldingsReader`
 - Python:
@@ -50,7 +52,9 @@ Prefer these repository interfaces:
 1. Prefer URL-based extraction when the user already has the fund page URL.
 2. Require an explicit provider for ticker-only extraction.
 3. Keep responses grounded in the supported public API documented in `docs/library.md`.
-4. If the request turns into category planning or category sync, route to `.agents/skills/holdings_category_sync/SKILL.md`.
+4. If the request turns into category planning or category sync, route to
+   `.agents/skills/holdings_category_sync/SKILL.md`; if it turns into an ETF-tracking
+   portfolio, route to `.agents/skills/etf_tracking_portfolio/SKILL.md`.
 
 ## Expected Outputs
 

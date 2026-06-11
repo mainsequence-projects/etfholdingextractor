@@ -30,14 +30,21 @@ migration provider. The flag-free run does everything else itself:
 5.5. Publish deterministic demo bars into `DemoBarsTS`
    (`etfhextractor/markets_models.py`, extension-mixin convention, logical id
    `etfhextractor.DemoBarsTS`) and use that DataNode as the portfolio
-   price source — no external market-data feed required.
+   price source — no external market-data feed required. Bars land on the
+   **NYSE session closes** (pandas_market_calendars), aligned with the
+   portfolio's valuation index.
 6. Publish the tracking portfolio: the `ETFHoldingsSignal` (insert at most once per day,
    only on weight changes) wired into `PortfoliosDataNode` with the price source —
    demo bars by default, or a registered table when `--price-source-table-uid` /
    `ETFH_PORTFOLIO_PRICE_SOURCE_TABLE_UID` is given; or run the signal node alone
-   with `--signal-only`.
+   with `--signal-only`. A US ETF follows the US trading calendar: the NYSE
+   calendar is persisted as ms-markets Calendar/CalendarSession rows (msm util
+   `Calendar.create_from_pandas_calendar`) and attached to the Portfolio row by
+   FK (`calendar_uid`), so valuations land on real session closes only. The
+   signal's first observation is backdated `--backtest-start-days` (default 60)
+   so the portfolio backtests that window before live tracking takes over.
 7. Verify by reading back the platform rows: signal weights, portfolio values,
-   portfolio weights, and the `Portfolio` / `Index` identity rows.
+   portfolio weights, and the `Portfolio` identity row (including its calendar FK).
 
 For isolated sandboxes set `MSM_AUTO_REGISTER_NAMESPACE` before running.
 
@@ -68,6 +75,7 @@ from etfhextractor import (
 from etfhextractor.models import FundHoldings
 from etfhextractor.portfolio_publish import (
     PRICE_SOURCE_TABLE_UID_ENV,
+    US_EQUITY_CALENDAR_KEY,
     build_etf_tracker_unique_identifier,
     publish_etf_tracking_portfolio,
     start_portfolio_engine,
@@ -126,9 +134,24 @@ def _register_missing_assets_via_figi(
     return registration.summary()
 
 
+def _trading_session_closes(*, calendar_key: str, days: int) -> list[Any]:
+    """Session-close timestamps for the past `days` days from pandas_market_calendars."""
+    import datetime as dt
+
+    import pandas_market_calendars as mcal
+
+    end = dt.datetime.now(dt.UTC).date()
+    start = end - dt.timedelta(days=days)
+    schedule = mcal.get_calendar(calendar_key).schedule(
+        start_date=start.isoformat(), end_date=end.isoformat()
+    )
+    return [close.to_pydatetime() for close in schedule["market_close"]]
+
+
 def _publish_demo_bars(
     *,
     asset_identifiers: list[str],
+    calendar_key: str,
     days: int = 180,
 ) -> Any:
     """Publish deterministic demo bars into the project-owned `DemoBarsTS` table.
@@ -138,26 +161,31 @@ def _publish_demo_bars(
     `etfhextractor.DemoBarsTS`); it must be migrated/registered
     by the SDK migration provider before this write. Bars carry `close` and
     `volume` (the columns the rebalance logic consumes), one row per
-    (day, asset), deterministic per identifier so re-runs are stable.
+    (session close, asset) on the SAME trading calendar the portfolio is
+    scheduled on — so the valuation index and the price index align exactly,
+    with no rows on weekends or holidays. Prices are deterministic per
+    identifier so re-runs are stable.
     """
-    import datetime as dt
     import hashlib
 
     from etfhextractor.markets_models import DemoBars
 
-    end = dt.datetime.now(dt.UTC).replace(hour=0, minute=0, second=0, microsecond=0)
+    session_closes = _trading_session_closes(calendar_key=calendar_key, days=days)
+    if not session_closes:
+        raise RuntimeError(
+            f"No {calendar_key} sessions found in the last {days} days; cannot publish demo bars."
+        )
     rows: list[dict[str, Any]] = []
     for identifier in asset_identifiers:
         digest = int(hashlib.sha1(identifier.encode("utf-8")).hexdigest()[:8], 16)
         base_price = 50.0 + (digest % 100)
         daily_drift = ((digest % 7) - 3) * 1e-4
-        for day_offset in range(days, -1, -1):
-            day_index = days - day_offset
+        for session_index, session_close in enumerate(session_closes):
             rows.append(
                 {
-                    "time_index": end - dt.timedelta(days=day_offset),
+                    "time_index": session_close,
                     "asset_identifier": identifier,
-                    "close": round(base_price * (1.0 + daily_drift * day_index), 6),
+                    "close": round(base_price * (1.0 + daily_drift * session_index), 6),
                     "volume": 1_000_000.0,
                 }
             )
@@ -168,8 +196,8 @@ def _publish_demo_bars(
         raise RuntimeError("DemoBars update failed while publishing demo prices.")
     _log(
         "prices",
-        f"Published {len(rows)} demo bars for {len(asset_identifiers)} assets "
-        "into etfhextractor.DemoBarsTS.",
+        f"Published {len(rows)} demo bars ({len(session_closes)} {calendar_key} session "
+        f"closes x {len(asset_identifiers)} assets) into etfhextractor.DemoBarsTS.",
     )
     return bars_node
 
@@ -272,6 +300,8 @@ def run_full_workflow(
     with_category_sync: bool = False,
     register_missing_assets: bool = True,
     figi_disambiguation_filters: list[dict[str, Any]] | None = None,
+    calendar_key: str = US_EQUITY_CALENDAR_KEY,
+    backtest_start_days: int = 60,
     timeout: float = 30.0,
 ) -> dict[str, Any]:
     etf_ticker = etf_ticker.strip().upper()
@@ -419,10 +449,17 @@ def run_full_workflow(
     #      extension convention) so the portfolio pipeline has a price source.
     demo_bars_node = None
     if use_demo_prices:
-        demo_bars_node = _publish_demo_bars(asset_identifiers=sorted(existing.values()))
+        demo_bars_node = _publish_demo_bars(
+            asset_identifiers=sorted(existing.values()),
+            calendar_key=calendar_key,
+            # Cover the backtest window with margin so the first portfolio run
+            # has prices for every backdated session.
+            days=max(180, backtest_start_days + 60),
+        )
         summary["demo_prices"] = {
             "storage": "etfhextractor.DemoBarsTS",
             "asset_count": len(existing),
+            "calendar_key": calendar_key,
         }
 
     # 6. Signal (+ portfolio) publication.
@@ -438,13 +475,28 @@ def run_full_workflow(
         summary["signal"] = signal_result
         signal_uid = signal_result["signal_uid"]
     else:
-        _log("portfolio", "Publishing the ETF-tracking portfolio pipeline...")
+        _log(
+            "portfolio",
+            f"Publishing the ETF-tracking portfolio pipeline ({calendar_key} trading "
+            f"calendar attached by FK; {backtest_start_days}-day backtest window)...",
+        )
         publish_result = publish_etf_tracking_portfolio(
             etf_ticker=etf_ticker,
             provider=provider,
             fund_url=fund_url,
             price_source_table_uid=price_source_table_uid,
             price_source_instance=demo_bars_node,
+            # Updater scope for the signal's preflight get_asset_list() — already
+            # resolved in steps 3/4, so publish does not re-extract.
+            asset_identifiers=sorted(existing.values()),
+            # US ETF => persisted US trading calendar (Calendar row + sessions
+            # from pandas_market_calendars) drives the rebalance schedule and is
+            # attached to the Portfolio row (calendar_uid FK).
+            calendar_key=calendar_key,
+            # Backtest: the signal's first observation is backdated this many
+            # days, so the portfolio values the window [now - N, now] instead of
+            # starting at the publish time.
+            backtest_start_days=backtest_start_days,
             timeout=timeout,
             run=True,
         )
@@ -523,6 +575,24 @@ def main(argv: list[str] | None = None) -> int:
             'to its OpenFIGI symbol: \'{"ticker": "BRKB", "figi_ticker": "BRK/B"}\'.'
         ),
     )
+    parser.add_argument(
+        "--calendar-key",
+        default=US_EQUITY_CALENDAR_KEY,
+        help=(
+            "Trading calendar for the portfolio (default NYSE for US ETFs). Persisted "
+            "as ms-markets Calendar/CalendarSession rows from pandas_market_calendars "
+            "and attached to the Portfolio row by FK."
+        ),
+    )
+    parser.add_argument(
+        "--backtest-start-days",
+        type=int,
+        default=60,
+        help=(
+            "Backdate the signal's first observation this many days so the portfolio "
+            "backtests that window (default 60; 0 starts at the provider as-of date)."
+        ),
+    )
     parser.add_argument("--timeout", type=float, default=30.0, help="HTTP timeout seconds.")
     args = parser.parse_args(argv)
 
@@ -540,6 +610,8 @@ def main(argv: list[str] | None = None) -> int:
         figi_disambiguation_filters=(
             [json.loads(raw) for raw in args.figi_filters] if args.figi_filters else None
         ),
+        calendar_key=args.calendar_key,
+        backtest_start_days=args.backtest_start_days,
         timeout=args.timeout,
     )
     print(json.dumps(summary, indent=2, sort_keys=True, default=str))

@@ -34,6 +34,8 @@ colorama==0.4.6 ; sys_platform == 'win32'
     #   typer
 concurrent-log-handler==0.9.29
     # via mainsequence
+exchange-calendars==4.13.2
+    # via pandas-market-calendars
 fastapi==0.136.3
     # via ms-markets
 googleapis-common-protos==1.75.0
@@ -50,7 +52,9 @@ idna==3.18
     # via
     #   anyio
     #   requests
-mainsequence==4.3.18
+korean-lunar-calendar==0.3.1
+    # via exchange-calendars
+mainsequence==4.3.19
     # via
     #   etfhextractor
     #   ms-markets
@@ -62,10 +66,11 @@ markupsafe==3.0.3
     # via mako
 mdurl==0.1.2
     # via markdown-it-py
-ms-markets==0.0.55
+ms-markets==0.0.60
     # via etfhextractor
 numpy==2.4.6
     # via
+    #   exchange-calendars
     #   mainsequence
     #   ms-markets
     #   pandas
@@ -100,8 +105,12 @@ opentelemetry-semantic-conventions==0.63b1
     # via opentelemetry-sdk
 pandas==3.0.3
     # via
+    #   exchange-calendars
     #   mainsequence
     #   ms-markets
+    #   pandas-market-calendars
+pandas-market-calendars==5.4.0
+    # via etfhextractor
 pip==26.1.2
     # via ms-markets
 portalocker==3.2.0
@@ -125,6 +134,8 @@ pydantic-core==2.46.4
     # via pydantic
 pygments==2.20.0
     # via rich
+pyluach==2.3.0
+    # via exchange-calendars
 python-dateutil==2.9.0.post0
     # via pandas
 pytz==2026.2
@@ -157,6 +168,8 @@ starlette==1.2.1
     # via fastapi
 structlog==26.1.0
     # via mainsequence
+toolz==1.1.0
+    # via exchange-calendars
 tqdm==4.68.2
     # via mainsequence
 typer==0.26.7
@@ -181,8 +194,10 @@ typing-inspection==0.4.2
     # via
     #   fastapi
     #   pydantic
-tzdata==2026.2 ; sys_platform == 'emscripten' or sys_platform == 'win32'
-    # via pandas
+tzdata==2026.2
+    # via
+    #   exchange-calendars
+    #   pandas
 urllib3==2.7.0
     # via
     #   mainsequence
