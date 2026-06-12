@@ -58,8 +58,8 @@ Prefer these repository interfaces:
    candidates (`format_failures()` / `FigiRegistrationError`); never bypass them.
 4. Do not present a category as synced when the plan still has blockers.
 5. If the user only needs holdings or weights, route back to
-   `.agents/skills/weights_extraction/SKILL.md`; if they want a portfolio that tracks the ETF,
-   route to `.agents/skills/etf_tracking_portfolio/SKILL.md`.
+   `.agents/skills/weights_extraction/SKILL.md`; if they want the tracking signal (or its
+   ms-markets portfolio assembly), route to `.agents/skills/etf_holdings_signal/SKILL.md`.
 
 ## Expected Outputs
 

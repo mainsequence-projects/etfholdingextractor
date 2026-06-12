@@ -4,10 +4,26 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "etfhextractor"
-version = "0.3.4"
-description = "Extract ETF holdings weights from providers, sync MainSequence holdings categories, and publish ms-markets ETF-tracking portfolios."
+version = "0.3.5"
+description = "Extract ETF holdings weights from providers, sync MainSequence holdings categories, and provide an ETF-holdings tracking signal for the ms-markets portfolio pipeline."
 readme = "README.md"
 requires-python = ">=3.11"
+license = { file = "LICENSE" }
+authors = [
+  { name = "Main Sequence GmbH", email = "dev@main-sequence.io" },
+]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Intended Audience :: Developers",
+  "Intended Audience :: Financial and Insurance Industry",
+  "License :: OSI Approved :: Apache Software License",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.11",
+  "Topic :: Office/Business :: Financial",
+  "Typing :: Typed",
+]
 dependencies = [
     "certifi>=2024.2.2",
     "mainsequence>=3.18.17",

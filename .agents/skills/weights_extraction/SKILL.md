@@ -53,8 +53,8 @@ Prefer these repository interfaces:
 2. Require an explicit provider for ticker-only extraction.
 3. Keep responses grounded in the supported public API documented in `docs/library.md`.
 4. If the request turns into category planning or category sync, route to
-   `.agents/skills/holdings_category_sync/SKILL.md`; if it turns into an ETF-tracking
-   portfolio, route to `.agents/skills/etf_tracking_portfolio/SKILL.md`.
+   `.agents/skills/holdings_category_sync/SKILL.md`; if it turns into the ETF-holdings
+   tracking signal (or its portfolio assembly), route to `.agents/skills/etf_holdings_signal/SKILL.md`.
 
 ## Expected Outputs
 

@@ -200,7 +200,7 @@ wheels = [
 
 [[package]]
 name = "etfhextractor"
-version = "0.3.4"
+version = "0.3.5"
 source = { editable = "." }
 dependencies = [
     { name = "certifi" },
@@ -405,7 +405,7 @@ wheels = [
 
 [[package]]
 name = "mainsequence"
-version = "4.3.19"
+version = "4.3.24"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "alembic" },
@@ -429,9 +429,9 @@ dependencies = [
     { name = "typer" },
     { name = "urllib3" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/13/f5/22413ce82f661abd9f9380f6932f6646ac773fd85ef2323a9f9d073be968/mainsequence-4.3.19.tar.gz", hash = "sha256:39ea9e88fd1e2db125d993fd4a07d86c92c1095879342a31d6f1f1b028882d5a", size = 496921, upload-time = "2026-06-10T20:54:27.215Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/08/4c/ca098c695c808c32a12cab8ec7ea421422a55fb0e6b198fae4a6d1a17e2b/mainsequence-4.3.24.tar.gz", hash = "sha256:817aefeb0135e4e988c11e72338187de080235b49971f72e6b4b59da3d404db6", size = 500006, upload-time = "2026-06-11T13:47:35.998Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/03/d6/7e6b0139e8e685d23e464b0ae2142041f5eb9a5d5ccb913dcf3c3bd425fd/mainsequence-4.3.19-py3-none-any.whl", hash = "sha256:20c0c2d0e73ffc35478ca8f102ae6e3c4202ccd39934bfa42f729e992b70d1bf", size = 427033, upload-time = "2026-06-10T20:54:25.405Z" },
+    { url = "https://files.pythonhosted.org/packages/8c/ff/1dbdc1fa93ee9c439fbb2bffa21d82b8e0e7f1935e00a06ceda0f41c1122/mainsequence-4.3.24-py3-none-any.whl", hash = "sha256:f3125a3cd997ae3c7cf08f1cbedd7f20b3990d0b57639cdf8ca7b4ab254ce80c", size = 428959, upload-time = "2026-06-11T13:47:34.496Z" },
 ]
 
 [[package]]
@@ -543,7 +543,7 @@ wheels = [
 
 [[package]]
 name = "ms-markets"
-version = "0.0.60"
+version = "0.0.63"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "alembic" },
@@ -561,9 +561,9 @@ dependencies = [
     { name = "sqlalchemy" },
     { name = "uvicorn" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/fc/e3/5d83de0341a2ae1d768aae2bc9215b5620ac7c1d7c1965d94aaf86ccfcc1/ms_markets-0.0.60.tar.gz", hash = "sha256:9f2e060db69157d4d2ca62e175aa36687a637b986614903e3353a92b0f182384", size = 611223, upload-time = "2026-06-10T20:33:31.908Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/64/38/f507edc2636f445467096d8238c3a3ef6ba44ecdb6d7cdb2e058ebe858a0/ms_markets-0.0.63.tar.gz", hash = "sha256:e9181285903f5e66acb68ebda7f3dd30a22357d2f135c3bd3d25ea22d7be719b", size = 611918, upload-time = "2026-06-11T07:34:08.1Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/ec/2e/1072c3dd59ddc91cb073ca25c6483b11b9f06ef0bffe75ad0eccffeec8ca/ms_markets-0.0.60-py3-none-any.whl", hash = "sha256:055593585bde265a31acd91b5eb1d26f87a4368186d3a414aa5449233fcd569b", size = 443111, upload-time = "2026-06-10T20:33:29.936Z" },
+    { url = "https://files.pythonhosted.org/packages/05/f1/e1ead0f90586595a0e31ba0d638978e0a847e110d7e84d23a4ebde54b1f1/ms_markets-0.0.63-py3-none-any.whl", hash = "sha256:b2dfeda2040d5c30d9f875269b69c88f644afd3e452e01d7cb26cfca8c08d377", size = 443891, upload-time = "2026-06-11T07:34:06.27Z" },
 ]
 
 [[package]]
@@ -1268,15 +1268,15 @@ wheels = [
 
 [[package]]
 name = "starlette"
-version = "1.2.1"
+version = "1.3.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "anyio" },
     { name = "typing-extensions", marker = "python_full_version < '3.13'" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/25/44/ec35f1b6e83094b997da438a02c8c9b0ade2b1e84cfc48bd4656780760a6/starlette-1.2.1.tar.gz", hash = "sha256:9b9b5ebb992e67d6093741e63c2f59e4f6fff986f81163c087867bd7b924b3f6", size = 2701854, upload-time = "2026-05-31T01:07:51.847Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/c1/37/cc24e33974e1439cf5ca62b0735b63026eabb768f472d8775f52d5851ed9/starlette-1.3.0.tar.gz", hash = "sha256:bb58cbb7a699da4ee4be9ed4cdfe4bc5b0390aa6dac1d1ac714ebebe8dc3c8df", size = 2702493, upload-time = "2026-06-11T06:27:41.869Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/1c/54/196d0c1db10af76baa4f64894448505d60d3cdf70ef92cbb35f46a4e4c71/starlette-1.2.1-py3-none-any.whl", hash = "sha256:4de0082d08c8f6764a85a54cf1120d6939507a19905c7768acad2a9f875d2b89", size = 73350, upload-time = "2026-05-31T01:07:50.09Z" },
+    { url = "https://files.pythonhosted.org/packages/16/42/56d31c5ee52dab0ad893d67d4f9c00f5ba2b4c5d87f392eca2c3fdce01cf/starlette-1.3.0-py3-none-any.whl", hash = "sha256:ff4ca1bc23de6a45cdfbbeb9b3caaea524c9221cdd8a6684ad7a4f651a83890b", size = 73492, upload-time = "2026-06-11T06:27:40.444Z" },
 ]
 
 [[package]]

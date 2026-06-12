@@ -1,30 +1,58 @@
 # etfhextractor
 
-`etfhextractor` turns provider-published ETF holdings into Main Sequence / ms-markets state. It
-has three capabilities, layered so each builds on the previous one:
+[![Package](https://img.shields.io/badge/package-etfhextractor-black.svg)](pyproject.toml)
+[![Version](https://img.shields.io/badge/version-0.3.4-blue.svg)](pyproject.toml)
+[![Python](https://img.shields.io/badge/python-%3E%3D3.11-blue.svg)](pyproject.toml)
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+[![ms-markets](https://img.shields.io/badge/ms--markets-%3E%3D0.0.58-black.svg)](pyproject.toml)
+[![Tests](https://img.shields.io/badge/tests-82%20passing-green.svg)](tests/)
+[![Maintained](https://img.shields.io/badge/maintained-actively-green.svg)](docs/)
+
+`etfhextractor` turns provider-published ETF holdings into Main Sequence / ms-markets
+state. It has three capabilities, layered so each builds on the previous one:
 
 1. **Extract** ETF holdings weights from supported providers (iShares, Invesco, State Street,
    Vanguard) into an authoritative `FundHoldings` model.
 2. **Sync** a MainSequence `HOLDINGS__<ETF>` asset category from those holdings through the
    ms-markets snapshot layer, FIGI-registering missing components on demand (ADR 0004: no asset
    without a FIGI, one FIGI per ticker).
-3. **Publish an ETF-tracking portfolio**: a custom `SignalWeights` node re-extracts the holdings
-   (at most daily, only on change, observations stamped on trading-session closes) and feeds an
-   `msm_portfolios.PortfoliosDataNode` with a persisted NYSE trading calendar attached to the
-   `Portfolio` row by FK and a 60-day backtest bootstrap (ADRs 0003, 0005, 0006).
+3. **Provide an ETF-holdings tracking SIGNAL**: `ETFHoldingsSignal`, a custom
+   `msm_portfolios` `SignalWeights` that re-extracts the holdings (at most daily, only on
+   change, observations stamped on trading-session closes) under one definition-scoped
+   `signal_uid` (ADRs 0003, 0005, 0006). Portfolio assembly — `Portfolio` rows, calendars,
+   prices, `PortfoliosDataNode` — is **ms-markets functionality**; the repository demonstrates
+   it end-to-end in the example, and `etfh portfolio-publish` is convenience wiring for that
+   assembly (prices always supplied by the caller).
+
+The Python distribution and import package are both named `etfhextractor`:
+
+```python
+import etfhextractor
+```
+
+The signal surface imports explicitly from `etfhextractor.portfolio_signal` (it is deliberately
+kept out of `__init__` so pure extraction never loads the msm_portfolios stack).
+
+## Project Status
+
+- Current package version: `0.3.4`
+- Python: `>= 3.11`
+- Key dependencies: `mainsequence` (SDK), `ms-markets >= 0.0.58` (typed MetaTable rows;
+  obligatory-calendar portfolio architecture), `pandas-market-calendars` (trading sessions)
+- License: [Apache License 2.0](LICENSE)
+- Documentation: [docs/library.md](docs/library.md) · [docs/reader.md](docs/reader.md) ·
+  [examples/README.md](examples/README.md) · [docs/adr/](docs/adr/)
+- Agent capabilities: coding-agent setup per `.agents/agent_card.json` (three CLI-aligned
+  skills; parity-tested)
 
 ## Installation
-
-The package is a normal wheel-installable distribution named `etfhextractor` (no src/ layout):
 
 ```bash
 uv pip install etfhextractor            # from your index, or:
 uv pip install -e .                     # working copy
 ```
 
-Python >= 3.11. Key dependencies: `mainsequence` (SDK), `ms-markets >= 0.0.58` (typed MetaTable
-rows; the obligatory-calendar portfolio architecture), `pandas-market-calendars` (trading
-sessions). Capabilities 2 and 3 need an authenticated Main Sequence session
+Capabilities 2 and 3 need an authenticated Main Sequence session
 (`MAINSEQUENCE_ACCESS_TOKEN` / `MAINSEQUENCE_REFRESH_TOKEN`, e.g. via `.env`).
 
 ## CLI
@@ -41,7 +69,7 @@ etfh category-sync --ticker IVV --provider ishares \
     --register-missing \
     --figi-filter '{"ticker": "BRKB", "figi_ticker": "BRK/B"}'
 
-# 3. ETF-tracking portfolio — signal + portfolio pipeline against a registered bars table
+# 3. Tracking signal + ms-markets assembly wiring (caller-supplied bars table)
 etfh portfolio-publish --ticker IVV --provider ishares \
     --price-source-table-uid <TimeIndexMetaTable-uid> \
     --register-missing
@@ -65,8 +93,8 @@ print(fund.fund_name, fund.as_of_date)
 print(fund.ticker_weights())
 ```
 
-The portfolio surface is intentionally **not** exported from `etfhextractor.__init__` (pure
-extraction never imports the msm_portfolios stack):
+The signal (and the example-grade assembly wiring) is intentionally **not** exported from
+`etfhextractor.__init__` (pure extraction never imports the msm_portfolios stack):
 
 ```python
 from etfhextractor.portfolio_publish import publish_etf_tracking_portfolio
@@ -83,20 +111,24 @@ result = publish_etf_tracking_portfolio(
 
 | variable | purpose |
 |---|---|
-| `MAINSEQUENCE_ACCESS_TOKEN` / `MAINSEQUENCE_REFRESH_TOKEN` | platform session (categories, portfolios) |
+| `MAINSEQUENCE_ACCESS_TOKEN` / `MAINSEQUENCE_REFRESH_TOKEN` | platform session (categories, signal/portfolio runs) |
 | `OPEN_FIGI_API_KEY` (Main Sequence secret) | FIGI registration (`--register-missing`) |
 | `ETFH_PORTFOLIO_PRICE_SOURCE_TABLE_UID` | default price-source table for `portfolio-publish` |
 | `MSM_AUTO_REGISTER_NAMESPACE` | tests/sandboxes only: override the `etfhextractor` table namespace |
 
 ## Documentation
 
-- [Library guide](docs/library.md) — scope, layout, public API, full CLI reference, portfolio
-  pipeline, FIGI rules, ms-markets extension convention (project-owned tables + migrations)
+- [Library guide](docs/library.md) — scope, layout, public API, full CLI reference, the
+  tracking signal, FIGI rules, ms-markets extension convention (project-owned tables +
+  migrations), agent capabilities
 - [Reader guide](docs/reader.md) — extraction surface in detail
-- [Examples](examples/README.md) — self-sufficient IVV tracking-portfolio workflow (demo bars on
-  NYSE session closes, schema prep, verification)
+- [Examples](examples/README.md) — self-sufficient IVV tracking workflow (demo bars on NYSE
+  session closes, schema prep, verification)
 - [ADRs](docs/adr/) — 0002 providers/categories split, 0003 weights live in ms-markets
   portfolios, 0004 FIGI-only registration, 0005 definition-scoped signal identity, 0006 trading
   calendar + session-grid observations + backtest bootstrap
-- [Implementation tasks](docs/implementation_task/README.md) — decision logs for the ms-markets
-  migration, the tracking portfolio, and FIGI registration
+
+## License
+
+Licensed under the [Apache License, Version 2.0](LICENSE).
+Copyright 2026 MainSequence GmbH.

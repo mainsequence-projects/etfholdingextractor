@@ -10,14 +10,23 @@ holdings-extraction workflow.
 
 ## Project-Specific Instruction
 
+Agent description (canonical — `.agents/agent_card.json` quotes this sentence): Agent for
+extracting ETF holdings weights from supported providers, planning or syncing MainSequence
+HOLDINGS__<ETF> asset categories (FIGI-registering missing components on demand), and providing
+an ETF-holdings tracking SIGNAL for the ms-markets portfolio pipeline — portfolio assembly
+itself is ms-markets functionality, demonstrated in the repository example.
+
 This repository exposes four project-specific agent capabilities and agents should stay within
 those boundaries:
 
 1. ETF holdings extraction from supported provider URLs or explicit `provider + ticker` inputs.
 2. MainSequence holdings category planning and sync from already-supported extraction results.
-3. ETF-tracking portfolio publication through the `msm_portfolios` signal pipeline
-   (`ETFHoldingsSignal` + `etfh portfolio-publish`; weights insert at most daily and only on
-   change — see `docs/implementation_task/0002-ms-markets-portfolio-weights.md`).
+3. An ETF-holdings tracking SIGNAL for the `msm_portfolios` pipeline (`ETFHoldingsSignal`;
+   weights insert at most daily, only on change, stamped on session closes — see
+   `docs/implementation_task/0002-ms-markets-portfolio-weights.md`). Portfolio assembly itself
+   (Portfolio rows, calendars, prices, `PortfoliosDataNode`) is ms-markets functionality;
+   `etfh portfolio-publish` and the example are convenience wiring that demonstrate it, with
+   prices always supplied by the caller.
 4. FIGI registration of missing ETF components (opt-in `--register-missing`): no asset is
    registered without a FIGI, and only unique ticker→FIGI mappings register — ambiguity stays a
    blocker (see `docs/adr/0004-figi-only-asset-registration.md`).
@@ -28,7 +37,10 @@ When serving those capabilities:
   `etfh extract-url`, `etfh extract-ticker`, `etfh category-sync`, and `etfh portfolio-publish`.
 - Use `.agents/skills/weights_extraction/SKILL.md` for holdings and weight extraction requests.
 - Use `.agents/skills/holdings_category_sync/SKILL.md` for holdings-category planning or sync
-  requests.
+  requests — FIGI registration of missing components (`--register-missing`, `--figi-filter`)
+  routes through this skill as well.
+- Use `.agents/skills/etf_holdings_signal/SKILL.md` for the ETF-holdings tracking signal and
+  for requests about the ms-markets portfolio assembly demonstrated around it.
 - Limit claims to supported providers and existing library surfaces documented in `docs/library.md`.
 - This project owns exactly one ms-markets MetaTable — `DemoBarsStorage`
   (`etfhextractor.DemoBarsTS` in `etfhextractor/markets_models.py`, the example's

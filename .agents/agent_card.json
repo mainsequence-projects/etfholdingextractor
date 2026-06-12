@@ -1,8 +1,13 @@
 {
   "name": "etfholdingextractor-161",
-  "description": "Agent for extracting ETF holdings weights from supported providers, planning or syncing MainSequence HOLDINGS__<ETF> asset categories (FIGI-registering missing components on demand), and publishing ms-markets ETF-tracking portfolios through the repository CLI and library surfaces.",
-  "version": "0.3.3",
-  "supportedInterfaces": [],
+  "description": "Agent for extracting ETF holdings weights from supported providers, planning or syncing MainSequence HOLDINGS__<ETF> asset categories (FIGI-registering missing components on demand), and providing an ETF-holdings tracking SIGNAL for the ms-markets portfolio pipeline \u2014 portfolio assembly itself is ms-markets functionality, demonstrated in the repository example.",
+  "version": "0.3.4",
+  "supportedInterfaces": [
+    {
+      "protocolBinding": "HTTP+JSON",
+      "protocolVersion": "1.0"
+    }
+  ],
   "provider": {
     "organization": "",
     "url": ""
@@ -56,14 +61,14 @@
       ]
     },
     {
-      "id": "etf_tracking_portfolio",
-      "name": "ETF-Tracking Portfolio",
-      "description": "Publish an ms-markets portfolio that tracks an ETF: a guarded holdings signal (session-close observations, daily throttle, change-only inserts with validity re-stamp) wired into PortfoliosDataNode with a persisted trading calendar attached to the Portfolio row by FK and a 60-day backtest bootstrap.",
+      "id": "etf_holdings_signal",
+      "name": "ETF Holdings Tracking Signal",
+      "description": "Provide ETFHoldingsSignal: a custom msm_portfolios SignalWeights whose updates re-extract the ETF holdings and emit guarded, session-close-stamped signal weights under one definition-scoped signal_uid. Portfolios, calendars, and prices are ms-markets / caller concerns; the repository example demonstrates the full assembly and the demo bars are synthetic example data only.",
       "tags": [],
       "examples": [
-        "Publish an IVV tracking portfolio with the NYSE calendar.",
-        "Run the self-sufficient IVV tracking-portfolio example end to end.",
-        "Re-run the tracker and verify portfolio values and weights on the platform."
+        "Run the IVV holdings signal and verify the signal weight rows.",
+        "Explain the signal's guards, identity, and session-close observation grid.",
+        "Demonstrate the full ms-markets portfolio assembly around the signal via the example."
       ],
       "inputModes": [
         "application/json"

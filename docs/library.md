@@ -5,8 +5,10 @@ This library does three things, layered so each builds on the previous one:
 1. extract ETF holdings weights from supported providers
 2. register or refresh MainSequence `HOLDINGS__<ETF>` asset categories from those holdings
    (FIGI-registering missing components on demand — ADR 0004)
-3. publish an ms-markets **ETF-tracking portfolio** driven by a custom holdings signal
-   (ADRs 0003 / 0005 / 0006)
+3. provide an **ETF-holdings tracking signal** (`ETFHoldingsSignal`, a custom
+   `msm_portfolios` `SignalWeights`) for the ms-markets portfolio pipeline
+   (ADRs 0003 / 0005 / 0006) — portfolio assembly itself is ms-markets functionality,
+   demonstrated end-to-end in the example
 
 Everything else in the package exists only to support those responsibilities.
 
@@ -298,19 +300,23 @@ Core data model:
 - `FundHoldings`: authoritative extracted fund metadata plus holdings rows
 - `Holding`: one parsed holding row
 
-## ETF-Tracking Portfolio (msm_portfolios)
+## ETF Holdings Tracking Signal (msm_portfolios)
 
-`etfhextractor/portfolio_signal.py` and `etfhextractor/portfolio_publish.py` publish an
-ms-markets portfolio that tracks an ETF (implementation task 0002, ADR 0003):
+**The library's product at this layer is the SIGNAL.** `etfhextractor/portfolio_signal.py`
+defines `ETFHoldingsSignal`; portfolios, calendars, `Portfolio` rows, and prices are ms-markets
+(`msm_portfolios`) concerns. `etfhextractor/portfolio_publish.py` and `etfh portfolio-publish`
+are **convenience wiring** that assemble those ms-markets objects around the signal — the same
+assembly the example demonstrates — not a library capability claim (implementation task 0002,
+ADR 0003):
 
 - `ETFHoldingsSignal` is a custom `msm_portfolios` `SignalWeights` DataNode whose update
   re-extracts the ETF holdings (same `ETFHoldingsReader`, component filter, and snapshot-layer
   ticker resolution as category sync) and emits `(time_index, asset_identifier) → signal_weight`.
   Two guards protect the canonical signal table: insertions happen at most once per
   `min_update_interval_days` (default daily), and only when the weights actually changed.
-- `publish_etf_tracking_portfolio(...)` wires the signal plus an explicit registered
-  price-source table (`APIDataNode.build_from_table_uid`; pass the uid or set
-  `ETFH_PORTFOLIO_PRICE_SOURCE_TABLE_UID`) into `PortfoliosDataNode`, resolving portfolio
+- `publish_etf_tracking_portfolio(...)` (convenience wiring around ms-markets) connects the
+  signal plus the CALLER's price source (`APIDataNode.build_from_table_uid`; pass the uid or set
+  `ETFH_PORTFOLIO_PRICE_SOURCE_TABLE_UID`) into msm's `PortfoliosDataNode`, resolving portfolio
   identity through the `Portfolio` row alone — its `unique_identifier` keys all portfolio storage; `PortfolioIndex` is only an optional published-index reference (`Portfolio.published_index_uid`, ms-markets >= 0.0.54) and is never created or relied on here. CLI: `etfh portfolio-publish`.
 - **Signal identity is definition-scoped** (ticker/source/normalization/validity — see
   [ADR 0005](adr/0005-tracking-signal-identity-is-definition-scoped.md)):
@@ -320,7 +326,8 @@ ms-markets portfolio that tracks an ETF (implementation task 0002, ADR 0003):
 - ms-markets >= 0.0.54 pinnings handled by `publish_etf_tracking_portfolio`: portfolio identity
   set on both resolution paths (`target_portfolio` + `_explicit_portfolio_identifier`), and the
   resolved component identifiers always supplied as the signal's preflight scope.
-- **Trading calendar — obligatory** ([ADR 0006](adr/0006-trading-calendar-and-backtest-bootstrap.md)):
+- **Trading calendar — an ms-markets contract the wiring honors**
+  ([ADR 0006](adr/0006-trading-calendar-and-backtest-bootstrap.md)):
   ms-markets >= 0.0.58 requires every Portfolio row to reference a persisted Calendar
   (`calendar_uid` NOT NULL FK, `ondelete=RESTRICT`; the legacy `calendar_name` field is gone).
   `calendar_key` defaults to `NYSE` for US ETFs. `ensure_trading_calendar()` persists it through
@@ -432,6 +439,25 @@ Rules:
 - For tests/examples only, set `MSM_AUTO_REGISTER_NAMESPACE` before importing the models; it
   overrides the mixin namespace without source changes.
 
+## Agent Capabilities (coding-agent setup)
+
+The repository is agent-ready per `.agents/skills/mainsequence/project_to_agent/SKILL.md`
+(implementation task 0004): `AGENTS.md` carries the canonical agent description and skill
+routing, the three project skills (`weights_extraction`, `holdings_category_sync`,
+`etf_holdings_signal`) map 1:1 to the CLI surface, and `.agents/agent_card.json` lists exactly
+those skills. There is no agent runtime in this repo — capabilities are served through the
+existing CLI/library surfaces.
+
+Maintenance rules (enforced by `tests/test_agent_capabilities.py`):
+
+- bumping the `pyproject.toml` version requires the same bump in `.agents/agent_card.json`
+  and in the README version badge;
+- adding or renaming a CLI command requires a matching project skill and agent-card entry, and
+  skills may only reference real `etfh` subcommands (or `etfh-read`);
+- skill tags stay empty until explicitly confirmed;
+- `.agents/skills/mainsequence/**` and `.agents/skills/ms_markets/**` are platform-vendored:
+  never edited here and never listed in the agent card.
+
 ## Internal Modules
 
 These are implementation details, not separate product responsibilities:
@@ -444,6 +470,10 @@ These are implementation details, not separate product responsibilities:
 
 This library does not own:
 
+- **market prices or any pricing capability** — the portfolio's price source is always supplied
+  by the caller (a registered bars table or their own DataNode); the project-owned `DemoBarsTS`
+  holds deterministic synthetic values for the runnable example only and doubles as the
+  extension template for whoever builds their own price table
 - broad asset-master ownership (it registers **ETF component equities via FIGI only**, opt-in —
   ADR 0004; no other registration workflows)
 - broker or tradability checks
