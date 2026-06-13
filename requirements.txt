@@ -54,7 +54,7 @@ idna==3.18
     #   requests
 korean-lunar-calendar==0.3.1
     # via exchange-calendars
-mainsequence==4.3.26
+mainsequence==4.3.30
     # via
     #   etfhextractor
     #   ms-markets

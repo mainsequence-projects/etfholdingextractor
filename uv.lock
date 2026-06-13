@@ -200,7 +200,7 @@ wheels = [
 
 [[package]]
 name = "etfhextractor"
-version = "0.3.6"
+version = "0.3.7"
 source = { editable = "." }
 dependencies = [
     { name = "certifi" },
@@ -405,7 +405,7 @@ wheels = [
 
 [[package]]
 name = "mainsequence"
-version = "4.3.26"
+version = "4.3.30"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "alembic" },
@@ -429,9 +429,9 @@ dependencies = [
     { name = "typer" },
     { name = "urllib3" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/53/47/8bfe529a532cc9e0b225a151bad0d3cee55efa1e62aafd548cd86c846c82/mainsequence-4.3.26.tar.gz", hash = "sha256:bdf429acc21645c33302d199d5bf71231c10917020d720d3e0e8abc86cebd025", size = 500332, upload-time = "2026-06-12T19:49:31.02Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/52/bf/e626743cc59f5701ba2441e33368ca436144c5f21a7083948e9de878a5ad/mainsequence-4.3.30.tar.gz", hash = "sha256:1466d89f688cf0c6a69cbf5accb1f1b843525179e49ba96f785b4e61ead1c533", size = 501229, upload-time = "2026-06-13T12:27:15.587Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/34/4d/7f7eeed86b576d991ef0dbe3950e73671d0aec1370b5bb07e12843626cd5/mainsequence-4.3.26-py3-none-any.whl", hash = "sha256:bb1cce687c436d84c915c36350b1a1b5cf7efa6fd596d25b5ae406e3c34df788", size = 429217, upload-time = "2026-06-12T19:49:29.598Z" },
+    { url = "https://files.pythonhosted.org/packages/2e/69/48129db46a79a0634ab72f37df29b0b133657a35602ae3ef0d38c266471c/mainsequence-4.3.30-py3-none-any.whl", hash = "sha256:6467968832fa648659a9a0dfb5d9d26177dbb017bc10a6c3bfca325642521e00", size = 429441, upload-time = "2026-06-13T12:27:14.038Z" },
 ]
 
 [[package]]
