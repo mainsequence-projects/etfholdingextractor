@@ -1,7 +1,7 @@
 """Publish an ETF-tracking ms-markets portfolio.
 
 Wires `ETFHoldingsSignal` into the msm_portfolios pipeline
-(`signal -> PortfoliosDataNode` with an explicit price source) and resolves the
+(`signal -> PortfoliosDataNode` with an explicit valuation source) and resolves the
 portfolio identity through the typed `Index` / `Portfolio` rows
 (implementation task 0002, W-3).
 
@@ -221,7 +221,7 @@ def publish_etf_tracking_portfolio(
 ) -> dict[str, Any]:
     """Build (and by default run) the ETF-tracking portfolio pipeline.
 
-    The price source must provide the `close` and `volume` columns the
+    The valuation source must provide the `close` and `volume` columns the
     rebalance logic consumes. Pass either `price_source_instance` (an explicit
     DataNode/APIDataNode dependency, e.g. the project-owned `DemoBars` node) or
     `price_source_table_uid` (an already-registered TimeIndexMetaTable resolved
@@ -346,7 +346,7 @@ def publish_etf_tracking_portfolio(
         asset_list=sorted(asset_identifiers),
     )
     signal = ETFHoldingsSignal.from_signal_configuration(signal_config)
-    price_source = (
+    valuation_source = (
         price_source_instance
         if price_source_instance is not None
         else APIDataNode.build_from_table_uid(str(resolved_price_table_uid))
@@ -360,7 +360,8 @@ def publish_etf_tracking_portfolio(
 
     portfolio_configuration = PortfolioConfiguration(
         portfolio_build_configuration=PortfolioBuildConfiguration(
-            price_source_instance=price_source,
+            valuation_source_instance=valuation_source,
+            valuation_column="close",
             execution_configuration=PortfolioExecutionConfiguration(
                 commission_fee=commission_fee
             ),
@@ -413,7 +414,8 @@ def publish_etf_tracking_portfolio(
         "price_source_table_uid": (
             str(resolved_price_table_uid) if resolved_price_table_uid else None
         ),
-        "price_source": type(price_source).__name__,
+        "valuation_source": type(valuation_source).__name__,
+        "price_source": type(valuation_source).__name__,
         "asset_registration": registration_summary,
         "ran": False,
         "run_result": None,

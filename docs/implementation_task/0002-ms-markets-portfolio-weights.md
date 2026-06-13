@@ -61,8 +61,8 @@ Reference implementations: `contrib/signals/fixed_weights.py` (static, write-onc
 ```python
 PortfolioConfiguration(
     portfolio_build_configuration=PortfolioBuildConfiguration(
-        price_source_instance=<DataNode | APIDataNode>,      # explicit upstream price dependency
-        price_column=PriceTypeNames.CLOSE,
+        valuation_source_instance=<DataNode | APIDataNode>,  # explicit upstream valuation dependency
+        valuation_column="close",
         price_alignment_policy=PriceAlignmentPolicy(...),
         portfolio_prices_frequency="1d",
         execution_configuration=PortfolioExecutionConfiguration(commission_fee=...),
@@ -78,16 +78,16 @@ PortfolioConfiguration(
 )
 ```
 
-- Prices come from an **explicit** `price_source_instance` (skill rule: persistent interpolation is
-  prepared upstream — `msm_portfolios.contrib.prices.InterpolatedPrices` — and passed in;
-  `PortfoliosDataNode` never constructs prices internally). `PricesConfiguration` resolves a
-  registered source-bars table by `source_time_index_meta_table_uid` through
-  `APIDataNode.build_from_table_uid(...)`.
+- Valuations come from an **explicit** `valuation_source_instance` (skill rule: persistent
+  interpolation is prepared upstream — `msm_portfolios.contrib.prices.InterpolatedPrices` — and
+  passed in; `PortfoliosDataNode` never constructs prices internally). A registered source-bars
+  table can be attached through `APIDataNode.build_from_table_uid(...)`, and
+  `valuation_column` selects the numeric column consumed for valuation.
 - The rebalance strategy starting point is `ImmediateSignal`
   (`msm_portfolios/rebalance_strategy/immediate_signal.py`): signal weights become executed weights
   at each rebalance.
 - `PortfoliosDataNode` (`msm_portfolios/data_nodes/portfolios/__init__.py`) exposes
-  `dependencies()` = `{signal_weights, price_source}`, runs the canonical `PortfolioWeights` node,
+  `dependencies()` = `{signal_weights, valuation_source}`, runs the canonical `PortfolioWeights` node,
   and writes the portfolio series; portfolio identity hashes via
   `compute_portfolio_configuration_hash`. Display metadata syncs through
   `msm_portfolios.api.PortfolioMetadata` / `msm_portfolios.services.market_metadata`, and the core

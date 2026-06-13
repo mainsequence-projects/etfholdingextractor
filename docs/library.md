@@ -315,8 +315,9 @@ ADR 0003):
   Two guards protect the canonical signal table: insertions happen at most once per
   `min_update_interval_days` (default daily), and only when the weights actually changed.
 - `publish_etf_tracking_portfolio(...)` (convenience wiring around ms-markets) connects the
-  signal plus the CALLER's price source (`APIDataNode.build_from_table_uid`; pass the uid or set
-  `ETFH_PORTFOLIO_PRICE_SOURCE_TABLE_UID`) into msm's `PortfoliosDataNode`, resolving portfolio
+  signal plus the CALLER's valuation source (`APIDataNode.build_from_table_uid`; pass the uid or set
+  `ETFH_PORTFOLIO_PRICE_SOURCE_TABLE_UID`) into msm's `PortfoliosDataNode` as
+  `PortfolioBuildConfiguration.valuation_source_instance`, resolving portfolio
   identity through the `Portfolio` row alone — its `unique_identifier` keys all portfolio storage; `PortfolioIndex` is only an optional published-index reference (`Portfolio.published_index_uid`, ms-markets >= 0.0.54) and is never created or relied on here. CLI: `etfh portfolio-publish`.
 - **Signal identity is definition-scoped** (ticker/source/normalization/validity — see
   [ADR 0005](adr/0005-tracking-signal-identity-is-definition-scoped.md)):

@@ -108,18 +108,18 @@ identity override.
 rows describe which convention/index the curve belongs to and how to interpret
 published curve observations.
 
-Pricing runtime attachment order matters. `create_pricing_schemas(...)` is a
-legacy-named startup entrypoint; in current code it attaches already-registered
-pricing MetaTables and configures pricing market-data bindings. It does not
-create schemas or register missing MetaTables at runtime:
+Pricing runtime attachment order matters. `attach_pricing_schemas(...)` is the
+startup entrypoint; it attaches already-registered pricing MetaTables and
+configures pricing market-data bindings. It does not create schemas or register
+missing MetaTables at runtime:
 
 ```python
-from msm_pricing.bootstrap import create_pricing_schemas
+from msm_pricing.bootstrap import attach_pricing_schemas
 
-create_pricing_schemas()
+attach_pricing_schemas(seed_default_market_data_bindings=True)
 ```
 
-`create_pricing_schemas(...)` uses the same direct runtime attachment path as
+`attach_pricing_schemas(...)` uses the same direct runtime attachment path as
 `msm.start_engine(...)`: already-registered tables are attached, and dependency
 order is resolved before runtime binding. The dependency order includes
 `AssetTable`, `IndexTypeTable`, `IndexTable`, `IndexConventionDetailsTable`,
@@ -216,6 +216,14 @@ Rules:
   when a caller wants the latest available curve snapshot for one curve
   identity. Do not use `USE_LAST_OBSERVATION_MS_INSTRUMENT` as normal
   application control flow.
+- Persist pricing details for one asset with `instrument.attach_to_asset(asset)`
+  or `msm_pricing.api.add_pricing_details(...)`. For thousands of assets, use
+  `msm_pricing.api.add_many_pricing_details(...)` so instruments are serialized
+  once and pricing-detail/current rows are written through chunked bulk upserts.
+  Do not loop single-asset writes for large universes. Explicit
+  `pricing_details_date` writes must still reconcile the current projection:
+  update current when no current row exists or when the new date is newer than
+  current.
 
 ## Fixings Pattern
 
