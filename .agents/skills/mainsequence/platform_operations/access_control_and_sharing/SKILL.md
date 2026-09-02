@@ -1,13 +1,13 @@
 ---
 name: mainsequence-access-control-and-sharing
-description: Use this skill when the task is about RBAC, resource sharing, or access verification in a Main Sequence project. This skill owns organization and team access concepts, view and edit semantics, choosing the correct shareable resource boundary, and access checks across projects, DataNodeStorage, constants, secrets, buckets, artifacts, and releases. It does not own job scheduling, DataNode producer logic, or API route design.
+description: Use this skill when the task is about RBAC, resource sharing, or access verification in a Main Sequence CodeRepository. This skill owns organization and team access concepts, view and edit semantics, choosing the correct shareable resource boundary, and access checks across CodeRepositories, TimeIndexMetaTable, constants, secrets, buckets, artifacts, and releases. It does not own job scheduling, TimeIndexTableUpdater producer logic, or API route design.
 ---
 
 # Main Sequence Access Control And Sharing
 
 ## Overview
 
-Use this skill when the task is about who can view, edit, maintain, or administer a resource in a Main Sequence project.
+Use this skill when the task is about who can view, edit, maintain, or administer a resource in a Main Sequence CodeRepository.
 
 This skill is for:
 
@@ -25,14 +25,14 @@ This skill is for:
 - decide whether a resource should be shared directly to a user or to a team
 - decide whether a user needs `view` or `edit`
 - identify the correct shareable object boundary:
-  - `Project`
-  - `DataNodeStorage`
+  - `CodeRepository`
+  - `TimeIndexMetaTable`
   - `Constant`
   - `Secret`
   - `Bucket`
   - `Artifact`
   - `ResourceRelease`
-- explain that sharing a DataNode usually means sharing its `DataNodeStorage`
+- explain that sharing an updater's published output means sharing its `TimeIndexMetaTable`
 - choose whether configuration belongs in a `Constant` or a `Secret`
 - review CLI sharing flows for existing resources
 - verify access assumptions before claiming a workflow is shareable
@@ -42,26 +42,23 @@ This skill is for:
 This skill must not claim ownership of:
 
 - job scheduling or image pinning
-- DataNode producer implementation
+- TimeIndexTableUpdater producer implementation
 - MetaTable schema design
 - FastAPI route design
-- Streamlit dashboard implementation
+- application UI design or implementation
 - workspace document structure
 
 ## Route Adjacent Work
 
-- jobs, schedules, images, project resources, releases, and Artifacts as operational workflows:
+- jobs, schedules, images, code repository resources, releases, and Artifacts as operational workflows:
   `.agents/skills/mainsequence/platform_operations/orchestration_and_releases/SKILL.md`
-- DataNodes:
-  `.agents/skills/mainsequence/data_publishing/data_nodes/SKILL.md`
+- TimeIndexTableUpdaters:
+  `.agents/skills/mainsequence/data_publishing/time_index_table_updates/SKILL.md`
 - MetaTables:
   `.agents/skills/mainsequence/data_publishing/meta_tables/SKILL.md`
-- APIs and FastAPI:
+- Command Center-serving FastAPI providers:
   `.agents/skills/mainsequence/application_surfaces/api_surfaces/SKILL.md`
-- Streamlit dashboards:
-  `.agents/skills/mainsequence/dashboards/streamlit/SKILL.md`
-- Command Center workspaces:
-  `.agents/skills/mainsequence/command_center/workspace_builder/SKILL.md`
+This skill only reasons about access to deployed resources such as `ResourceRelease`.
 
 ## Read First
 
@@ -110,7 +107,7 @@ Do not speak loosely about sharing "the code" when the operational boundary is a
 
 Examples:
 
-- sharing a DataNode usually means sharing the `DataNodeStorage`
+- sharing an updater's published output usually means sharing the `TimeIndexMetaTable`
 - sharing a deployed experience usually means sharing the `ResourceRelease`
 - sharing runtime configuration means sharing the `Constant` or `Secret`
 
@@ -158,7 +155,10 @@ Do not downgrade a secret into a constant for convenience.
 
 ### 6. `Constant` and `Secret` names are unique configuration identities
 
-Treat `Constant.name` and `Secret.name` as unique organization-level configuration keys.
+Treat `Constant.name` and `Secret.name` as unique Environment-level
+configuration keys. CodeRepository-facing SDK and CLI operations derive the
+Environment from the process-frozen current Git branch and registered
+`CodeRepositoryBranch`. Never ask the user to provide an Environment UID or branch UID.
 
 For creation or sync tasks:
 
@@ -179,7 +179,19 @@ Current CLI note:
   - `mainsequence constants list --filter name=MODEL__DEFAULT_WINDOW`
   - `mainsequence secrets list --filter name=POLYGON_API_KEY`
 
-### 7. Access assumptions must be verified
+### 7. Public principal identity is UID-only
+
+All SDK and CLI sharing mutations identify users and teams by public UUID:
+
+- `add_to_view(user_uid)` and `add_to_edit(user_uid)`
+- `remove_from_view(user_uid)` and `remove_from_edit(user_uid)`
+- the corresponding team methods use `team_uid`
+
+Never pass or request a numeric user or team database ID. CLI sharing commands
+take `<USER_UID>` or `<TEAM_UID>`, and access-state output is interpreted through
+public UID fields.
+
+### 8. Access assumptions must be verified
 
 If the task claims a resource is shareable, readable, or maintainable by another actor, verify that path explicitly with the relevant CLI or client workflow.
 

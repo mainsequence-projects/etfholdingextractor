@@ -12,7 +12,6 @@ from .ishares import IsharesHoldingsProvider
 from .state_street import StateStreetHoldingsProvider
 from .vanguard import VanguardHoldingsProvider
 
-
 PROVIDER_TYPES_BY_NAME = {
     "invesco": InvescoHoldingsProvider,
     "ishares": IsharesHoldingsProvider,

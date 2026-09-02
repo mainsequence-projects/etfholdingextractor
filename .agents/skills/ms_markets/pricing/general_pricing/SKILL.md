@@ -1,0 +1,238 @@
+---
+name: mainsequence-markets-general-pricing
+description: Use this skill when changing, reviewing, or documenting the generic msm_pricing package surface, including pricing runtime attachment, asset pricing details persistence, market-data set bindings, priceable instrument payload boundaries, and in-memory valuation baskets. This skill does not own fixed-income curve/index/fixing construction details; use the fixed-income curve-building skill for those.
+---
+
+# Main Sequence Markets General Pricing
+
+Use this skill for generic `msm_pricing` work: package boundaries, pricing
+runtime attachment, instrument persistence, market-data-set selection, and
+transient instrument-plus-units valuation.
+
+## Route First
+
+Use the fixed-income curve-building skill when the task is specifically about:
+
+- `IndexConventionDetails`
+- `Curve`
+- `DiscountCurvesNode`
+- `FixingRatesNode`
+- QuantLib index/curve resolver behavior
+- bond or swap examples that depend on curve and fixing setup
+
+Use the asset model extension skill when the task changes canonical asset rows
+or bond asset detail tables.
+
+Use the derived-index workflow skill when pricing-produced observations such
+as option delta, bond DV01, yield, or z-spread are combined into a persisted
+spread, basket, ratio, or hedged Index. Pricing owns production of those input
+facts; core Index owns methodology, resolution, coefficients, and publication.
+
+## This Skill Owns
+
+- `msm_pricing.bootstrap.attach_pricing_schemas(...)` as the attach-only pricing
+  runtime startup entrypoint.
+- `AssetCurrentPricingDetails`, timestamped pricing details, and
+  `add_many_pricing_details(...)` persistence workflows.
+- `load_instruments_from_assets(...)` for batch loading current priceable
+  instruments from already-resolved `Asset` rows.
+- `PricingMarketDataSet` and `PricingMarketDataSetBinding` as the source
+  selection layer for pricing concepts.
+- `InstrumentModel` payload boundaries: instrument payloads contain pricing
+  terms, not asset identity.
+- `ValuationLine` and `ValuationPosition` as transient valuation baskets for
+  `instrument + units + valuation_date + market_data_set`.
+- The rule that `msm_pricing` does not own durable account or portfolio
+  positions.
+
+## Read First
+
+Inspect the local files relevant to the request:
+
+1. `src/msm_pricing/bootstrap.py`
+2. `src/msm_pricing/api/pricing_details.py`
+3. `src/msm_pricing/api/instruments.py`
+4. `src/msm_pricing/api/market_data_bindings.py`
+5. `src/msm_pricing/instruments/base_instrument.py`
+6. `src/msm_pricing/valuation.py`
+7. `src/msm_pricing/meta_tables.py`
+8. `docs/knowledge/msm_pricing/index.md`
+9. `docs/ADR/0026-explicit-pricing-market-data-sets.md`
+10. `docs/ADR/0033-pricing-valuation-position-boundary.md`
+
+## Runtime Startup
+
+Attach pricing tables explicitly before pricing row operations:
+
+```python
+from msm_pricing.bootstrap import attach_pricing_schemas
+
+attach_pricing_schemas(
+    models=[
+        "Asset",
+        "IndexType",
+        "Index",
+        "IndexConventionDetails",
+        "Curve",
+        "AssetCurrentPricingDetails",
+        "AssetPricingDetailsStorage",
+        "PricingMarketDataSet",
+        "PricingMarketDataSetBinding",
+    ],
+    seed_default_market_data_bindings=False,
+)
+```
+
+Do not add schema-creation shortcuts or direct registration calls. Pricing
+startup attaches already migrated and registered MetaTables.
+
+## Instrument Persistence
+
+### QuantLib Instrument Serialization
+
+Persisted instrument payloads must be produced by the instrument serializer:
+
+```python
+payload = instrument.serialize_for_backend()
+```
+
+or, when the caller needs the inner instrument object only:
+
+```python
+instrument_terms = instrument.model_dump(mode="json")
+```
+
+Do not hand-build QuantLib field JSON for persisted instruments. Do not use
+`msm_pricing.instruments.json_codec.calendar_to_json(...)` for fields typed as
+`ql_fields.QuantLibCalendar`; that codec uses class/market JSON and is not the
+instrument field wire contract.
+
+Instrument calendar fields are serialized by `ql_fields.QuantLibCalendar` as
+QuantLib display-name objects:
+
+```python
+{"name": calendar.name()}
+```
+
+Strict examples:
+
+- `ql.TARGET()` must serialize as `{"name": "TARGET"}`.
+- `ql.Mexico()` and `ql.Mexico(ql.Mexico.BMV)` must serialize as
+  `{"name": "Mexican stock exchange"}`.
+- Do not persist `{"name": "Mexico"}` for instrument calendar fields.
+- Do not persist `{"name": "Mexico-BMV"}` for instrument calendar fields.
+- Do not persist class/market calendar JSON such as
+  `{"name": "UnitedStates", "market": 1}` for instrument calendar fields unless
+  the field decoder is explicitly changed and tested to accept that contract.
+
+When reviewing or writing pricing-detail importers, migrations, examples, or
+connectors, reject manual calendar dictionaries in `instrument_dump`. If source
+data arrives as class/market or vendor calendar names, instantiate the intended
+`QuantLib` calendar first, build the instrument model, and let
+`serialize_for_backend()` write the stored payload.
+
+Persist one asset/instrument relationship with:
+
+```python
+instrument.attach_to_asset(asset, pricing_details_date=valuation_date)
+```
+
+For large universes, use batch persistence:
+
+```python
+from msm_pricing.api import add_many_pricing_details, load_instruments_from_assets
+
+add_many_pricing_details(
+    [
+        {"asset": asset, "instrument": instrument, "pricing_details_date": as_of}
+        for asset, instrument in asset_instrument_pairs
+    ],
+    batch_size=1000,
+)
+```
+
+Explicit dated writes must reconcile the current projection: update current
+only when there is no current row or when the new date is newer than the
+current `pricing_details_date`.
+
+When a caller already has asset rows and needs their current priceable
+instruments, use:
+
+```python
+instruments_by_asset_uid = load_instruments_from_assets(assets, batch_size=1000)
+```
+
+## Valuation Baskets
+
+Use `ValuationPosition` for in-memory valuation of instruments with unit
+multipliers:
+
+```python
+from msm_pricing.valuation import ValuationLine, ValuationPosition
+
+position = ValuationPosition(
+    valuation_date=valuation_date,
+    market_data_set="eod",
+    lines=[
+        ValuationLine(instrument=bond, units=25.0, asset_uid=asset.uid),
+    ],
+)
+
+value = position.price()
+breakdown = position.price_breakdown()
+```
+
+Rules:
+
+- `ValuationPosition` is not a MetaTable and is not persisted.
+- Do not reintroduce `msm_pricing.Position` or `PositionLine`.
+- Do not add generic `source_type` or `source_uid` fields without a concrete
+  ADR-backed consumer.
+- Keep `market_data_set` at the `ValuationPosition` level. Do not add line-level
+  market-data-set overrides unless a later ADR introduces that policy.
+- `asset_uid` is optional; ad hoc instruments may not have a persisted asset.
+- Account holdings and portfolio weights must be normalized by their owning
+  package before they are passed into pricing as valuation lines.
+- For account holdings, the owning workflow selects the holdings snapshot,
+  resolves `asset_identifier` to `Asset`, and computes signed units from
+  `quantity * direction`.
+- For portfolio sources, the owning workflow chooses the composition/valuation
+  source and converts weights, notionals, or quantities into asset-level units.
+
+## Market-Data Sets
+
+Use `PricingMarketDataSet` and `PricingMarketDataSetBinding` for storage-source
+selection. Bindings store backend time-index-table output table UIDs for pricing
+concepts such as `discount_curves` and `interest_rate_index_fixings`.
+
+Use `PricingMarketDataSetCurveBinding` for curve-identity selection inside the
+chosen source. It maps a valuation role and selector, such as
+`projection:index:<IndexTable.uid>:mid` or
+`discount:index:<IndexTable.uid>:mid`, to `CurveTable.uid`. Floating-rate
+pricing uses projection and discount bindings separately. Those two bindings
+may point to the same `curve_uid`, but both role bindings must exist; there is
+no scalar curve shortcut or hidden projection-as-discount fallback.
+
+For active curves intended for runtime pricing, a `Curve` row by itself is not
+enough. The curve must also have `CurveBuildingDetails`, at least one
+`PricingMarketDataSetCurveBinding`, and a market-data-set source binding for
+`PRICING_CONCEPT_DISCOUNT_CURVES`. When creating or reviewing those curve
+relationships, switch to the fixed-income curve-building skill.
+
+Callers select sources at valuation time:
+
+```python
+bond.price(market_data_set="eod")
+position = ValuationPosition(..., market_data_set="risk_manager")
+```
+
+Do not use legacy context constants or storage identifiers as authoritative
+runtime pointers.
+
+## Runtime Curve Overlays
+
+Use `msm_pricing.pricing_engine.apply_z_spread_to_curve(...)` when a computed
+`Bond.z_spread(...)` value must be applied back to a resolved QuantLib curve
+handle. The helper expects the decimal continuous spread returned by
+`Bond.z_spread(...)`; it is not a curve builder and it must not mutate persisted
+curve observations, `key_nodes`, `CurveTable`, or `CurveBuildingDetails`.

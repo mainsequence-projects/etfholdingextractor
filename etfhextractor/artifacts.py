@@ -13,7 +13,6 @@ from urllib.parse import urlparse
 
 from .models import FundHoldings
 
-
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_ARTIFACT_ROOT = PROJECT_ROOT / "data" / "temp"
 ARTIFACT_TIMESTAMP_FORMAT = "%Y%m%dT%H%M%S%fZ"

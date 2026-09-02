@@ -11,8 +11,8 @@ from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 from etfhextractor import ETFHoldingsReader, extract_ticker_weights
-from etfhextractor._version import DEFAULT_USER_AGENT
 from etfhextractor.__main__ import main
+from etfhextractor._version import DEFAULT_USER_AGENT
 from etfhextractor.artifacts import ArtifactPayload, persist_extraction_artifacts
 from etfhextractor.exceptions import UnsupportedProviderError
 from etfhextractor.mainsequence_categories import (

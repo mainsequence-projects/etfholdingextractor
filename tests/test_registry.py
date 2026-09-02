@@ -9,7 +9,6 @@ from etfhextractor.providers.registry import (
     supported_providers,
 )
 
-
 IVV_URL = "https://www.ishares.com/us/products/239726/ishares-core-sp-500-etf"
 
 

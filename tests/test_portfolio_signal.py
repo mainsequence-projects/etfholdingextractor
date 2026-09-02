@@ -6,6 +6,7 @@ from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 import pandas as pd
+from msm_portfolios.data_nodes.constants import ASSET_IDENTIFIER
 
 from etfhextractor.models import FundHoldings, Holding
 from etfhextractor.portfolio_signal import (
@@ -13,7 +14,6 @@ from etfhextractor.portfolio_signal import (
     ETFHoldingsSignalConfig,
     previous_session_close,
 )
-from msm_portfolios.data_nodes.constants import ASSET_IDENTIFIER
 
 IVV_URL = "https://www.ishares.com/us/products/239726/ishares-core-sp-500-etf"
 SIGNAL_UID_VALUE = "etf-holdings-signal-uid"

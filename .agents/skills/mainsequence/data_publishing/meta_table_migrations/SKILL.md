@@ -32,7 +32,7 @@ platform-managed application tables outside the migration workflow.
 - Which provider-scoped MetaTable models belong in `metatable_models`?
 - Does a dynamic provider need `metadata_for_models(...)` instead of full
   package metadata?
-- Does the project need an `after_register_metatables` catalog hook, and does
+- Does the CodeRepository need an `after_register_metatables` catalog hook, and does
   that hook use `context.metatable_models` and `context.registered_metatables`
   instead of importing a broader registry?
 
@@ -65,9 +65,34 @@ mainsequence migrations revision --provider migrations:migration
 mainsequence migrations upgrade --provider migrations:migration head
 ```
 
-`revision` writes normal Alembic files. `upgrade` reserves provider MetaTables,
-runs Alembic DDL through the backend-issued migration credential, finalizes
-provider-scoped MetaTable catalog rows, and runs the optional provider hook.
+`revision` writes normal Alembic files. `upgrade` reserves the provider's
+Alembic registry root and provider MetaTables, runs Alembic DDL through the
+backend-issued migration credential, finalizes all provider-scoped catalog
+rows, and runs the optional provider hook.
+
+## Canonical Lifecycle Contract
+
+Treat catalog ownership, physical schema ownership, and provisioning state as
+independent axes:
+
+| Resource stage | `management_mode` | `schema_management_mode` | `provisioning_status` |
+| --- | --- | --- | --- |
+| Alembic registry before migration | `platform_managed` | `alembic_managed` | `reserved` |
+| Provider table before migration | `platform_managed` | `alembic_managed` | `reserved` |
+| Registry or provider table after finalize | `platform_managed` | `alembic_managed` | `active` |
+| Imported external table | `external_registered` | `external_registered` | `active` |
+
+The Alembic registry is the provider's managed root. It has no parent
+`alembic_version_meta_table_uid`; every provider table references its UID.
+Never classify the registry as `external_registered`. Alembic owning its
+physical DDL is represented by `schema_management_mode="alembic_managed"`, not
+by external catalog ownership.
+
+Do not handcraft or mutate lifecycle combinations. SDK request models enforce
+three creation intents: platform/backend with backend table creation,
+platform/Alembic with backend table creation disabled, and external/external
+with no provisioning. Managed migration collection rows are always
+platform-managed, Alembic-managed reservations and are validated before HTTP.
 
 ## Rules
 
@@ -79,19 +104,37 @@ provider-scoped MetaTable catalog rows, and runs the optional provider hook.
   and a provider-specific `metatable_models` list.
 - Never send or thread request-side `data_source_uid` through migration status
   or apply flows. Backend migration operations resolve the data source from the
-  registered Alembic version MetaTable UID.
+  reserved Alembic version MetaTable UID.
 - Do not create SDK reset/reconcile commands for stale reserved state. If stale
   reserved state exists, fail clearly and require an explicit backend/admin
   repair path.
+- Ordinary `MetaTable.delete()` must not bypass Alembic schema-management
+  protection. For a deliberate organization-admin teardown/reset only, use
+  `MetaTable.delete_with_cascade(confirm_cascade_delete=True, ...)` and set
+  `override_schema_management_protection=True` when deleting Alembic-managed
+  tables. Decide explicitly whether referencing MetaTables and time-indexed Data
+  Nodes are also deleted. This permanently deletes catalog rows and physical
+  tables; never use it as migration reconciliation or an Alembic downgrade.
 - Do not write direct backend migration request bodies in examples. Use the CLI
   and SDK provider APIs.
 - Do not call platform-managed model `.register()` in normal application code.
   Registration is reserved for the migration workflow.
+- Resolve CodeRepository/Git context once per CLI operation and reuse it for the
+  registry reservation, provider reservations, and migration credential.
+- Reject a returned registry unless it is a platform-managed,
+  Alembic-managed root in `reserved` or `active` state. Do not silently reuse a
+  legacy organization-scoped `external_registered` registry.
+- Treat `ensure_alembic_registry()` as resolve-or-create. Resolve by DataSource
+  UID, physical schema, and physical table name; then validate provider key,
+  lifecycle modes, and the empty parent relationship before reuse. Never
+  collection-create a compatible registry that already exists.
 
 ## Debugging
 
 - If `current` fails before Alembic runs, inspect the provider import path and
-  Alembic version MetaTable binding.
+  Alembic version MetaTable binding. Confirm the registry reservation is
+  `platform_managed` + `alembic_managed`, has no parent registry UID, and
+  carries the same CodeRepository/Git context as the migration operation.
 - If `revision` autogenerate tries to create everything again, the local
   migration connection cannot see the provider's current physical tables.
 - If `upgrade` fails during prepare, inspect provider model identifiers,

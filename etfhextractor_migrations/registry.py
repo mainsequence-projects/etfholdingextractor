@@ -3,7 +3,6 @@ from __future__ import annotations
 from typing import Any
 
 from mainsequence.meta_tables.migrations import build_metatable_model_registry
-
 from msm.base import MarketsBase
 
 

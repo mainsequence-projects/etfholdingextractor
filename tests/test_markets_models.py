@@ -54,10 +54,15 @@ class DemoBarsStorageConventionTests(unittest.TestCase):
         self.assertIn("asset_identifier->ms_markets__asset.unique_identifier", foreign_keys)
 
     def test_node_is_storage_bound(self) -> None:
-        self.assertIs(DemoBars._required_storage_table(), DemoBarsStorage)
+        self.assertIs(DemoBars._required_output_table(), DemoBarsStorage)
+        self.assertFalse(hasattr(DemoBars, "_required_storage_table"))
 
     def test_migration_provider_is_sdk_shaped_and_scoped_to_project_tables(self) -> None:
-        from etfhextractor_migrations import EtfhExtractorAlembicVersion, migration
+        from etfhextractor_migrations import (
+            PROJECT_TABLE_NAMES,
+            EtfhExtractorAlembicVersion,
+            migration,
+        )
 
         self.assertEqual(type(migration).__name__, "AlembicMetaTableMigration")
         provider_models = list(
@@ -65,6 +70,19 @@ class DemoBarsStorageConventionTests(unittest.TestCase):
         )
         # Scoped to project-owned tables only — never the built-in msm graph.
         self.assertEqual(provider_models, [DemoBarsStorage])
+        self.assertEqual(PROJECT_TABLE_NAMES, {DemoBarsStorage.__table__.name})
+        self.assertEqual(
+            [
+                table.name
+                for table in migration.target_metadata.sorted_tables
+                if migration.include_name(
+                    table.name,
+                    "table",
+                    {"schema_name": table.schema},
+                )
+            ],
+            [DemoBarsStorage.__table__.name],
+        )
         self.assertEqual(
             EtfhExtractorAlembicVersion.__name__,
             "EtfhExtractorAlembicVersion",

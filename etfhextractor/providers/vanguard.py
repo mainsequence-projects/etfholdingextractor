@@ -9,7 +9,13 @@ from ..exceptions import UnsupportedProviderError, WorkbookParseError
 from ..models import FundHoldings, Holding
 from ..settings import VanguardHoldingsSource, get_vanguard_holdings_source
 from .base import HoldingsProvider
-from .common import find_first_string_value, is_probable_security_ticker, load_json_payload, normalize_ticker, parse_float
+from .common import (
+    find_first_string_value,
+    is_probable_security_ticker,
+    load_json_payload,
+    normalize_ticker,
+    parse_float,
+)
 
 
 class VanguardHoldingsProvider(HoldingsProvider):

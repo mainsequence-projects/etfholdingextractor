@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-
 SUPPORTED_PROVIDERS = ("invesco", "ishares", "state_street", "vanguard")
 ISHARES_PRODUCT_LISTING_URL = "https://www.ishares.com/us/products/etf-investments"
 INVESCO_HOLDINGS_LANDING_URL_TEMPLATE = (

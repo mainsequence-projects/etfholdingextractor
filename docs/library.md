@@ -63,6 +63,7 @@ imports the msm_portfolios stack); import it explicitly:
 
 ```python
 from etfhextractor.portfolio_publish import (
+    EtfTrackingPortfolioBuild, build_etf_tracking_portfolio,
     publish_etf_tracking_portfolio, ensure_trading_calendar,
     build_etf_tracker_unique_identifier, start_portfolio_engine,
     US_EQUITY_CALENDAR_KEY, PRICE_SOURCE_TABLE_UID_ENV,
@@ -309,27 +310,33 @@ are **convenience wiring** that assemble those ms-markets objects around the sig
 assembly the example demonstrates — not a library capability claim (implementation task 0002,
 ADR 0003):
 
-- `ETFHoldingsSignal` is a custom `msm_portfolios` `SignalWeights` DataNode whose update
+- `ETFHoldingsSignal` is a custom `msm_portfolios` `SignalWeights` TimeIndexTableUpdater whose update
   re-extracts the ETF holdings (same `ETFHoldingsReader`, component filter, and snapshot-layer
   ticker resolution as category sync) and emits `(time_index, asset_identifier) → signal_weight`.
   Two guards protect the canonical signal table: insertions happen at most once per
   `min_update_interval_days` (default daily), and only when the weights actually changed.
-- `publish_etf_tracking_portfolio(...)` (convenience wiring around ms-markets) connects the
-  signal plus the CALLER's valuation source (`APIDataNode.build_from_table_uid`; pass the uid or set
+- `build_etf_tracking_portfolio(...)` (reusable convenience wiring around ms-markets) connects the
+  signal plus the CALLER's valuation source (`TimeIndexTableRef.from_uid`; pass the uid or set
   `ETFH_PORTFOLIO_PRICE_SOURCE_TABLE_UID`) into msm's `PortfoliosDataNode` as
   `PortfolioBuildConfiguration.valuation_source_instance`, resolving portfolio
-  identity through the `Portfolio` row alone — its `unique_identifier` keys all portfolio storage; `PortfolioIndex` is only an optional published-index reference (`Portfolio.published_index_uid`, ms-markets >= 0.0.54) and is never created or relied on here. CLI: `etfh portfolio-publish`.
+  identity through the `Portfolio` row alone. It returns `EtfTrackingPortfolioBuild`, exposing the
+  calendar, signal, portfolio row, configuration, node, valuation source, and run result to project
+  integrations. Callers may supply their own `portfolio_unique_identifier`, valuation column, and
+  frontend labels without rebuilding the graph. `publish_etf_tracking_portfolio(...)` wraps the
+  same builder and returns the stable JSON-friendly summary used by CLI `etfh portfolio-publish`.
+  `PortfolioIndex` remains only an optional published-index reference
+  (`Portfolio.published_index_uid`) and is never created or relied on here.
 - **Signal identity is definition-scoped** (ticker/source/normalization/validity — see
   [ADR 0005](adr/0005-tracking-signal-identity-is-definition-scoped.md)):
   `ETFHoldingsSignalConfig.asset_list` is updater scope for the 0.0.54 preflight
   `get_asset_list()` requirement and is neutralized in the `signal_uid` payload, so composition
   changes never rotate the series. Signal descriptions are plain text.
-- ms-markets >= 0.0.54 pinnings handled by `publish_etf_tracking_portfolio`: portfolio identity
+- ms-markets 1.x contracts handled by the reusable builder: portfolio identity
   set on both resolution paths (`target_portfolio` + `_explicit_portfolio_identifier`), and the
   resolved component identifiers always supplied as the signal's preflight scope.
 - **Trading calendar — an ms-markets contract the wiring honors**
   ([ADR 0006](adr/0006-trading-calendar-and-backtest-bootstrap.md)):
-  ms-markets >= 0.0.58 requires every Portfolio row to reference a persisted Calendar
+  ms-markets 1.x requires every Portfolio row to reference a persisted Calendar
   (`calendar_uid` NOT NULL FK, `ondelete=RESTRICT`; the legacy `calendar_name` field is gone).
   `calendar_key` defaults to `NYSE` for US ETFs. `ensure_trading_calendar()` persists it through
   the msm util `Calendar.create_from_pandas_calendar` (Calendar + CalendarDate/CalendarSession
@@ -375,7 +382,7 @@ This project owns exactly **one** ms-markets MetaTable, defined in
   `etfhextractor_markets__demobarsts`. Demo `close`/`volume` bars keyed by
   `(time_index, asset_identifier)` with the canonical FK to `AssetTable.unique_identifier`,
   published by the example's default self-sufficient mode (no external price table given)
-  through the thin `DemoBars` (`AssetTimestampedDataNode`) node — bars land on the NYSE session
+  through the thin `DemoBars` (`AssetTimestampedDataNode`/`TimeIndexTableUpdater`) node — bars land on the NYSE session
   closes — so the ETF-tracking portfolio can run end-to-end without an external market-data feed. It must be migrated/registered by the SDK migration provider before
   writes, like any other table.
 
@@ -472,7 +479,7 @@ These are implementation details, not separate product responsibilities:
 This library does not own:
 
 - **market prices or any pricing capability** — the portfolio's price source is always supplied
-  by the caller (a registered bars table or their own DataNode); the project-owned `DemoBarsTS`
+  by the caller (a registered bars table or their own TimeIndexTableUpdater); the project-owned `DemoBarsTS`
   holds deterministic synthetic values for the runnable example only and doubles as the
   extension template for whoever builds their own price table
 - broad asset-master ownership (it registers **ETF component equities via FIGI only**, opt-in —

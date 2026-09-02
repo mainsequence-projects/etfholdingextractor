@@ -208,15 +208,13 @@ def register_equity_assets_from_tickers(
     _ensure_msm_started()
 
     import pandas as pd
-
+    from mainsequence.logconf import logger as _ms_logger
     from msm.api.assets import Asset, AssetType, OpenFigiDetails
     from msm.constants import ASSET_TYPE_EQUITY
     from msm.services.assets.openfigi import (
         build_asset_snapshot_frame_from_openfigi_result,
         query_figi,
     )
-
-    from mainsequence.logconf import logger as _ms_logger
 
     log = _ms_logger.bind(sub_application="etfhextractor", component="asset_registration")
 

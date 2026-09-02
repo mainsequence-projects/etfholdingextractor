@@ -52,10 +52,10 @@ def prepare_demo_bars_schema(
     revision_message: str | None = None,
 ) -> dict[str, Any]:
     """Create/apply the DemoBarsTS Alembic revision and verify registration."""
+    from etfhextractor_migrations import migration  # noqa: F401 — validates provider import
     from msm.settings import markets_configured_namespace
 
     from etfhextractor.markets_models import DemoBarsStorage
-    from etfhextractor_migrations import migration  # noqa: F401 — validates provider import
 
     table_name = DemoBarsStorage.__table__.name
     # The EFFECTIVE namespace (MSM_AUTO_REGISTER_NAMESPACE overrides the declared

@@ -15,6 +15,19 @@ from etfhextractor_migrations.registry import metatable_provider_models
 # Env-aware like the ms-markets provider: MSM_AUTO_REGISTER_NAMESPACE overrides
 # the project namespace for isolated tests/examples without source changes.
 _NAMESPACE = markets_configured_namespace(ETFHEXTRACTOR_METATABLE_NAMESPACE)
+PROJECT_TABLE_NAMES = frozenset(
+    model.__table__.name for model in metatable_provider_models()
+)
+
+
+def _include_project_tables(
+    name: str | None,
+    type_: str,
+    parent_names: dict[str, object],
+) -> bool:
+    """Keep FK dependency metadata visible without taking ownership of its DDL."""
+    del parent_names
+    return type_ != "table" or name in PROJECT_TABLE_NAMES
 
 
 EtfhExtractorAlembicVersion = build_alembic_version_metatable(
@@ -33,7 +46,8 @@ migration = build_metatable_migration_provider(
     target_metadata=ETFHEXTRACTOR_MIGRATION_METADATA,
     alembic_registry=EtfhExtractorAlembicVersion,
     metatable_models=metatable_provider_models(),
+    include_name_hook=_include_project_tables,
 )
 
 
-__all__ = ["EtfhExtractorAlembicVersion", "migration"]
+__all__ = ["EtfhExtractorAlembicVersion", "PROJECT_TABLE_NAMES", "migration"]

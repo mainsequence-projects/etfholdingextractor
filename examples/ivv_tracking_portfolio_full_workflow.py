@@ -4,7 +4,7 @@ Pipeline (implementation task 0002 / ADR 0003 — the msm_portfolios signal path
 
     extraction (FundHoldings) ──> ETFHoldingsSignal (custom SignalWeights)
                                           │ (time_index, asset_identifier) → signal_weight
-    registered bars table ── APIDataNode ─┴──> PortfoliosDataNode ──> ETF-tracking portfolio
+    registered bars table ── TimeIndexTableRef ─┴──> PortfoliosDataNode ──> ETF-tracking portfolio
 
 **Self-sufficient by default** — the only prerequisites are an authenticated Main
 Sequence session and the built-in ms-markets MetaTables registered by the SDK
@@ -29,7 +29,7 @@ migration provider. The flag-free run does everything else itself:
 5. Optionally sync the `HOLDINGS__<ETF>` asset category (`--with-category-sync`).
 5.5. Publish deterministic demo bars into `DemoBarsTS`
    (`etfhextractor/markets_models.py`, extension-mixin convention, logical id
-   `etfhextractor.DemoBarsTS`) and use that DataNode as the portfolio
+   `etfhextractor.DemoBarsTS`) and use that TimeIndexTableUpdater as the portfolio
    price source — no external market-data feed required. Bars land on the
    **NYSE session closes** (pandas_market_calendars), aligned with the
    portfolio's valuation index.

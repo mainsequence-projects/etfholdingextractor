@@ -15,7 +15,7 @@ price source into the portfolio series:
 ```text
 extraction (FundHoldings) ──> ETFHoldingsSignal (custom SignalWeights)
                                        │ signal frame: (time_index, asset_identifier) → signal_weight
-price source DataNode ──> InterpolatedPrices ──┐
+price source TimeIndexTableUpdater ──> optional InterpolatedPrices ──┐
                                        └──> PortfoliosDataNode ──> portfolio that tracks the ETF
 ```
 
@@ -61,7 +61,7 @@ Reference implementations: `contrib/signals/fixed_weights.py` (static, write-onc
 ```python
 PortfolioConfiguration(
     portfolio_build_configuration=PortfolioBuildConfiguration(
-        valuation_source_instance=<DataNode | APIDataNode>,  # explicit upstream valuation dependency
+        valuation_source_instance=<TimeIndexTableUpdater | TimeIndexTableRef>,  # explicit dependency
         valuation_column="close",
         price_alignment_policy=PriceAlignmentPolicy(...),
         portfolio_prices_frequency="1d",
@@ -81,7 +81,7 @@ PortfolioConfiguration(
 - Valuations come from an **explicit** `valuation_source_instance` (skill rule: persistent
   interpolation is prepared upstream — `msm_portfolios.contrib.prices.InterpolatedPrices` — and
   passed in; `PortfoliosDataNode` never constructs prices internally). A registered source-bars
-  table can be attached through `APIDataNode.build_from_table_uid(...)`, and
+  table can be attached through `TimeIndexTableRef.from_uid(...)`, and
   `valuation_column` selects the numeric column consumed for valuation.
 - The rebalance strategy starting point is `ImmediateSignal`
   (`msm_portfolios/rebalance_strategy/immediate_signal.py`): signal weights become executed weights
@@ -192,7 +192,7 @@ The SDK migration provider must have registered these MetaTables first (same rul
        `_ensure_msm_started` for this path);
     2. build the price dependency from the registered table UID
        (`PricesConfiguration(source_time_index_meta_table_uid=...)` →
-       `InterpolatedPrices`/`APIDataNode` per the equal-weight example);
+       `InterpolatedPrices`/`TimeIndexTableRef` per the equal-weight example);
     3. assemble `PortfolioConfiguration` exactly as §2.2 with
        `signal_weights_instance=ETFHoldingsSignal.from_signal_configuration(config)` and
        `rebalance_strategy_instance=ImmediateSignal(...)`;

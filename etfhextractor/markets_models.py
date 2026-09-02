@@ -21,9 +21,6 @@ from __future__ import annotations
 import datetime
 
 import pandas as pd
-from sqlalchemy import DateTime, Float, ForeignKey, String
-from sqlalchemy.orm import Mapped, mapped_column
-
 from msm.base import MarketsBase, MarketsTimeIndexMetaTableMixin
 from msm.data_nodes.assets import (
     AssetDataNodeConfiguration,
@@ -32,6 +29,8 @@ from msm.data_nodes.assets import (
 )
 from msm.models.assets.core import AssetTable
 from msm.settings import ASSET_IDENTIFIER_DIMENSION
+from sqlalchemy import DateTime, Float, ForeignKey, String
+from sqlalchemy.orm import Mapped, mapped_column
 
 ETFHEXTRACTOR_METATABLE_NAMESPACE = "etfhextractor"
 ETFHEXTRACTOR_MARKETS_STORAGE_APP = "etfhextractor_markets"
@@ -119,7 +118,7 @@ class BatchVerifiedAssetSnapshot(AssetSnapshot):
     """
 
     def existing_backend_index_keys(self, frame: pd.DataFrame) -> list[tuple[str, str]]:
-        validated = self.validate_frame(frame, storage_table=self.storage_table)
+        validated = self.validate_frame(frame, output_table=self.output_table)
         flat = validated.reset_index()
         identifiers = sorted({str(value) for value in flat[ASSET_IDENTIFIER_DIMENSION]})
         times = pd.to_datetime(flat["time_index"], utc=True)
@@ -159,7 +158,7 @@ class DemoBars(AssetTimestampedDataNode):
     configuration_class = DemoBarsConfiguration
 
     @classmethod
-    def _required_storage_table(cls) -> type[DemoBarsStorage]:
+    def _required_output_table(cls) -> type[DemoBarsStorage]:
         return DemoBarsStorage
 
     @classmethod

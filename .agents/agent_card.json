@@ -1,7 +1,7 @@
 {
   "name": "etfholdingextractor-161",
   "description": "Agent for extracting ETF holdings weights from supported providers, planning or syncing MainSequence HOLDINGS__<ETF> asset categories (FIGI-registering missing components on demand), and providing an ETF-holdings tracking SIGNAL for the ms-markets portfolio pipeline \u2014 portfolio assembly itself is ms-markets functionality, demonstrated in the repository example.",
-  "version": "0.3.4",
+  "version": "0.4.1",
   "supportedInterfaces": [
     {
       "protocolBinding": "HTTP+JSON",
@@ -63,7 +63,7 @@
     {
       "id": "etf_holdings_signal",
       "name": "ETF Holdings Tracking Signal",
-      "description": "Provide ETFHoldingsSignal: a custom msm_portfolios SignalWeights whose updates re-extract the ETF holdings and emit guarded, session-close-stamped signal weights under one definition-scoped signal_uid. Portfolios, calendars, and prices are ms-markets / caller concerns; the repository example demonstrates the full assembly and the demo bars are synthetic example data only.",
+      "description": "Provide ETFHoldingsSignal and reusable ms-markets portfolio assembly. The signal re-extracts ETF holdings and emits guarded, session-close-stamped weights under one definition-scoped signal_uid; build_etf_tracking_portfolio assembles the caller-supplied valuation source, calendar, Portfolio row, configuration, and PortfoliosDataNode without taking ownership of pricing.",
       "tags": [],
       "examples": [
         "Run the IVV holdings signal and verify the signal weight rows.",

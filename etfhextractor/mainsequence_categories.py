@@ -10,7 +10,6 @@ from .providers.common import is_probable_security_ticker, normalize_ticker
 from .providers.registry import infer_provider_name_from_url
 from .reader import ETFHoldingsReader
 
-
 HOLDINGS_ASSET_CATEGORY_PREFIX = "HOLDINGS__"
 
 # Page size for scanning the ms-markets asset-snapshot MetaTable. We page through

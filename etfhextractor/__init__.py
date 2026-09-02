@@ -12,8 +12,8 @@ from .exceptions import (
     WorkbookParseError,
 )
 from .mainsequence_categories import (
-    AssetCategorySyncResult,
     HOLDINGS_ASSET_CATEGORY_PREFIX,
+    AssetCategorySyncResult,
     HoldingsAssetCategoryPlan,
     build_holdings_asset_category_plan,
     build_holdings_asset_category_unique_identifier,

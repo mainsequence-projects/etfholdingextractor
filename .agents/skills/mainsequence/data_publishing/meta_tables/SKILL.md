@@ -1,13 +1,13 @@
 ---
 name: mainsequence-meta-tables
-description: Use this skill when the task is about defining, querying, or reviewing Main Sequence MetaTables. This skill owns SQLAlchemy table contracts, backend-managed table authoring, external table registration, governed compiled SQL operations, foreign keys, indexes, naming, cadence, and validation rules. For Alembic migration lifecycle work, use the mainsequence-metatable-migrations skill. It does not own DataNode producers, API route contracts, scheduling, releases, or sharing policy.
+description: Use this skill when the task is about defining, querying, or reviewing Main Sequence MetaTables. This skill owns SQLAlchemy table contracts, backend-managed table authoring, external table registration, governed compiled SQL operations, foreign keys, indexes, naming, cadence, and validation rules. For Alembic migration lifecycle work, use the mainsequence-metatable-migrations skill. It does not own TimeIndexTableUpdater producers, API route contracts, scheduling, releases, or sharing policy.
 ---
 
 # Main Sequence MetaTables
 
 ## Overview
 
-Use this skill when the task changes row-oriented project tables that are not naturally time-series DataNodes.
+Use this skill when the task changes row-oriented CodeRepository tables that are not naturally time-indexed.
 
 This skill is for schema-driven application tables registered through TS Manager as `MetaTable` resources.
 
@@ -21,15 +21,14 @@ This skill is for schema-driven application tables registered through TS Manager
 - design governed compiled SQL read and write operations
 - route provider-based Alembic contract evolution to the MetaTable migration skill
 - review table contracts for physical-name, namespace, and identifier issues
-- review whether a task should be a `MetaTable` or a `DataNode`
+- review whether a task should be a `MetaTable` or a `TimeIndexTableUpdater`
 
 ## This Skill Must Not Claim
 
 This skill must not claim ownership of:
 
-- DataNode producer contracts
-- FastAPI route contracts
-- widget response contracts
+- TimeIndexTableUpdater producer contracts
+- Command Center FastAPI wire contracts
 - workspace payloads
 - job scheduling, image pinning, or releases
 - RBAC or sharing policy
@@ -42,14 +41,10 @@ If the user is still in the discovery process and does not yet know what data ex
   `.agents/skills/mainsequence/data_access/exploration/SKILL.md`
 - MetaTable migrations:
   `.agents/skills/mainsequence/data_publishing/meta_table_migrations/SKILL.md`
-- DataNodes:
-  `.agents/skills/mainsequence/data_publishing/data_nodes/SKILL.md`
-- APIs and FastAPI:
+- TimeIndexTableUpdaters:
+  `.agents/skills/mainsequence/data_publishing/time_index_table_updates/SKILL.md`
+- Command Center-serving FastAPI providers:
   `.agents/skills/mainsequence/application_surfaces/api_surfaces/SKILL.md`
-- Command Center workspaces:
-  `.agents/skills/mainsequence/command_center/workspace_builder/SKILL.md`
-- AppComponents and custom forms:
-  `.agents/skills/mainsequence/command_center/app_components/SKILL.md`
 - Jobs, images, resources, and releases:
   `.agents/skills/mainsequence/platform_operations/orchestration_and_releases/SKILL.md`
 
@@ -74,10 +69,13 @@ Before changing code, collect or infer:
 - relation shape between tables
 - expected read patterns
 - expected mutation patterns
-- whether TS Manager should create the physical table
-- for `external_registered`, the target `DynamicTableDataSource` UID
+- who owns the MetaTable catalog lifecycle
+- who owns physical DDL: TS Manager, Alembic, or an external authority
+- for `external_registered`, the target canonical `DataSource` UID
+- the actual current Git branch; the SDK resolves its registered `CodeRepositoryBranch`
+  and Environment, and the user must not provide either UID
 - for contract changes, the selected `AlembicMetaTableMigration` provider or provider module path
-- for contract changes, the provider's `AlembicVersionMetaTable` binding and whether it has been registered
+- for contract changes, the provider's `AlembicVersionMetaTable` root and whether it has been reserved
 - for contract changes, the intended Alembic revision, parent/current revision, target revision, and updated SQLAlchemy declarations
 
 If ownership of the physical table lifecycle is unclear, stop before choosing a management mode.
@@ -86,15 +84,20 @@ If ownership of the physical table lifecycle is unclear, stop before choosing a 
 
 For every non-trivial task, decide:
 
-1. Is this table really row-oriented, or should it be a DataNode?
+1. Is this table really row-oriented, or should it be a TimeIndexTableUpdater?
 2. What is the business key?
-3. Should the table be `platform_managed` or `external_registered`?
-4. What namespace and identifier define the logical table identity?
-5. Are foreign-key dependencies aligned with registration order?
-6. What governed operations should be allowed by the declared table scope?
-7. If the table already exists and its contract changes, is this an Alembic migration rather than normal registration?
-8. For a migration, which provider object controls `target_metadata`, `script_location`, `alembic_registry`, and `metatable_models`?
-9. For a migration, has the provider's Alembic version-table binding been registered?
+3. Who owns the catalog boundary: `platform_managed` or `external_registered`?
+4. Who owns physical DDL: `backend_managed`, `alembic_managed`, or `external_registered`?
+5. What namespace and identifier define the logical table identity?
+6. Are foreign-key dependencies aligned with registration order?
+7. What governed operations should be allowed by the declared table scope?
+8. If the table already exists and its contract changes, is this an Alembic migration rather than normal registration?
+9. For a migration, which provider object controls `target_metadata`, `script_location`, `alembic_registry`, and `metatable_models`?
+10. For a migration, has the provider's platform-managed Alembic registry root been reserved?
+
+Do not infer catalog ownership from DDL ownership. SDK migration resources are
+`platform_managed` while Alembic DDL is `alembic_managed`. A genuinely imported
+table is `external_registered` on both axes and is already `active`.
 
 ## Build Rules
 
@@ -119,17 +122,22 @@ mainsequence migrations revision --provider sdk_examples.migrations:migration
 mainsequence migrations upgrade --provider sdk_examples.migrations:migration head
 ```
 
+For this workflow, the Alembic registry and provider tables are
+`platform_managed` + `alembic_managed`. They are `reserved` before Alembic runs
+and `active` only after managed finalization. The registry is the root and has
+no parent registry UID.
+
 ### 1. SQLAlchemy metadata is the authoring source
 
 Keep the application table model as the authoring source for the neutral table contract.
 
 Do not hand-build contract fragments when the SQLAlchemy helper can derive them.
 
-### 2. Use explicit project-prefixed table names
+### 2. Use explicit repository-prefixed table names
 
 For `platform_managed`, inherit from `PlatformManagedMetaTable`.
 
-Declare an explicit project-prefixed SQLAlchemy `__tablename__`. Use
+Declare an explicit repository-prefixed SQLAlchemy `__tablename__`. Use
 `schema_table_name(app, concept, suffix=None)` from `mainsequence.meta_tables`
 to generate that name:
 
@@ -141,11 +149,11 @@ def schema_table_name(
 ) -> str: ...
 ```
 
-Use `app` for the project/package prefix, `concept` for the table concept, and
+Use `app` for the repository/package prefix, `concept` for the table concept, and
 `suffix` for a namespace, variant, or bounded specialization when the same
-concept exists in multiple logical scopes. The mixin derives only the logical
-`storage_hash` from storage-relevant configuration and table shape; it must not
-use that hash as the SQLAlchemy table name.
+concept exists in multiple logical scopes. The authored SQLAlchemy table name is
+the physical database binding. A computed contract hash is an optional utility,
+not a MetaTable property or table name.
 
 When a platform-managed table must support in-place contract migrations from its
 first version, use Alembic. Keep the SDK model as a normal
@@ -170,21 +178,16 @@ Every mapped column must include `info={"label": ..., "description": ...}`.
 The column description must explain what the value means in this table and how
 it is used, not just restate the column name or dtype.
 
-Use `__metatable_extra_hash_components__` when two backend-managed tables could
-otherwise produce the same storage hash because their storage-relevant shape is
-identical or intentionally generic. The value must be stable and deterministic,
-usually a small mapping such as `{"storage_name": "account_holdings"}`.
-
-This attribute is part of storage identity. Changing it defines a different
-table. Do not use it for labels, descriptions, runtime options, test isolation,
-backend UIDs, data-source UIDs, or updater scope. Use `hash_namespace` for test
-or experiment isolation.
+If a caller explicitly needs a deterministic fingerprint for drift detection,
+caching, or validation, call
+`compute_metatable_contract_hash(..., extra_components={...})`. Never send that
+result as MetaTable identity.
 
 Prefix explicit table identifiers, explicit physical table names, and Alembic
-version table names with the project or package name. Bare names such as
-`Account`, `Asset`, or `alembic_version` can collide across projects sharing an
+version table names with the repository or package name. Bare names such as
+`Account`, `Asset`, or `alembic_version` can collide across CodeRepositories sharing an
 organization or database schema. Prefer `schema_table_name(...)` over
-hand-built f-strings so project/app prefixes, bounded length, and separators are
+hand-built f-strings so repository/app prefixes, bounded length, and separators are
 consistent.
 
 Register through the class API:
@@ -192,16 +195,15 @@ Register through the class API:
 ```python
 from mainsequence.meta_tables import PlatformManagedMetaTable, schema_table_name
 
-PROJECT_NAME = "sdk_examples"
-ACCOUNT_TABLE_NAME = schema_table_name(PROJECT_NAME, "account")
-BROKER_ACCOUNT_TABLE_NAME = schema_table_name(PROJECT_NAME, "account", suffix="broker")
+CODE_REPOSITORY_NAME = "sdk_examples"
+ACCOUNT_TABLE_NAME = schema_table_name(CODE_REPOSITORY_NAME, "account")
+BROKER_ACCOUNT_TABLE_NAME = schema_table_name(CODE_REPOSITORY_NAME, "account", suffix="broker")
 
 
 class Account(PlatformManagedMetaTable, Base):
     __tablename__ = ACCOUNT_TABLE_NAME
     __metatable_namespace__ = "sdk-examples"
     __metatable_identifier__ = "sdk_examples.Account"
-    __metatable_extra_hash_components__ = {"storage_name": "account"}
     __metatable_description__ = (
         "Customer account master records used to scope balances, holdings, and "
         "account-level limits."
@@ -234,7 +236,7 @@ selected `AlembicMetaTableMigration.metatable_models` list and let
 and bind them.
 
 For platform-managed migration registration, the data source is resolved from
-the active Main Sequence project/session, the same way DataNode does. Do not
+the active Main Sequence CodeRepositoryBranch/session, the same way TimeIndexTableUpdater does. Do not
 require or thread a `data_source_uid` through normal platform-managed example
 code.
 
@@ -262,9 +264,9 @@ lifecycle path: the SDK reserves provider MetaTable rows, Alembic renders and
 applies FK/index DDL from SQLAlchemy metadata, and finalization refreshes the
 catalog after upgrade.
 
-Prefer project-prefixed SQLAlchemy table names for explicit FK string targets.
+Prefer repository-prefixed SQLAlchemy table names for explicit FK string targets.
 Alembic, SQLAlchemy, and the database own physical FK/index names unless the
-project explicitly names them in SQLAlchemy.
+CodeRepository explicitly names them in SQLAlchemy.
 
 Use this pattern:
 
@@ -344,7 +346,7 @@ Application MetaTable catalog sync resolves existing rows by the authored
 SQLAlchemy table name used by the provider model. Keep that table name stable
 when a class is renamed or moved but must keep the same platform identity.
 When declaring an explicit identifier, explicit physical table name, or Alembic
-version table name, prefix it with the project or package name rather than using
+version table name, prefix it with the repository or package name rather than using
 a bare table name. Use `schema_table_name(app, concept, suffix=None)` for the
 physical table and Alembic version table names. Use `suffix` for a namespace or
 variant, for example `schema_table_name("msm", "positions", suffix="broker")`.
@@ -387,6 +389,24 @@ Only use physical table names returned by registered `MetaTable` objects when co
 
 Do not hardcode platform-managed physical names manually.
 
+### 7. Updater output-table deletes use the time-index-table tail-delete API
+
+For `PlatformTimeIndexMetaTable` output tables populated by TimeIndexTableUpdaters, do not design raw
+SQL delete operations or compiled SQL delete operations for rollback, repair, or
+stream cleanup. Route that work to the TimeIndexTableUpdater skill and use
+`TimeIndexMetaTable.delete_after_date(...)`.
+
+The TimeIndexTableUpdater delete path is:
+
+```text
+POST /api/v1/time-index-meta-tables/<table_uid>/delete-after-date/
+```
+
+Use `after_date` for global tail rollback. Use `dimension_filters` or
+`index_coordinates` for scoped deletes, including scoped full-stream deletes
+where `after_date=None`. Never allow `after_date=None` without an explicit
+dimension or coordinate scope.
+
 ## Review Rules
 
 When reviewing an existing MetaTable workflow, look for:
@@ -406,7 +426,9 @@ When reviewing an existing MetaTable workflow, look for:
 - migration work that asks users to define backend payloads, artifact rows, or SDK request objects
 - compiled SQL operations without complete table scope
 - raw SQL that hardcodes stale physical names
-- a table that should really be modeled as a DataNode instead
+- raw SQL or compiled SQL deletes against TimeIndexTableUpdater-owned
+  `PlatformTimeIndexMetaTable` storage instead of `delete_after_date(...)`
+- a table that should really be modeled as a TimeIndexTableUpdater instead
 
 ## Validation Checklist
 
@@ -418,12 +440,12 @@ Do not claim success until you have checked:
 - indexes are intentional
 - foreign keys are present in SQLAlchemy metadata for Alembic when required
 - management mode is correct
-- authored physical names are explicit, project-prefixed SQLAlchemy table names
+- authored physical names are explicit, repository-prefixed SQLAlchemy table names
 - registration returns a `MetaTable.uid`
 - compiled SQL operations declare table scope
 - migrations use Alembic-rendered SQL
 - migrations are scoped by an `AlembicMetaTableMigration` provider
-- the provider's Alembic version-table binding is registered before apply/current
+- the provider's managed Alembic registry root is reserved before apply/current
 - post-apply catalog registration is scoped to `migration.metatable_models`
 - catalog sync resolves application MetaTables by exact `identifier`
 - user-facing migration instructions stay on the documented CLI/provider lifecycle
@@ -432,7 +454,7 @@ For related tables, also check:
 
 - aliases are readable
 - platform-managed child tables and parent tables are included in the selected migration provider
-- FK target strings use stable project-prefixed SQLAlchemy table names where explicit strings are authored
+- FK target strings use stable repository-prefixed SQLAlchemy table names where explicit strings are authored
 - query results still match the expected response contract
 
 ## This Skill Must Stop And Escalate When
@@ -441,7 +463,7 @@ For related tables, also check:
 - the target data source is unknown for an `external_registered` workflow
 - the task really requires a time-series published table
 - the workflow requires direct database credentials outside TS Manager governance
-- a requested contract change lacks a selected provider or registered Alembic version-table binding
+- a requested contract change lacks a selected provider or reserved Alembic registry root
 - the user expects the SDK to invent schema changes without Alembic/provider metadata
 - the task is actually an API or orchestration problem
 

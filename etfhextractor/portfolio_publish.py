@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import datetime as dt
 import os
+from dataclasses import dataclass
 from typing import Any
 
 from .portfolio_signal import (
@@ -30,13 +31,56 @@ ETF_TRACKER_IDENTIFIER_PREFIX = "etf_tracker_"
 # valuations must follow that trading calendar, not a synthetic 24/7 one.
 US_EQUITY_CALENDAR_KEY = "NYSE"
 # NOTE: the msm REBALANCER resolves ALWAYS_OPEN_CALENDAR_KEYS synthetically, but the
-# Portfolio row's calendar is obligatory regardless (ms-markets >= 0.0.58:
+# Portfolio row's calendar is obligatory regardless (retained in ms-markets 1.x:
 # PortfolioTable.calendar_uid is a NOT NULL FK), so even those keys persist a row.
 # Materialized session coverage around "today": enough past for the backtest
 # bootstrap plus headroom, and enough future for scheduled updates without
 # re-materializing on every publish.
 CALENDAR_PAST_BUFFER_DAYS = 30
 CALENDAR_FUTURE_HORIZON_DAYS = 366
+
+
+@dataclass(frozen=True, slots=True)
+class EtfTrackingPortfolioBuild:
+    """Reusable ETF portfolio graph and the rows created for it.
+
+    The CLI-facing publisher returns :meth:`summary`; project integrations can
+    consume this object directly without rebuilding the ms-markets graph.
+    """
+
+    etf_ticker: str
+    portfolio_unique_identifier: str
+    portfolio_name: str
+    calendar_key: str
+    backtest_start_days: int
+    calendar_row: Any
+    portfolio_row: Any
+    signal: Any
+    valuation_source: Any
+    price_source_table_uid: str | None
+    asset_registration: dict[str, Any] | None
+    portfolio_configuration: Any
+    portfolio_node: Any
+    ran: bool
+    run_result: Any | None
+
+    def summary(self) -> dict[str, Any]:
+        return {
+            "etf_ticker": self.etf_ticker,
+            "portfolio_unique_identifier": self.portfolio_unique_identifier,
+            "portfolio_uid": self.portfolio_row.uid,
+            "portfolio_name": self.portfolio_name,
+            "calendar_key": self.calendar_key,
+            "calendar_uid": self.calendar_row.uid,
+            "backtest_start_days": self.backtest_start_days,
+            "signal_uid": self.signal.signal_uid,
+            "price_source_table_uid": self.price_source_table_uid,
+            "valuation_source": type(self.valuation_source).__name__,
+            "price_source": type(self.valuation_source).__name__,
+            "asset_registration": self.asset_registration,
+            "ran": self.ran,
+            "run_result": _summarize_run_result(self.run_result),
+        }
 
 
 def required_calendar_window(
@@ -197,15 +241,19 @@ def start_portfolio_engine(extra_models: list[Any] | None = None) -> Any:
         return msm_portfolios.start_engine(models=models)
 
 
-def publish_etf_tracking_portfolio(
+def build_etf_tracking_portfolio(
     *,
     etf_ticker: str,
     provider: str | None = None,
     fund_url: str | None = None,
     price_source_table_uid: str | None = None,
     price_source_instance: Any | None = None,
+    portfolio_unique_identifier: str | None = None,
     portfolio_name: str | None = None,
     description: str | None = None,
+    valuation_column: str = "close",
+    signal_name: str | None = None,
+    rebalance_strategy_name: str | None = None,
     signal_validity_days: int = 90,
     min_update_interval_days: float = 1.0,
     renormalize_weights: bool = True,
@@ -218,14 +266,16 @@ def publish_etf_tracking_portfolio(
     register_missing: bool = False,
     figi_disambiguation_filters: list[dict[str, Any]] | None = None,
     asset_identifiers: list[str] | None = None,
-) -> dict[str, Any]:
+    allowed_asset_classes: tuple[str, ...] | None = ("Equity",),
+    start_engine: bool = True,
+) -> EtfTrackingPortfolioBuild:
     """Build (and by default run) the ETF-tracking portfolio pipeline.
 
-    The valuation source must provide the `close` and `volume` columns the
-    rebalance logic consumes. Pass either `price_source_instance` (an explicit
-    DataNode/APIDataNode dependency, e.g. the project-owned `DemoBars` node) or
-    `price_source_table_uid` (an already-registered TimeIndexMetaTable resolved
-    through `APIDataNode.build_from_table_uid`; defaults to the
+    The valuation source must provide the `close` column consumed by portfolio
+    valuation. Pass either `price_source_instance` (an explicit
+    TimeIndexTableUpdater/TimeIndexTableRef dependency, e.g. the project-owned
+    `DemoBars` updater) or `price_source_table_uid` (an already-registered
+    TimeIndexMetaTable resolved through `TimeIndexTableRef.from_uid`; defaults to the
     `ETFH_PORTFOLIO_PRICE_SOURCE_TABLE_UID` environment variable). A price
     table is never guessed.
 
@@ -254,11 +304,13 @@ def publish_etf_tracking_portfolio(
     if price_source_instance is None and not resolved_price_table_uid:
         raise ValueError(
             "An ETF-tracking portfolio needs a price source: pass price_source_instance "
-            "(a DataNode/APIDataNode) or a registered TimeIndexMetaTable uid via "
+            "(a TimeIndexTableUpdater/TimeIndexTableRef) or a registered "
+            "TimeIndexMetaTable uid via "
             f"price_source_table_uid / {PRICE_SOURCE_TABLE_UID_ENV}."
         )
 
-    start_portfolio_engine()
+    if start_engine:
+        start_portfolio_engine()
 
     # Persist (or reuse) the trading calendar BEFORE any portfolio wiring: the
     # rebalance schedule and the Portfolio row both hang off it.
@@ -283,7 +335,12 @@ def publish_etf_tracking_portfolio(
             if fund_url is not None
             else reader.read_ticker(normalized_ticker_for_preflight, provider=provider)
         )
-        component_symbols = sorted(derive_component_weights_from_holdings(fund_holdings))
+        component_symbols = sorted(
+            derive_component_weights_from_holdings(
+                fund_holdings,
+                allowed_asset_classes=allowed_asset_classes,
+            )
+        )
         existing_identifiers, missing, _ambiguous = _resolve_identifiers(
             component_symbols=component_symbols
         )
@@ -308,7 +365,7 @@ def publish_etf_tracking_portfolio(
         if asset_identifiers is None:
             asset_identifiers = sorted(existing_identifiers.values())
 
-    from mainsequence.meta_tables import APIDataNode
+    from mainsequence.meta_tables import TimeIndexTableRef
     from msm.api.portfolios import Portfolio
     from msm_portfolios.configuration import (
         BacktestingWeightsConfig,
@@ -334,6 +391,7 @@ def publish_etf_tracking_portfolio(
         provider=provider,
         fund_url=fund_url,
         renormalize_weights=renormalize_weights,
+        allowed_asset_classes=allowed_asset_classes,
         signal_validity_days=signal_validity_days,
         min_update_interval_days=min_update_interval_days,
         backtest_start_days=backtest_start_days,
@@ -349,7 +407,7 @@ def publish_etf_tracking_portfolio(
     valuation_source = (
         price_source_instance
         if price_source_instance is not None
-        else APIDataNode.build_from_table_uid(str(resolved_price_table_uid))
+        else TimeIndexTableRef.from_uid(str(resolved_price_table_uid))
     )
 
     resolved_name = portfolio_name or f"ETF Tracker {normalized_ticker}"
@@ -361,7 +419,7 @@ def publish_etf_tracking_portfolio(
     portfolio_configuration = PortfolioConfiguration(
         portfolio_build_configuration=PortfolioBuildConfiguration(
             valuation_source_instance=valuation_source,
-            valuation_column="close",
+            valuation_column=valuation_column,
             execution_configuration=PortfolioExecutionConfiguration(
                 commission_fee=commission_fee
             ),
@@ -372,7 +430,11 @@ def publish_etf_tracking_portfolio(
         ),
         portfolio_markets_configuration=PortfolioMarketsConfig(
             portfolio_name=resolved_name,
-            front_end_details=FrontEndDetails(description=resolved_description),
+            front_end_details=FrontEndDetails(
+                description=resolved_description,
+                signal_name=signal_name,
+                rebalance_strategy_name=rebalance_strategy_name,
+            ),
         ),
     )
 
@@ -381,10 +443,13 @@ def publish_etf_tracking_portfolio(
     # by portfolio.unique_identifier. PortfolioIndex is now just an optional
     # published-index reference (Portfolio.published_index_uid) — never identity —
     # so this workflow does not create or rely on any Index row. The calendar is
-    # OBLIGATORY (ms-markets >= 0.0.58): PortfolioTable.calendar_uid is a NOT NULL
+    # OBLIGATORY (ms-markets 1.x): PortfolioTable.calendar_uid is a NOT NULL
     # FK to CalendarTable.uid (ondelete=RESTRICT) and the run() pointer update
     # refuses rows without it; the legacy calendar_name field no longer exists.
-    portfolio_identifier = build_etf_tracker_unique_identifier(normalized_ticker)
+    portfolio_identifier = (
+        portfolio_unique_identifier
+        or build_etf_tracker_unique_identifier(normalized_ticker)
+    )
     portfolio_row = Portfolio.upsert(
         unique_identifier=portfolio_identifier,
         calendar_uid=calendar_row.uid,
@@ -402,29 +467,87 @@ def publish_etf_tracking_portfolio(
     # Portfolio row identity so no resolver is needed.
     node._explicit_portfolio_identifier = portfolio_identifier
 
-    payload: dict[str, Any] = {
-        "etf_ticker": normalized_ticker,
-        "portfolio_unique_identifier": portfolio_identifier,
-        "portfolio_uid": portfolio_row.uid,
-        "portfolio_name": resolved_name,
-        "calendar_key": calendar_key,
-        "calendar_uid": calendar_row.uid,
-        "backtest_start_days": backtest_start_days,
-        "signal_uid": signal.signal_uid,
-        "price_source_table_uid": (
-            str(resolved_price_table_uid) if resolved_price_table_uid else None
-        ),
-        "valuation_source": type(valuation_source).__name__,
-        "price_source": type(valuation_source).__name__,
-        "asset_registration": registration_summary,
-        "ran": False,
-        "run_result": None,
-    }
+    run_result = None
     if run:
         run_result = node.run(debug_mode=debug_mode, force_update=True)
-        payload["ran"] = True
-        payload["run_result"] = _summarize_run_result(run_result)
-    return payload
+    return EtfTrackingPortfolioBuild(
+        etf_ticker=normalized_ticker,
+        portfolio_unique_identifier=portfolio_identifier,
+        portfolio_name=resolved_name,
+        calendar_key=calendar_key,
+        backtest_start_days=backtest_start_days,
+        calendar_row=calendar_row,
+        portfolio_row=portfolio_row,
+        signal=signal,
+        valuation_source=valuation_source,
+        price_source_table_uid=(
+            str(resolved_price_table_uid) if resolved_price_table_uid else None
+        ),
+        asset_registration=registration_summary,
+        portfolio_configuration=portfolio_configuration,
+        portfolio_node=node,
+        ran=run,
+        run_result=run_result,
+    )
+
+
+def publish_etf_tracking_portfolio(
+    *,
+    etf_ticker: str,
+    provider: str | None = None,
+    fund_url: str | None = None,
+    price_source_table_uid: str | None = None,
+    price_source_instance: Any | None = None,
+    portfolio_unique_identifier: str | None = None,
+    portfolio_name: str | None = None,
+    description: str | None = None,
+    valuation_column: str = "close",
+    signal_name: str | None = None,
+    rebalance_strategy_name: str | None = None,
+    signal_validity_days: int = 90,
+    min_update_interval_days: float = 1.0,
+    renormalize_weights: bool = True,
+    commission_fee: float = 0.00018,
+    calendar_key: str = US_EQUITY_CALENDAR_KEY,
+    backtest_start_days: int = 60,
+    timeout: float = 30.0,
+    run: bool = True,
+    debug_mode: bool = True,
+    register_missing: bool = False,
+    figi_disambiguation_filters: list[dict[str, Any]] | None = None,
+    asset_identifiers: list[str] | None = None,
+    allowed_asset_classes: tuple[str, ...] | None = ("Equity",),
+    start_engine: bool = True,
+) -> dict[str, Any]:
+    """Build an ETF-tracking portfolio and return its JSON-friendly summary."""
+    build = build_etf_tracking_portfolio(
+        etf_ticker=etf_ticker,
+        provider=provider,
+        fund_url=fund_url,
+        price_source_table_uid=price_source_table_uid,
+        price_source_instance=price_source_instance,
+        portfolio_unique_identifier=portfolio_unique_identifier,
+        portfolio_name=portfolio_name,
+        description=description,
+        valuation_column=valuation_column,
+        signal_name=signal_name,
+        rebalance_strategy_name=rebalance_strategy_name,
+        signal_validity_days=signal_validity_days,
+        min_update_interval_days=min_update_interval_days,
+        renormalize_weights=renormalize_weights,
+        commission_fee=commission_fee,
+        calendar_key=calendar_key,
+        backtest_start_days=backtest_start_days,
+        timeout=timeout,
+        run=run,
+        debug_mode=debug_mode,
+        register_missing=register_missing,
+        figi_disambiguation_filters=figi_disambiguation_filters,
+        asset_identifiers=asset_identifiers,
+        allowed_asset_classes=allowed_asset_classes,
+        start_engine=start_engine,
+    )
+    return build.summary()
 
 
 def _summarize_run_result(run_result: Any) -> Any:
@@ -445,9 +568,11 @@ def _summarize_run_result(run_result: Any) -> Any:
 
 __all__ = [
     "ETF_TRACKER_IDENTIFIER_PREFIX",
+    "EtfTrackingPortfolioBuild",
     "PRICE_SOURCE_TABLE_UID_ENV",
     "US_EQUITY_CALENDAR_KEY",
     "build_etf_tracker_unique_identifier",
+    "build_etf_tracking_portfolio",
     "ensure_trading_calendar",
     "publish_etf_tracking_portfolio",
     "required_calendar_window",

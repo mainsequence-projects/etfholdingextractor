@@ -6,12 +6,16 @@ from html.parser import HTMLParser
 from urllib.parse import urljoin, urlparse
 
 from ..artifacts import ArtifactPayload
-from ..exceptions import DownloadLinkNotFoundError, FetchError, UnsupportedProviderError, WorkbookParseError
+from ..exceptions import (
+    DownloadLinkNotFoundError,
+    FetchError,
+    UnsupportedProviderError,
+    WorkbookParseError,
+)
 from ..models import FundHoldings, Holding
 from ..settings import IsharesHoldingsSource, get_ishares_holdings_source
 from .base import HoldingsProvider
 from .common import HEADER_MAP, normalize_token, parse_float, strip_tags
-
 
 WORKSHEET_PATTERN = re.compile(
     r'<ss:Worksheet ss:Name="Holdings">(.*?)</ss:Worksheet>',

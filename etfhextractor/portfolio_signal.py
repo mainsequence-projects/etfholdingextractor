@@ -17,11 +17,10 @@ import datetime as dt
 from typing import Any
 
 import pandas as pd
-from pydantic import model_validator
-
 from msm_portfolios.configuration import PortfolioConfigBaseModel
 from msm_portfolios.data_nodes import SignalWeights
 from msm_portfolios.data_nodes.constants import ASSET_IDENTIFIER, SIGNAL_UID
+from pydantic import model_validator
 
 from .mainsequence_categories import (
     derive_component_weights_from_holdings,

@@ -4,12 +4,11 @@ import html
 import io
 import json
 import re
-import zipfile
 import xml.etree.ElementTree as ET
+import zipfile
 from collections.abc import Mapping, Sequence
 
 from ..models import Holding
-
 
 HEADER_MAP = {
     "ticker": "ticker",

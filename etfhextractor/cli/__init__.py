@@ -11,7 +11,6 @@ from ..mainsequence_categories import (
 )
 from ..reader import ETFHoldingsReader
 
-
 SUBCOMMAND_NAMES = {
     "extract-url",
     "extract-ticker",

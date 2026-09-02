@@ -4,11 +4,11 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "etfhextractor"
-version = "0.3.7"
+version = "0.4.1"
 description = "Extract ETF holdings weights from providers, sync MainSequence holdings categories, and provide an ETF-holdings tracking signal for the ms-markets portfolio pipeline."
 readme = "README.md"
-requires-python = ">=3.11"
-license = { file = "LICENSE" }
+requires-python = ">=3.13,<3.14"
+license = "Apache-2.0"
 authors = [
   { name = "Main Sequence GmbH", email = "dev@main-sequence.io" },
 ]
@@ -16,18 +16,17 @@ classifiers = [
   "Development Status :: 4 - Beta",
   "Intended Audience :: Developers",
   "Intended Audience :: Financial and Insurance Industry",
-  "License :: OSI Approved :: Apache Software License",
   "Operating System :: OS Independent",
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3 :: Only",
-  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.13",
   "Topic :: Office/Business :: Financial",
   "Typing :: Typed",
 ]
 dependencies = [
     "certifi>=2024.2.2",
-    "mainsequence>=3.18.17",
-    "ms-markets>=0.0.58",
+    "mainsequence>=8.0.7",
+    "ms-markets>=1.0.2",
     "pandas-market-calendars>=5.4.0",
 ]
 
@@ -47,7 +46,8 @@ etfhextractor_migrations = ["script.py.mako"]
 
 [tool.ruff]
 line-length = 100                 # Max line length for Ruff/Black.
-target-version = "py311"          # Optimize checks/fixes for Python 3.10.
+target-version = "py313"          # Optimize checks/fixes for Python 3.13.
+src = ["etfhextractor", "tests"]
 extend-exclude = [                # Extra paths to ignore.
   "build", "dist", ".venv", ".tox", ".mypy_cache", ".ruff_cache"
 ]
@@ -95,4 +95,9 @@ ignore = ["E203", "E501"]
 [tool.ruff.lint.isort]
 # Treat these as your own packages so they sort as "first-party".
 known-first-party = ["etfhextractor"]
-src-paths = ["etfhextractor", "tests"]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+    "ruff>=0.16.5",
+]

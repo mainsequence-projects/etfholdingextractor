@@ -1,25 +1,32 @@
 ---
 name: mainsequence-markets-portfolio-workflow
-description: Use this skill when creating, extending, reviewing, or documenting msm_portfolios workflows, including portfolio DataNodes, portfolio metadata, portfolio construction examples, contributed price/signal nodes, and portfolio calculations that depend on core PortfolioTable identity.
+description: Use this skill when creating, extending, reviewing, or documenting msm_portfolios workflows, including portfolio TimeIndexTableUpdaters, portfolio metadata, portfolio construction examples, contributed price/signal nodes, and portfolio calculations that depend on core PortfolioTable identity.
 ---
 
 # Main Sequence Markets Portfolio Workflow
 
-Use this skill for `msm_portfolios` concepts: portfolio calculation DataNodes,
-portfolio metadata, rebalance/signal workflows, and contributed portfolio price
-sources. Core `msm` owns `PortfolioTable` identity, account target-position
-exposure rows, and virtual-fund allocation state.
+Use this skill for `msm_portfolios` concepts: portfolio calculation TimeIndexTableUpdaters,
+portfolio metadata, rebalance/signal workflows, contributed portfolio price
+sources, and portfolio classification workflows. Core `msm` owns
+`PortfolioTable` identity, `PortfolioGroupTable` classification rows, account
+target-position exposure rows, and virtual-fund allocation state.
+
+Route theoretical spreads, baskets, ratios, butterflies, and hedged market
+indexes to the derived-index workflow skill. A Portfolio may reference one as
+a benchmark or signal input, but must not reuse portfolio weights or holdings
+as calculation legs or resolved-index provenance.
 
 ## Read First
 
 Before changing portfolio workflow code, inspect:
 
 1. `src/msm/models/portfolios/core.py`
-2. `src/msm_portfolios/models/portfolios/metadata.py`
-3. `src/msm_portfolios/data_nodes/portfolios/storage.py`
-4. `src/msm_portfolios/data_nodes/portfolios/__init__.py`
-5. `docs/knowledge/msm_portfolios/portfolios/index.md`
-6. `docs/knowledge/msm/accounts/index.md`
+2. `src/msm/models/portfolios/groups.py`
+3. `src/msm_portfolios/models/portfolios/metadata.py`
+4. `src/msm_portfolios/data_nodes/portfolios/storage.py`
+5. `src/msm_portfolios/data_nodes/portfolios/__init__.py`
+6. `docs/knowledge/msm_portfolios/portfolios/index.md`
+7. `docs/knowledge/msm/accounts/index.md`
 
 ## Account Target Exposure Boundary
 
@@ -69,6 +76,37 @@ Rules:
 - Exactly one exposure column must be present:
   `weight_notional_exposure`, `constant_notional_exposure`, or
   `single_asset_quantity`.
+
+## Portfolio Group Boundary
+
+Portfolio groups are optional classification metadata, not portfolio identity
+and not portfolio construction state.
+
+```text
+PortfolioGroupTable
+  uid
+  unique_identifier
+  display_name
+
+PortfolioGroupMembershipTable
+  portfolio_group_uid -> PortfolioGroupTable.uid
+  portfolio_uid       -> PortfolioTable.uid
+  unique(portfolio_group_uid, portfolio_uid)
+```
+
+Rules:
+
+- Do not add `portfolio_group_uid` to `PortfolioTable`.
+- Use `msm.api.portfolios.PortfolioGroup.add(...)` to create or upsert groups.
+- Use `PortfolioGroup.add_portfolio(...)`,
+  `PortfolioGroup.remove_portfolio(...)`, `PortfolioGroup.get_portfolios(...)`,
+  and `PortfolioGroup.get_groups_for_portfolio(...)` for relationship
+  workflows.
+- Deleting a group removes only membership rows through cascade. It must not
+  delete portfolios.
+- Deleting a portfolio removes only membership rows through cascade. It must not
+  delete groups.
+- FastAPI portfolio-group operations live under `/api/v1/portfolio-group/`.
 
 ## Runtime Pattern
 
@@ -125,7 +163,7 @@ cleared before dependency execution.
 Portfolio construction must consume valuations through an explicit dependency:
 
 ```text
-source prices / valuations DataNode -> optional InterpolatedPrices -> SignalWeights -> PortfoliosDataNode
+source prices / valuations TimeIndexTableUpdater -> optional InterpolatedPrices -> SignalWeights -> PortfoliosDataNode
 ```
 
 `PortfoliosDataNode` must not construct `InterpolatedPrices` from
@@ -139,7 +177,7 @@ Current portfolio build contract:
 
 ```text
 PortfolioBuildConfiguration
-  valuation_source_instance DataNode | APIDataNode
+  valuation_source_instance TimeIndexTableUpdater | TimeIndexTableRef
   valuation_column          str, defaults to close
   price_alignment_policy    PriceAlignmentPolicy
   portfolio_prices_frequency
@@ -151,8 +189,12 @@ Rules:
 
 - `PortfolioBuildConfiguration` must not contain `assets_configuration`.
 - `valuation_source_instance` is the recoverable upstream valuation dependency.
-  It may be `InterpolatedPrices`, another compatible DataNode, or an
-  `APIDataNode` built from a registered TimeIndexMetaTable UID.
+  It may be `InterpolatedPrices`, another compatible TimeIndexTableUpdater, or an
+  `TimeIndexTableRef` built from a registered TimeIndexMetaTable UID.
+- When `valuation_source_instance` is an `TimeIndexTableRef`, `PortfoliosDataNode`
+  loads the source table update statistics before calculating the update window.
+  Normal `TimeIndexTableUpdater` valuation sources must already have dependency
+  `update_statistics` populated by the SDK runner.
 - `valuation_column` is a strict string column name. Portfolio core must not
   force `close`, `open`, `vwap`, or any other OHLC enum. Specific contributed
   strategies may validate additional OHLC fields only when they truly need
@@ -165,7 +207,7 @@ Rules:
 - `InterpolatedPricesConfig` accepts either `source_price_instance` or
   `source_time_index_meta_table_uid`. Use the instance path when the raw/source
   price node is already in the graph; use the UID path only to attach an
-  already registered compatible source table through `APIDataNode`.
+  already registered compatible source table through `TimeIndexTableRef`.
 - `InterpolatedPrices.dependencies()` must expose the resolved source price
   object in both cases.
 - Persistent interpolation belongs to `msm_portfolios.contrib.prices`, not to
@@ -179,16 +221,18 @@ Rules:
   value override asset.
 - Valuation sources may contain extra assets; portfolio calculation filters to
   the required signal universe.
-- Portfolio update-window progress must be scoped to required portfolio assets:
-  the signal preflight universe, previous portfolio-weight assets still needing
-  valuation or liquidation, and any explicit portfolio value override asset. Do
-  not take the minimum progress timestamp across every asset in a large source
-  valuation table. If the required asset scope cannot be determined before
-  deriving the source window, fail instead of falling back to table-wide source
-  progress.
 - Existing portfolio output progress must be scoped by `portfolio_identifier`;
   `PortfoliosStorage` is shared and keyed by `(time_index, portfolio_identifier)`.
   A later row for another portfolio must not move this portfolio's start date.
+  The authoritative portfolio update start is this portfolio's latest
+  `PortfoliosStorage` timestamp for the resolved `PortfolioTable.unique_identifier`.
+- Portfolio valuation-source coverage is applied after the actual signal frame
+  has been read. The usable valuation end timestamp must be scoped to assets
+  from the signal output frame, previous portfolio-weight assets still needing
+  valuation or liquidation, and any explicit portfolio value override asset. Do
+  not take the minimum progress timestamp across every asset in a large source
+  valuation table, and do not use signal preflight as the authoritative
+  portfolio universe.
 - Contributed signal progress must be scoped by `signal_uid`; `SignalWeightsStorage`
   is shared and keyed by `(time_index, signal_uid, asset_identifier)`.
   `signal_uid` is a required reference to `SignalMetadataTable.signal_uid`, so
@@ -203,15 +247,18 @@ Rules:
   policy logs and continues when the downstream calculation can still produce a
   usable frame.
 - Local reindex/forward-fill inside `PortfoliosDataNode` is only calculation
-  alignment. It must not create persistent storage or hide a valuation DataNode.
+  alignment. It must not create persistent storage or hide a valuation TimeIndexTableUpdater.
 - `PortfoliosDataNode.run(..., update_pointers=True)` is the default portfolio
   workflow behavior. After the graph publishes, it must upsert the resolved
   `PortfolioTable` row with `signal_uid`, `signal_weights_data_node_uid`,
   `portfolio_weights_data_node_uid`, and `portfolio_data_node_uid`. Examples
   should not perform this final pointer upsert manually.
+- If the run produces no new executed weights, pointer update must preserve the
+  existing `PortfolioTable.portfolio_weights_data_node_uid` instead of
+  requiring a fresh `PortfolioWeights` TimeIndexTableUpdate.
 - API reads for a portfolio's signal weights must filter by
   `PortfolioTable.signal_uid`. Do not derive the signal from
-  `DataNodeUpdate.build_configuration`, runtime update statistics, or distinct
+  `TimeIndexTableUpdate.build_configuration`, runtime update statistics, or distinct
   `SignalWeightsStorage.signal_uid` values because signal storage is shared by
   many signals.
 

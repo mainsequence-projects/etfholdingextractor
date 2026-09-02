@@ -8,7 +8,7 @@ description: Use this skill when the user wants the ETF-holdings tracking signal
 ## Overview
 
 **What this library provides is a SIGNAL — `ETFHoldingsSignal` — and nothing more at the
-portfolio layer.** It is a custom `msm_portfolios` `SignalWeights` DataNode whose update
+portfolio layer.** It is a custom `msm_portfolios` `SignalWeights` TimeIndexTableUpdater whose update
 re-extracts the ETF's holdings (same machinery as extraction/category sync) and emits the
 canonical signal frame `(time_index, asset_identifier) → signal_weight` under one stable
 `signal_uid`.

@@ -1,11 +1,11 @@
 # etfhextractor
 
 [![Package](https://img.shields.io/badge/package-etfhextractor-black.svg)](pyproject.toml)
-[![Version](https://img.shields.io/badge/version-0.3.4-blue.svg)](pyproject.toml)
-[![Python](https://img.shields.io/badge/python-%3E%3D3.11-blue.svg)](pyproject.toml)
+[![Version](https://img.shields.io/badge/version-0.4.1-blue.svg)](pyproject.toml)
+[![Python](https://img.shields.io/badge/python-3.13-blue.svg)](pyproject.toml)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
-[![ms-markets](https://img.shields.io/badge/ms--markets-%3E%3D0.0.58-black.svg)](pyproject.toml)
-[![Tests](https://img.shields.io/badge/tests-82%20passing-green.svg)](tests/)
+[![ms-markets](https://img.shields.io/badge/ms--markets-%3E%3D1.0.2-black.svg)](pyproject.toml)
+[![Tests](https://img.shields.io/badge/tests-85%20passing-green.svg)](tests/)
 [![Maintained](https://img.shields.io/badge/maintained-actively-green.svg)](docs/)
 
 `etfhextractor` turns provider-published ETF holdings into Main Sequence / ms-markets
@@ -35,9 +35,9 @@ kept out of `__init__` so pure extraction never loads the msm_portfolios stack).
 
 ## Project Status
 
-- Current package version: `0.3.4`
-- Python: `>= 3.11`
-- Key dependencies: `mainsequence` (SDK), `ms-markets >= 0.0.58` (typed MetaTable rows;
+- Current package version: `0.4.1`
+- Python: `>=3.13,<3.14`
+- Key dependencies: `mainsequence >= 8.0.7`, `ms-markets >= 1.0.2` (typed MetaTable rows;
   obligatory-calendar portfolio architecture), `pandas-market-calendars` (trading sessions)
 - License: [Apache License 2.0](LICENSE)
 - Documentation: [docs/library.md](docs/library.md) · [docs/reader.md](docs/reader.md) ·
@@ -102,10 +102,14 @@ from etfhextractor.portfolio_publish import publish_etf_tracking_portfolio
 result = publish_etf_tracking_portfolio(
     etf_ticker="IVV",
     provider="ishares",
-    price_source_table_uid="<uid>",   # or price_source_instance=<DataNode>
+    price_source_table_uid="<uid>",   # or price_source_instance=<TimeIndexTableUpdater>
     register_missing=True,
 )
 ```
+
+Project integrations that need the assembled calendar, signal, Portfolio row, configuration,
+valuation source, and `PortfoliosDataNode` can call `build_etf_tracking_portfolio(...)`; the
+publisher above wraps that same builder and returns its JSON-friendly summary.
 
 ## Environment
 

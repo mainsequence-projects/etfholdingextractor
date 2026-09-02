@@ -1,0 +1,7 @@
+schema=1
+library_name=ms-markets
+namespace=ms_markets
+pinned_version=1.0.2
+skills_path=/private/tmp/etfhextractor-sdk8.dEXfEr/repo/.venv/lib/python3.13/site-packages/.agents/skills/ms_markets
+copied_at_utc=2026-09-02T12:40:54Z
+command=msm copy-msm-skills

@@ -1,29 +1,28 @@
 ---
 name: doc-bug-auditor
-description: Reviews a Main Sequence project for status, blockers, failures, and completion.
+description: Reviews a Main Sequence CodeRepository for status, blockers, failures, and completion.
 ---
 
 # Main Sequence Bug Auditor
 
 ## Overview
 
-Use this skill to inspect a checked-out Main Sequence project and determine:
+Use this skill to inspect a checked-out Main Sequence CodeRepository and determine:
 
 - what is already finished
 - what is still in progress
 - what is blocked or failing
 - what evidence supports that assessment
-- whether a failure looks like target-project misuse, environment or setup drift, or a likely `mainsequence-sdk` execution bug
+- whether a failure looks like target-repository misuse, environment or setup drift, or a likely `mainsequence-sdk` execution bug
 
 This skill is for diagnosis and assessment. Default behavior is read-only unless the task explicitly asks for edits.
 
 ## This Skill Can Do
 
-- inspect project state and summarize completion status
-- read `.agents/tasks.md` and `.agents/status.md` first when they exist
-- use repo state, logs, test output, stderr, and task files as evidence
+- inspect CodeRepository state and summarize completion status
+- use repo state, logs, test output, and stderr as evidence
 - classify failures into:
-  - target-project issue
+  - target-repository issue
   - environment or credentials issue
   - likely upstream `mainsequence-sdk` issue
   - unclear
@@ -49,31 +48,26 @@ This skill audits. It does not implement by default.
 ## Route Adjacent Work
 
 - bootstrap, routing, and repo structure:
-  `.agents/skills/mainsequence/project_builder/SKILL.md`
-- `.agents/` state reconciliation after the audit:
-  `.agents/skills/mainsequence/maintenance/local_journal/SKILL.md`
-- DataNode implementation issues:
-  `.agents/skills/mainsequence/data_publishing/data_nodes/SKILL.md`
+  `.agents/skills/mainsequence/code_repository_design/SKILL.md`
+- TimeIndexTableUpdater implementation issues:
+  `.agents/skills/mainsequence/data_publishing/time_index_table_updates/SKILL.md`
 - MetaTable implementation issues:
   `.agents/skills/mainsequence/data_publishing/meta_tables/SKILL.md`
-- API implementation issues:
+- Command Center FastAPI contract or release issues:
   `.agents/skills/mainsequence/application_surfaces/api_surfaces/SKILL.md`
 - jobs, images, releases, and runtime environment issues:
   `.agents/skills/mainsequence/platform_operations/orchestration_and_releases/SKILL.md`
 - RBAC and access issues:
   `.agents/skills/mainsequence/platform_operations/access_control_and_sharing/SKILL.md`
-- dashboard domain issues:
-  `.agents/skills/mainsequence/dashboards/streamlit/SKILL.md`
+- environment repair, authentication refresh, SDK updates, managed skill
+  refresh, and CodeRepository sync after the failure is classified:
+  `.agents/skills/mainsequence/maintenance/code_repository_maintenance/SKILL.md`
 
 ## Read First
 
 1. `AGENTS.md`
-2. `.agents/skills/mainsequence/project_builder/SKILL.md`
-3. `.agents/tasks.md` when it exists
-4. `.agents/status.md` when it exists
-5. `.agents/record.md` when stable references or project ids matter
-6. `.agents/journal.md` when repeated failures or prior investigations may be relevant
-7. the latest relevant Main Sequence docs for the failing workflow
+2. `.agents/skills/mainsequence/code_repository_design/SKILL.md`
+3. the latest relevant Main Sequence docs for the failing workflow
 
 ## Inputs This Skill Needs
 
@@ -93,7 +87,7 @@ For every audit, decide:
 1. Is the overall state `finished`, `in_progress`, `blocked`, or `failed`?
 2. What evidence supports the completed work?
 3. What work is still open?
-4. Is each failure best classified as target-project, environment, upstream SDK, or unclear?
+4. Is each failure best classified as target-repository, environment, upstream SDK, or unclear?
 5. Does the evidence justify inspecting the installed SDK or public `mainsequence-sdk` source?
 6. Does the evidence justify GitHub duplicate search or upstream issue escalation?
 
@@ -101,17 +95,15 @@ For every audit, decide:
 
 ### 1. Stay read-only unless edits were explicitly requested
 
-Do not modify code, docs, or project-state files unless the task explicitly asks for edits.
+Do not modify code or docs unless the task explicitly asks for edits.
 
-### 2. Start with project-state files
+### 2. Start with current evidence
 
-Read `.agents/tasks.md` and `.agents/status.md` first when they exist.
-
-Use them as hypotheses, not as proof.
+Inspect the repository state, available logs, failing commands, stderr, and test output.
 
 ### 3. Use evidence, not impressions
 
-Use repo state, logs, test output, stderr, and task files as evidence.
+Use repo state, logs, test output, and stderr as evidence.
 
 When reporting a blocker or failure, include:
 
@@ -127,7 +119,6 @@ Before each major investigation step, emit a short progress update that says wha
 
 Especially announce when you are:
 
-- reading `.agents/tasks.md` or `.agents/status.md`
 - inspecting a failing command, traceback, or stderr excerpt
 - checking the local `mainsequence` package or version
 - inspecting or cloning the public `mainsequence-sdk` repository
@@ -138,7 +129,7 @@ Especially announce when you are:
 
 Every failure should be classified as one of:
 
-- target-project issue
+- target-repository issue
 - environment or credentials issue
 - likely upstream `mainsequence-sdk` issue
 - unclear
@@ -184,7 +175,6 @@ When reviewing an audit, look for:
 
 Do not claim audit completion until you have checked:
 
-- `.agents/tasks.md` and `.agents/status.md` first when they exist
 - the overall state is one of:
   - `finished`
   - `in_progress`

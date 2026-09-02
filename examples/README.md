@@ -13,7 +13,7 @@ Creates an ms-markets **portfolio that tracks an ETF** (default `IVV`) through t
 ```text
 extraction (FundHoldings) ──> ETFHoldingsSignal (custom SignalWeights)
                                       │ (time_index, asset_identifier) → signal_weight
-registered bars table ── APIDataNode ─┴──> PortfoliosDataNode ──> ETF-tracking portfolio
+registered bars table ── TimeIndexTableRef ─┴──> PortfoliosDataNode ──> ETF-tracking portfolio
 ```
 
 The script is stepwise and honest about platform state: extract → resolve component
