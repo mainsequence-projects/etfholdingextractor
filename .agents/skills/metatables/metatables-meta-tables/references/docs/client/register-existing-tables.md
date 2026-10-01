@@ -90,6 +90,10 @@ namespace grants. These application grants do not create roles or permissions in
 the external database. Runtime SQL security can remain uninitialized while
 external imports and reads work. Arbitrary SQL remains restricted to the selected
 runtime DataSource and its database-enforced caller permissions.
+`read_rows()` and `iter_rows()` derive the source from the imported MetaTable;
+callers do not replace the API URL or the runtime default to read another source.
+An external UID passed to a SQL endpoint returns the explicit
+`data_source_not_selected_runtime` conflict (HTTP 409).
 
 For SQLite runtime views, bounded reads allow only the approved view's output.
 Arbitrary SQL still requires grants on its underlying tables: SQLite's view-origin

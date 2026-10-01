@@ -460,7 +460,7 @@ Rules:
 
 ## Agent Capabilities (coding-agent setup)
 
-The repository is agent-ready per `.agents/skills/mainsequence/project_to_agent/SKILL.md`
+The repository is agent-ready per the platform-owned code-repository-to-agent skill
 (implementation task 0004): `AGENTS.md` carries the canonical agent description and skill
 routing, the three project skills (`weights_extraction`, `holdings_category_sync`,
 `etf_holdings_signal`) map 1:1 to the CLI surface, and `.agents/agent_card.json` lists exactly
@@ -474,9 +474,11 @@ Maintenance rules (enforced by `tests/test_agent_capabilities.py`):
 - adding or renaming a CLI command requires a matching project skill and agent-card entry, and
   skills may only reference real `etfh` subcommands (or `etfh-read`);
 - skill tags stay empty until explicitly confirmed;
-- `.agents/skills/mainsequence/**`, `.agents/skills/metatables/**` and
-  `.agents/skills/ms_markets/**` are vendored by their packages' copy commands: never edited here
-  and never listed in the agent card.
+- `.agents/skills/mainsequence/**`, `.agents/skills/mainsequence_platform/**` (present only
+  after the authenticated `mainsequence code-repository update-platform-skills`),
+  `.agents/skills/metatables/**` and `.agents/skills/ms_markets/**` are vendored by their
+  owners' copy commands: never edited here (apart from the package-relative `skills_path` in each
+  `PINNED_FROM.txt`) and never listed in the agent card.
 
 ## Internal Modules
 
