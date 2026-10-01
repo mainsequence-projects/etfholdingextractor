@@ -23,10 +23,11 @@ written (`SignalWeightsTS`, `PortfoliosTS`, `PortfolioWeightsTS`, and the `Portf
 
 ### Prerequisites
 
-**Only two:** an authenticated Main Sequence session (`mainsequence project current
---debug`, refresh the token before live runs) and the built-in ms-markets MetaTables
-registered by the SDK migration provider. Everything else is handled by the example
-itself on the default run:
+**Only two:** an authenticated Main Sequence session (`mainsequence code-repository current
+--debug`; renew the saved session with `mainsequence refresh-token` before live runs) and the
+built-in ms-markets MetaTables registered by their migration provider
+(`metatables migrations upgrade --provider migrations:migration`). Everything else is handled by
+the example itself on the default run:
 
 - **Missing component assets** are FIGI-registered automatically (ADR 0004: no asset
   without a FIGI, only unique ticker→FIGI mappings register; reads the
@@ -38,7 +39,8 @@ itself on the default run:
   the example prepares its schema the way the ms-markets examples do
   ([prepare_demo_bars_schema.py](prepare_demo_bars_schema.py) — find-or-generate the
   Alembic revision via the project provider `etfhextractor_migrations:migration`,
-  `mainsequence migrations upgrade head`, verify the registered `TimeIndexMetaTable`)
+  `metatables migrations upgrade --provider etfhextractor_migrations:migration head`, verify the
+  registered `TimeIndexMetaTable`)
   and publishes deterministic demo bars **on the NYSE session closes**
   (pandas_market_calendars), aligned with the portfolio's valuation index. Pass
   `--price-source-table-uid <UID>` (or set `ETFH_PORTFOLIO_PRICE_SOURCE_TABLE_UID`)

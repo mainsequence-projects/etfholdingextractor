@@ -31,7 +31,7 @@ etfhextractor/
   providers/                  # provider-specific extraction code
   reader.py                   # ETFHoldingsReader
   settings.py                 # provider normalization and input rules
-etfhextractor_migrations/     # SDK migration provider for the project-owned tables
+etfhextractor_migrations/     # MetaTables migration provider for the project-owned tables
 ```
 
 ## Public API
@@ -331,18 +331,23 @@ ADR 0003):
   `ETFHoldingsSignalConfig.asset_list` is updater scope for the 0.0.54 preflight
   `get_asset_list()` requirement and is neutralized in the `signal_uid` payload, so composition
   changes never rotate the series. Signal descriptions are plain text.
-- ms-markets 1.x contracts handled by the reusable builder: portfolio identity
-  set on both resolution paths (`target_portfolio` + `_explicit_portfolio_identifier`), and the
-  resolved component identifiers always supplied as the signal's preflight scope.
+- ms-markets 1.x/2.x contracts handled by the reusable builder: portfolio identity
+  set on both resolution paths (`target_portfolio` + `_explicit_portfolio_identifier`), the
+  resolved component identifiers always supplied as the signal's preflight scope, and
+  `ImmediateSignal()` built without a calendar key (ms-markets >= 1.0.7 rebalance strategies take
+  none). Updaters run with a bare `run()`: SDK 8.1 removed the `debug_mode`/`force_update`
+  controls, and every run executes immediately in-process.
 - **Trading calendar — an ms-markets contract the wiring honors**
   ([ADR 0006](adr/0006-trading-calendar-and-backtest-bootstrap.md)):
-  ms-markets 1.x requires every Portfolio row to reference a persisted Calendar
+  ms-markets 1.x and 2.x require every Portfolio row to reference a persisted Calendar
   (`calendar_uid` NOT NULL FK, `ondelete=RESTRICT`; the legacy `calendar_name` field is gone).
   `calendar_key` defaults to `NYSE` for US ETFs. `ensure_trading_calendar()` persists it through
   the msm util `Calendar.create_from_pandas_calendar` (Calendar + CalendarDate/CalendarSession
   rows generated from pandas_market_calendars) and reuses a covering row with zero writes;
-  always-open keys ("24/7") persist an always-open Calendar row for the FK. Portfolio valuations
-  therefore land on real session closes — never weekends/holidays.
+  always-open keys ("24/7") persist an always-open Calendar row for the FK. Since ms-markets
+  1.0.6 the portfolio executes on the signal's observations and values on the valuation source's
+  observations, so with a session-close price source (the example's demo bars) valuations land
+  on real session closes — never weekends/holidays.
 - **Session-grid observations + backtest bootstrap** (ADR 0006): every signal observation is
   stamped on a `calendar_key` market close (as-of date => that day's close; provider lag =>
   latest completed close; one observation per session) — never at insertion wall-clock times.
@@ -350,8 +355,9 @@ ADR 0003):
   `now - 60d` so the first run backtests that window; later runs never backdate. The validator
   enforces `signal_validity_days >= backtest_start_days + 5` headroom (defaults 90/60), and
   numerically unchanged weights are re-stamped before validity expires so stable compositions
-  never starve the portfolio forward-fill. Knobs on the CLI: `--calendar-key`,
-  `--backtest-start-days`, `--signal-validity-days`.
+  never starve the portfolio forward-fill (ms-markets 2.x no longer bounds that forward-fill by
+  the signal validity; the guard is unchanged — see the ADR 0006 amendment). Knobs on the CLI:
+  `--calendar-key`, `--backtest-start-days`, `--signal-validity-days`.
 - These modules are not imported by `etfhextractor.__init__`, so pure extraction never loads
   the portfolio stack.
 
@@ -383,18 +389,22 @@ This project owns exactly **one** ms-markets MetaTable, defined in
   `(time_index, asset_identifier)` with the canonical FK to `AssetTable.unique_identifier`,
   published by the example's default self-sufficient mode (no external price table given)
   through the thin `DemoBars` (`AssetTimestampedDataNode`/`TimeIndexTableUpdater`) node — bars land on the NYSE session
-  closes — so the ETF-tracking portfolio can run end-to-end without an external market-data feed. It must be migrated/registered by the SDK migration provider before
+  closes — so the ETF-tracking portfolio can run end-to-end without an external market-data feed. It must be migrated/registered by the project's MetaTables migration provider before
   writes, like any other table.
 
-Its migrations are owned by the project's SDK migration provider
-**`etfhextractor_migrations:migration`** — generated with `mainsequence migrations scaffold`
+Its migrations are owned by the project's MetaTables migration provider
+**`etfhextractor_migrations:migration`** — originally scaffolded with the SDK 8
+`mainsequence migrations scaffold`, now built with `metatables.migrations`
 (`build_alembic_version_metatable` + `build_metatable_migration_provider`, target metadata scoped
-to the project tables only so autogenerate never diffs the built-in ms-markets graph). Create and
-apply revisions through the SDK CLI exactly like ms-markets does:
+to the project tables only so autogenerate never diffs the built-in ms-markets graph). The SDK 9
+move kept its package, namespace, version table (`etfhextractor_markets__alembic_version`) and
+revisions. Create and apply revisions through the `metatables` CLI (installed by
+`mainsequence-metatable`) exactly like ms-markets does:
 
 ```bash
-python -m mainsequence migrations revision --provider etfhextractor_migrations:migration --autogenerate -m demo_bars
-python -m mainsequence migrations upgrade  --provider etfhextractor_migrations:migration head
+metatables migrations revision --provider etfhextractor_migrations:migration --autogenerate -m demo_bars
+metatables migrations upgrade  --provider etfhextractor_migrations:migration head
+metatables migrations current  --provider etfhextractor_migrations:migration
 ```
 
 `examples/prepare_demo_bars_schema.py` wraps that find-or-generate → upgrade → verify flow (the
@@ -441,9 +451,10 @@ Rules:
 - The stable logical identifier is `etfhextractor.<__markets_base_identifier__>`.
   Do **not** use table names as identity, do **not** build UID maps, do **not** call row
   `create_schemas()`.
-- Register/migrate through the SDK migration provider, then attach at runtime with
-  `msm.start_engine(models=[MyDetailsTable, MyBarsStorage])` (backend classes, not strings or
-  typed rows).
+- Register/migrate through the project's MetaTables migration provider
+  (`metatables migrations upgrade --provider etfhextractor_migrations:migration`), then attach at
+  runtime with `msm.start_engine(models=[MyDetailsTable, MyBarsStorage])` (backend classes, not
+  strings or typed rows).
 - For tests/examples only, set `MSM_AUTO_REGISTER_NAMESPACE` before importing the models; it
   overrides the mixin namespace without source changes.
 
@@ -463,8 +474,9 @@ Maintenance rules (enforced by `tests/test_agent_capabilities.py`):
 - adding or renaming a CLI command requires a matching project skill and agent-card entry, and
   skills may only reference real `etfh` subcommands (or `etfh-read`);
 - skill tags stay empty until explicitly confirmed;
-- `.agents/skills/mainsequence/**` and `.agents/skills/ms_markets/**` are platform-vendored:
-  never edited here and never listed in the agent card.
+- `.agents/skills/mainsequence/**`, `.agents/skills/metatables/**` and
+  `.agents/skills/ms_markets/**` are vendored by their packages' copy commands: never edited here
+  and never listed in the agent card.
 
 ## Internal Modules
 

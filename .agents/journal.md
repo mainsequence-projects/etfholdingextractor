@@ -1,5 +1,19 @@
 # Journal
 
+## 2026-10-01
+
+- Moved the package to Main Sequence SDK 9, the `metatables` client (`mainsequence-metatable`
+  0.1.5) and ms-markets 2. The MetaTables imports in the models, migration provider, portfolio
+  builder, schema-prep example and tests now come from `metatables`, and the migration commands
+  are `metatables migrations ... --provider etfhextractor_migrations:migration`.
+- Dropped the `run(debug_mode=..., force_update=...)` controls that SDK 8.1 removed, the
+  `ImmediateSignal(calendar_key=...)` argument that ms-markets 1.0.7 removed, and the no-op
+  `debug_mode` parameter of the portfolio builder and publisher.
+- Copied the `metatables` 0.1.5 skills and refreshed the ms-markets 2.0.0 skills. The SDK skills
+  were not refreshed (mainsequence-sdk#181).
+- Verified offline: sdk_compat, imports, provider loading, ruff, 87 tests. Nothing was run against
+  the platform or a database.
+
 ## 2026-09-02
 
 - Migrated the complete package to Python 3.13, Main Sequence SDK 8.0.7, and ms-markets 1.0.2

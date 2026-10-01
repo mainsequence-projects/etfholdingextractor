@@ -4,8 +4,8 @@
 [![Version](https://img.shields.io/badge/version-0.4.1-blue.svg)](pyproject.toml)
 [![Python](https://img.shields.io/badge/python-3.13-blue.svg)](pyproject.toml)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
-[![ms-markets](https://img.shields.io/badge/ms--markets-%3E%3D1.0.2-black.svg)](pyproject.toml)
-[![Tests](https://img.shields.io/badge/tests-85%20passing-green.svg)](tests/)
+[![ms-markets](https://img.shields.io/badge/ms--markets-%3E%3D2%2C%3C3-black.svg)](pyproject.toml)
+[![Tests](https://img.shields.io/badge/tests-87%20passing-green.svg)](tests/)
 [![Maintained](https://img.shields.io/badge/maintained-actively-green.svg)](docs/)
 
 `etfhextractor` turns provider-published ETF holdings into Main Sequence / ms-markets
@@ -37,8 +37,10 @@ kept out of `__init__` so pure extraction never loads the msm_portfolios stack).
 
 - Current package version: `0.4.1`
 - Python: `>=3.13,<3.14`
-- Key dependencies: `mainsequence >= 8.0.7`, `ms-markets >= 1.0.2` (typed MetaTable rows;
-  obligatory-calendar portfolio architecture), `pandas-market-calendars` (trading sessions)
+- Key dependencies: `mainsequence >=9.0.1,<10` (identity, secrets, logging),
+  `mainsequence-metatable >=0.1.5,<0.2` (the MetaTables client, imported as `metatables`),
+  `ms-markets >=2,<3` (typed MetaTable rows; obligatory-calendar portfolio architecture),
+  `pandas-market-calendars` (trading sessions)
 - License: [Apache License 2.0](LICENSE)
 - Documentation: [docs/library.md](docs/library.md) · [docs/reader.md](docs/reader.md) ·
   [examples/README.md](examples/README.md) · [docs/adr/](docs/adr/)
@@ -52,8 +54,9 @@ uv pip install etfhextractor            # from your index, or:
 uv pip install -e .                     # working copy
 ```
 
-Capabilities 2 and 3 need an authenticated Main Sequence session
-(`MAINSEQUENCE_ACCESS_TOKEN` / `MAINSEQUENCE_REFRESH_TOKEN`, e.g. via `.env`).
+Capabilities 2 and 3 need an authenticated Main Sequence session. SDK 9 keeps it in the
+operating-system credential store after `mainsequence login`; renew it with
+`mainsequence refresh-token`. A CodeRepository `.env` holds no credentials.
 
 ## CLI
 
@@ -115,7 +118,7 @@ publisher above wraps that same builder and returns its JSON-friendly summary.
 
 | variable | purpose |
 |---|---|
-| `MAINSEQUENCE_ACCESS_TOKEN` / `MAINSEQUENCE_REFRESH_TOKEN` | platform session (categories, signal/portfolio runs) |
+| `MAINSEQUENCE_ACCESS_TOKEN` / `MAINSEQUENCE_REFRESH_TOKEN` | optional process-environment override of the saved SDK 9 session (categories, signal/portfolio runs); never stored in `.env` |
 | `OPEN_FIGI_API_KEY` (Main Sequence secret) | FIGI registration (`--register-missing`) |
 | `ETFH_PORTFOLIO_PRICE_SOURCE_TABLE_UID` | default price-source table for `portfolio-publish` |
 | `MSM_AUTO_REGISTER_NAMESPACE` | tests/sandboxes only: override the `etfhextractor` table namespace |

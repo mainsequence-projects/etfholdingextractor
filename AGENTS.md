@@ -48,8 +48,9 @@ When serving those capabilities:
   project-owned table must follow the extension-mixin convention in `docs/library.md`
   ("Project-Owned ms-markets Tables"): local abstract mixin with
   `__metatable_namespace__`/`__markets_storage_app__`, identity via `__markets_base_identifier__`,
-  SDK-provider migration, `msm.start_engine(models=[...])` attachment — never table-name identity,
-  UID maps, or `create_schemas()`.
+  MetaTables-provider migration (`metatables migrations ... --provider
+  etfhextractor_migrations:migration`), `msm.start_engine(models=[...])` attachment — never
+  table-name identity, UID maps, or `create_schemas()`.
 - Distinguish clearly between local extraction work and MainSequence platform-dependent category
   sync work. Do not imply platform state has been verified unless it was actually checked.
 
@@ -144,7 +145,8 @@ Working rules for this role:
 User-resolution rule for agents:
 
 - use `User.get_logged_user()` only when code is running with request-bound identity context:
-  - code that explicitly binds `_CURRENT_AUTH_HEADERS`
+  - code running inside a request whose caller was bound by the application's request identity
+    integration
 - treat its result as `RequestUserIdentity`: the human caller's canonical `uid` and optional
   `username`, never a numeric id or a full account profile
 - in FastAPI handlers, use the Main Sequence platform-injected
@@ -234,10 +236,14 @@ Typical routing:
   `.agents/skills/mainsequence/code_repository_to_agent/SKILL.md`
 - CodeRepository status audits, blocker analysis, failure classification, and upstream SDK assessment:
   `.agents/skills/mainsequence/maintenance/bug_auditor/SKILL.md`
-- TimeIndexTableUpdaters, updates, identifiers, schema, metadata:
-  `.agents/skills/mainsequence/data_publishing/time_index_table_updates/SKILL.md`
+- TimeIndexTableUpdaters, updates, identifiers, schema, metadata (the `metatables` client skills
+  copied by `metatables copy-metatables-skills --path .`):
+  `.agents/skills/metatables/metatables-time-index-table-updates/SKILL.md`
 - MetaTables, SQLAlchemy contracts, backend-managed registration, and governed operations:
-  `.agents/skills/mainsequence/data_publishing/meta_tables/SKILL.md`
+  `.agents/skills/metatables/metatables-meta-tables/SKILL.md`
+- MetaTable Alembic migrations
+  (`metatables migrations ... --provider etfhextractor_migrations:migration`):
+  `.agents/skills/metatables/metatables-migrations/SKILL.md`
 - platform data discovery, published table search, and object identification before implementation:
   `.agents/skills/mainsequence/data_access/exploration/SKILL.md`
 - FastAPI APIs serving the Command Center frontend and their release lifecycle:
@@ -256,7 +262,7 @@ For any non-trivial Main Sequence task:
 4. Confirm platform context with:
    `mainsequence code-repository current --debug`
 5. Before validations or live checks, run:
-   `mainsequence code-repository refresh-token --path .`
+   `mainsequence refresh-token`
 6. If git push or pull is required, use:
     `mainsequence code-repository open-signed-terminal <CODE_REPOSITORY_UID>`
 7. Before proceeding with non-trivial Main Sequence work, update the CodeRepository SDK:
@@ -387,4 +393,4 @@ If something may be a Main Sequence SDK, documentation, or platform issue:
 
 The durable Main Sequence behavior lives in the scaffold skills under
 `agent_scaffold/skills/` and should be refreshed into projects with
-`mainsequence project update_agent_skills --path .`.
+`mainsequence code-repository update-agent-skills --path .`.

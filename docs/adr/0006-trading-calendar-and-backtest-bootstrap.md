@@ -1,6 +1,6 @@
 # ADR 0006: Tracking Portfolios Follow a Persisted Trading Calendar and Backtest a Bootstrap Window
 
-- Status: Accepted
+- Status: Accepted; amended 2026-10-01 for ms-markets 2.x (see Amendment)
 - Date: 2026-06-10
 
 ## Context
@@ -92,3 +92,38 @@ ms-markets already ships the right machinery:
   runtime dependency of `etfhextractor`.
 - `--calendar-key` / `--backtest-start-days` are exposed on the CLI (`etfh portfolio-publish`)
   and the example.
+
+## Amendment (2026-10-01): ms-markets 2.x and Main Sequence SDK 9
+
+ms-markets 1.0.6 and 1.0.7, carried into 2.0.0, moved execution and valuation timing out of the
+rebalance strategy. The decisions above still hold, but their mechanism now reads as follows:
+
+- **Rebalance strategies take no calendar.** `RebalanceStrategyBase` forbids extra fields and has
+  no `calendar_key`, so the builder constructs `ImmediateSignal()`. It rebalances on the signal's
+  observations, which decision 3 stamps on the `calendar_key` session closes; that is now how the
+  calendar reaches execution.
+- **Valuations follow the valuation source.** `PortfoliosDataNode` is valuation-only and values
+  the portfolio on the valuation source's observations through `ValuationAlignmentPolicy`
+  (default maximum staleness one day); it no longer builds an index from calendar sessions. With
+  a session-close price source, such as the example's demo bars, valuations still land on
+  session closes only. A price source with weekend or holiday rows now produces valuations on
+  those rows.
+- `resolve_rebalance_calendar` now serves calendar-relative strategies (`CalendarEventSignal`
+  with `PortfolioCalendarEvents`), requires a persisted calendar, and no longer resolves `"24/7"`
+  synthetically. `ImmediateSignal` portfolios do not call it.
+- **Decision 2 is unchanged.** `PortfolioTable.calendar_uid` is still a NOT NULL FK and
+  `PortfoliosDataNode.run()` still refuses a Portfolio row without it, so
+  `ensure_trading_calendar()` and `Portfolio.upsert(..., calendar_uid=...)` keep persisting and
+  attaching the calendar, including for always-open keys.
+- **Decision 5's forward-fill mechanism is gone.** The 2.x portfolio path reads exact signal
+  observations and no longer calls `SignalWeights.interpolate_index`, so `maximum_forward_fill()`
+  no longer limits how long executed weights are held. The validator, the re-stamp guard, and the
+  hashed `signal_validity_days` definition field are unchanged, so the signal identity (ADR 0005)
+  does not rotate. Whether to keep that field and guard is a separate decision.
+- Updater runs no longer take `debug_mode` or `force_update`: SDK 8.1 removed them, and every
+  run executes immediately in-process. The builder and the example call `run()` without them.
+
+The default IVV/ishares signal uid computes offline to `495a8b180d0a216e563cd3f83316da7f` on both
+the ms-markets 1.0.2 / SDK 8.0.7 stack and the ms-markets 2.0.0 / SDK 9 stack, so the move to
+ms-markets 2.x does not create a new signal series. The `9305b547…` value recorded above predates
+ms-markets 1.0.2.

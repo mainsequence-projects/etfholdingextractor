@@ -17,8 +17,9 @@
 - CodeRepository UID: `2b634665-d3c0-4cf4-a8ed-f4446eba7891`
 - CodeRepositoryBranch UID for `main`: `41ddaf20-9077-4e42-bc24-cace28efd5d7`
 - Python: `3.13`
-- Main Sequence SDK: `8.0.7`
-- ms-markets: `1.0.2`
+- Main Sequence SDK: `>=9.0.1,<10` (verified offline with `9.0.2`)
+- MetaTables client: `mainsequence-metatable>=0.1.5,<0.2` (import and CLI `metatables`)
+- ms-markets: `>=2,<3` (verified offline with `2.0.0`)
 - Migration namespace: `etfhextractor`
 - Alembic head: `0001`
 - Managed output table: `etfhextractor_markets__demobarsts`
@@ -28,7 +29,9 @@
 - Provider extraction is independent from Main Sequence runtime attachment.
 - Category synchronization and signal production require the ms-markets asset/snapshot runtime.
 - Updaters declare `_required_output_table()`; registered read-only dependencies use
-  `TimeIndexTableRef.from_uid`.
+  `metatables.TimeIndexTableRef.from_uid`. Updater runs take no `debug_mode`/`force_update`.
+- Migrations run through `metatables migrations <command> --provider
+  etfhextractor_migrations:migration`; the old `mainsequence migrations` commands are gone.
 - The portfolio builder owns calendar, signal, Portfolio row, configuration, and
   `PortfoliosDataNode` assembly but never guesses or owns the caller's price source.
 - MetaTable schema is migration-owned; runtime attachment does not create it.
