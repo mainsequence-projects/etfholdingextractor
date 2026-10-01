@@ -3,14 +3,18 @@
 ## Verified
 
 - Release version is `0.4.1`; runtime is Python `3.13`. `pyproject.toml` declares
-  `mainsequence>=9.0.1,<10`, `mainsequence-metatable>=0.1.5,<0.2` and `ms-markets>=2,<3`
+  `mainsequence>=9.0.2,<10`, `mainsequence-metatable>=0.1.6,<0.2` and `ms-markets>=2,<3`
   (implementation task 0006).
 - On 2026-10-01 the migration was verified offline, with IP and DNS blocked including loopback,
-  against `mainsequence` 9.0.2, `mainsequence-metatable` 0.1.5 and ms-markets 2.0.0. ms-markets
-  2.0.0 was installed from its local `main` (b751b2c) because it is not on PyPI yet.
-- The `metatables` 0.1.5 and ms-markets 2.0.0 skill bundles are copied. The SDK bundle under
-  `.agents/skills/mainsequence/` is still the SDK `8.0.7` copy; it was not refreshed
-  (mainsequence-sdk#181).
+  against `mainsequence` 9.0.2, `mainsequence-metatable` 0.1.6 and ms-markets 2.0.0. ms-markets
+  2.0.0 was installed from its local `main` (67f076a) because it is not on PyPI yet.
+- The SDK 9.0.2, `metatables` 0.1.6 and ms-markets 2.0.0 skill bundles are copied. The SDK skills
+  and the managed AGENTS.md block were refreshed offline; platform-owned skills
+  (`.agents/skills/mainsequence_platform/`) are not installed, because that update needs a
+  signed-in session.
+- Product code passes no `data_source_uid`, so msm SQL takes the DataSource and dialect from the
+  MetaTables runtime of the caller's Organization Environment (implementation task 0006,
+  "Runtime DataSource").
 - Provider URL/ticker extraction, holdings-category planning/sync, FIGI registration,
   `ETFHoldingsSignal`, portfolio publication, and the demo-bars updater remain present.
 - `DemoBars` uses `_required_output_table()` and frame validation uses `output_table`.
@@ -36,7 +40,7 @@
 
 - Full pytest suite: 87 passed, with no network attempts.
 - `ruff check --no-fix .` passed. Vendored `.agents/` skills are excluded from ruff.
-- `python -m metatables.sdk_compat` passed.
+- `python -m metatables.sdk_compat` passed (distribution 9.0.2).
 - `uv pip check --python .venv/bin/python`: all installed packages compatible.
 - `etfhextractor_migrations:migration` loads offline through
   `metatables.load_alembic_metatable_migration_provider`.
@@ -47,6 +51,7 @@
   record the SDK 8 resolution.
 - Verify the backend with `metatables migrations current --provider
   etfhextractor_migrations:migration`. No migration was run against any database.
-- Live msm SQL with `mainsequence-metatable` 0.1.5 is blocked by MetaTables#9.
+- Exercise live msm SQL (category sync, ticker resolution, FIGI registration checks) under SDK 9.
+  Nothing has run against the platform with `mainsequence-metatable` 0.1.6.
 - A live portfolio `node.run()` still requires a caller-owned registered price source and a fully
   registered component universe.

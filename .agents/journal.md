@@ -13,6 +13,14 @@
   were not refreshed (mainsequence-sdk#181).
 - Verified offline: sdk_compat, imports, provider loading, ruff, 87 tests. Nothing was run against
   the platform or a database.
+- Raised the floors to `mainsequence>=9.0.2` and `mainsequence-metatable>=0.1.6`, the releases
+  ms-markets 2.0.0 now requires. 0.1.6 takes the DataSource and dialect from the
+  Environment-selected MetaTables runtime, so the MetaTables#9 failure on live msm SQL no longer
+  applies; no product code changed.
+- Re-copied the `metatables` 0.1.6 skills, replaced `.agents/skills/mainsequence/` with the SDK
+  9.0.2 bundle, and regenerated the managed AGENTS.md block, all offline. Platform skills were not
+  installed.
+- Verified offline again: sdk_compat (9.0.2), provider loading, ruff, 87 tests.
 
 ## 2026-09-02
 

@@ -17,8 +17,9 @@
 - CodeRepository UID: `2b634665-d3c0-4cf4-a8ed-f4446eba7891`
 - CodeRepositoryBranch UID for `main`: `41ddaf20-9077-4e42-bc24-cace28efd5d7`
 - Python: `3.13`
-- Main Sequence SDK: `>=9.0.1,<10` (verified offline with `9.0.2`)
-- MetaTables client: `mainsequence-metatable>=0.1.5,<0.2` (import and CLI `metatables`)
+- Main Sequence SDK: `>=9.0.2,<10` (verified offline with `9.0.2`)
+- MetaTables client: `mainsequence-metatable>=0.1.6,<0.2` (import and CLI `metatables`; verified
+  offline with `0.1.6`)
 - ms-markets: `>=2,<3` (verified offline with `2.0.0`)
 - Migration namespace: `etfhextractor`
 - Alembic head: `0001`

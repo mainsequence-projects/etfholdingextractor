@@ -9,8 +9,9 @@
 - Run the canonical `mainsequence code-repository sync` only after reviewing the complete diff.
 - Verify the backend state with `metatables migrations current --provider
   etfhextractor_migrations:migration`.
-- Refresh `.agents/skills/mainsequence/` and the managed AGENTS.md block once SDK skill copying
-  works without sign-in (mainsequence-sdk#181).
+- Install the platform-owned skills under `.agents/skills/mainsequence_platform/` with the
+  authenticated `mainsequence code-repository update-platform-skills --path .` if the owner asks
+  for it.
 - Update consumer locks (e.g. Alpaca Connectors: `uv lock --upgrade-package etfhextractor`).
 
 ### Signal validity under ms-markets 2.x
@@ -25,6 +26,12 @@
 - Run `etfh portfolio-publish`, then verify signal, value, and weight rows plus the Portfolio row.
 
 ## Completed
+
+### Require mainsequence 9.0.2 and mainsequence-metatable 0.1.6
+
+- Raised the floors, re-copied the `metatables` 0.1.6 skills, and refreshed the SDK skills and
+  the managed AGENTS.md block offline. Removed the notes about MetaTables#9, #10 and #11 and
+  mainsequence-sdk#181, which those releases fix. Verified offline only.
 
 ### Migrate to Main Sequence SDK 9, metatables and ms-markets 2
 

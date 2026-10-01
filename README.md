@@ -37,8 +37,8 @@ kept out of `__init__` so pure extraction never loads the msm_portfolios stack).
 
 - Current package version: `0.4.1`
 - Python: `>=3.13,<3.14`
-- Key dependencies: `mainsequence >=9.0.1,<10` (identity, secrets, logging),
-  `mainsequence-metatable >=0.1.5,<0.2` (the MetaTables client, imported as `metatables`),
+- Key dependencies: `mainsequence >=9.0.2,<10` (identity, secrets, logging),
+  `mainsequence-metatable >=0.1.6,<0.2` (the MetaTables client, imported as `metatables`),
   `ms-markets >=2,<3` (typed MetaTable rows; obligatory-calendar portfolio architecture),
   `pandas-market-calendars` (trading sessions)
 - License: [Apache License 2.0](LICENSE)

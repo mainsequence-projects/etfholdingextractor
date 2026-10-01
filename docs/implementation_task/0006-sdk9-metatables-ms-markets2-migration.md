@@ -13,10 +13,18 @@ the demo-bars example, and the project migration provider.
 ## Dependency contract
 
 - Python: `>=3.13,<3.14`
-- `mainsequence>=9.0.1,<10`
-- `mainsequence-metatable>=0.1.5,<0.2` (imported and run as `metatables`; the unrelated PyPI
+- `mainsequence>=9.0.2,<10`
+- `mainsequence-metatable>=0.1.6,<0.2` (imported and run as `metatables`; the unrelated PyPI
   project named `metatables` must not be installed)
 - `ms-markets>=2,<3`
+
+The migration first shipped with `mainsequence>=9.0.1` and `mainsequence-metatable>=0.1.5`. The
+floors moved to the releases that ms-markets 2.0.0 also requires:
+
+- `mainsequence` 9.0.2 copies the SDK-owned skills offline, without a signed-in session.
+- `mainsequence-metatable` 0.1.6 takes the DataSource and the SQL dialect from the runtime that
+  the caller's Organization Environment selects (see [Runtime DataSource](#runtime-datasource)),
+  ships only `metatables` packages, and scopes hosted table discovery to the Environment.
 
 ## API migrations
 
@@ -47,6 +55,21 @@ edits here.
 (`DemoBarsStorage` only), version table `etfhextractor_markets__alembic_version`, and revision
 `0001`. Only its imports changed.
 
+## Runtime DataSource
+
+Neither this package nor msm passes a `data_source_uid`: `msm.start_engine(...)` and
+`msm.bootstrap.resolve_runtime(...)` build the runtime context without one. From
+`mainsequence-metatable` 0.1.6 the compiler then takes the DataSource and the SQL dialect
+together from the runtime of the MetaTables API that the caller's Organization Environment
+selects. No API URL or DataSource setting is needed; `METATABLES_API_URL` only selects a loopback
+development API. A runtime without a usable DataSource raises
+`metatables.DataSourceResolutionError`. Hosted table discovery, including the schema-prep
+example's lookup by physical table name (`TimeIndexMetaTable.filter_by_body`), is scoped to the
+same Environment.
+
+The offline tests replace the markets runtime and never run the real compiler, so they need no
+runtime stub.
+
 ## SDK changes checked between 8.0.7 and 9.0.x
 
 - 8.1.0 removed the `Scheduler` client and the cadence-driven run controls, so the `run()` calls
@@ -56,40 +79,45 @@ edits here.
   of them.
 - SDK 9 keeps the session in the operating-system credential store, reads only the endpoint from
   `.env`, and replaces `code-repository refresh-token` with `mainsequence refresh-token`. The
-  README, the examples README, and AGENTS.md now say so.
+  README and the examples README now say so.
 - `LoggedUserContextMiddleware`, `_CURRENT_AUTH_HEADERS` and `_CURRENT_USER` are not used in
-  code; the AGENTS.md identity rule was reworded.
+  code.
 - `mainsequence.logconf.logger`, used for FIGI-registration logs, is unchanged.
+- 9.0.2 makes `update-agent-skills` an offline copy of the installed SDK bundle that replaces all
+  of `.agents/skills/mainsequence/`, and moves platform-owned skills to
+  `.agents/skills/mainsequence_platform/` (authenticated `update-platform-skills`).
 
 ## Vendored skills
 
-- `.agents/skills/metatables/` was copied with `metatables copy-metatables-skills --path .`
-  (0.1.5).
+- `.agents/skills/metatables/` is the `mainsequence-metatable` 0.1.6 bundle, copied with
+  `uv run metatables copy-metatables-skills --path .`. Its reference examples now live under
+  `references/src/metatables/examples/`.
 - `.agents/skills/ms_markets/` was refreshed with `msm copy-msm-skills --path .` from ms-markets
   2.0.0. Its packaged examples still show `run(debug_mode=True, force_update=True)`, which the
   2.0.0 updaters reject.
-- `.agents/skills/mainsequence/` is still the SDK 8.0.7 bundle. It was not refreshed
-  (mainsequence-sdk#181), so its `data_publishing/` MetaTables skills are stale. AGENTS.md routes
-  MetaTables work to the copied `metatables` skills.
+- `.agents/skills/mainsequence/` is the SDK 9.0.2 bundle, copied with
+  `uv run --offline mainsequence code-repository update-agent-skills --path .`. The retired
+  `data_access/` and `data_publishing/` MetaTable skills are gone,
+  `maintenance/metatables_transition` was added, and the platform-owned skills are no longer
+  mirrored into this namespace. The authenticated `update-platform-skills`, which installs them
+  under `.agents/skills/mainsequence_platform/`, was not run.
+- The managed AGENTS.md block was regenerated from the SDK 9.0.2 template with
+  `uv run --offline mainsequence code-repository update AGENTS.md --path .`, replacing the
+  earlier hand edits; it routes MetaTables work to `.agents/skills/metatables/`. The
+  project-specific instructions outside the managed markers are unchanged.
+- Every `PINNED_FROM.txt` records a package-relative `skills_path` instead of a local path.
 
 ## Known upstream issues
 
-These are tracked upstream and are not worked around here.
+This is tracked upstream and is not worked around here.
 
-- MetaTables#9: with `mainsequence-metatable` 0.1.5, compiling without an explicit
-  `data_source_uid` raises `AttributeError`. msm builds its runtime context without one, so live
-  msm reads and writes (category sync, ticker resolution, FIGI registration checks, portfolio
-  runs) fail until it is fixed. The offline tests never run the real compiler.
-- MetaTables#10: the wheel installs top-level `api` and `examples` packages. Nothing here imports
-  `examples` as a package, and the example scripts run by path.
-- MetaTables#11: table discovery is not Environment-scoped. The schema-prep example's lookup by
-  physical table name (`TimeIndexMetaTable.filter_by_body`) goes through that discovery.
 - MainSequenceMarkets#14: ms-markets ships a top-level `migrations` package.
-- mainsequence-sdk#181: vendored SDK skills cannot be refreshed without a signed-in session.
 
 ## Validation
 
-All checks ran offline, with every IP connection and DNS lookup blocked, loopback included:
+All checks ran offline, with every IP connection and DNS lookup blocked, loopback included. They
+were rerun against `mainsequence` 9.0.2 and `mainsequence-metatable` 0.1.6 (`sdk_compat` reports
+distribution 9.0.2):
 
 ```bash
 uv run python -m metatables.sdk_compat
