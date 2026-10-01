@@ -357,7 +357,7 @@ def register_equity_assets_from_tickers(
         from .markets_models import BatchVerifiedAssetSnapshot
 
         snapshot_node = BatchVerifiedAssetSnapshot().set_frame(pd.concat(snapshot_frames))
-        error_on_last_update, _frame = snapshot_node.run(debug_mode=True, force_update=True)
+        error_on_last_update, _frame = snapshot_node.run()
         if error_on_last_update:
             raise RuntimeError(
                 "AssetSnapshot update failed while publishing FIGI-registered assets."

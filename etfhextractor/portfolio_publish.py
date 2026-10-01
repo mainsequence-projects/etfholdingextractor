@@ -30,9 +30,11 @@ ETF_TRACKER_IDENTIFIER_PREFIX = "etf_tracker_"
 # US-listed ETFs trade on US equity sessions; the rebalance index and portfolio
 # valuations must follow that trading calendar, not a synthetic 24/7 one.
 US_EQUITY_CALENDAR_KEY = "NYSE"
-# NOTE: the msm REBALANCER resolves ALWAYS_OPEN_CALENDAR_KEYS synthetically, but the
-# Portfolio row's calendar is obligatory regardless (retained in ms-markets 1.x:
-# PortfolioTable.calendar_uid is a NOT NULL FK), so even those keys persist a row.
+# NOTE: ms-markets >= 1.0.7 rebalance strategies take no calendar: ImmediateSignal
+# rebalances on the signal's observations, which ETFHoldingsSignal stamps on
+# calendar_key session closes. The Portfolio row's calendar stays obligatory
+# (ms-markets 2.x: PortfolioTable.calendar_uid is a NOT NULL FK), so even
+# ALWAYS_OPEN_CALENDAR_KEYS persist a row.
 # Materialized session coverage around "today": enough past for the backtest
 # bootstrap plus headroom, and enough future for scheduled updates without
 # re-materializing on every publish.
@@ -108,10 +110,9 @@ def ensure_trading_calendar(
 
     Market keys use the msm util `Calendar.create_from_pandas_calendar`, which
     upserts the typed Calendar row and materializes CalendarDate/CalendarSession
-    rows from pandas_market_calendars — exactly what the rebalancer's
+    rows from pandas_market_calendars — exactly what ms-markets'
     `resolve_rebalance_calendar` resolves into a `PersistedCalendarSchedule`.
-    Always-open keys ("24/7") persist an always-open calendar row for the FK
-    while the rebalancer keeps resolving them synthetically.
+    Always-open keys ("24/7") persist an always-open calendar row for the FK.
 
     Idempotent and write-frugal: when the persisted calendar already covers the
     required window, the existing row is returned with zero writes; otherwise
@@ -160,8 +161,8 @@ def _persist_always_open_calendar(
     """Persist an always-open Calendar row + sessions for the Portfolio FK.
 
     msm ships the materialization builder but no one-call util for always-open
-    calendars (the rebalancer resolves these keys synthetically); the Portfolio
-    row still needs a persisted calendar to satisfy the obligatory FK.
+    calendars; the Portfolio row still needs a persisted calendar to satisfy the
+    obligatory FK.
     """
     from msm.api.calendars import Calendar, CalendarType
     from msm.bootstrap import resolve_runtime
@@ -262,7 +263,6 @@ def build_etf_tracking_portfolio(
     backtest_start_days: int = 60,
     timeout: float = 30.0,
     run: bool = True,
-    debug_mode: bool = True,
     register_missing: bool = False,
     figi_disambiguation_filters: list[dict[str, Any]] | None = None,
     asset_identifiers: list[str] | None = None,
@@ -291,9 +291,11 @@ def build_etf_tracking_portfolio(
     0.0.58: `PortfolioTable.calendar_uid` is a NOT NULL FK). `calendar_key`
     (default NYSE for US-listed ETFs) is persisted through the msm util
     `Calendar.create_from_pandas_calendar` and attached to the Portfolio row by
-    FK (`calendar_uid`), and the rebalancer resolves the same key into the
-    persisted sessions — so valuations land on actual session closes, never on
-    weekends or holidays. Always-open keys ("24/7") also persist a Calendar row
+    FK (`calendar_uid`), and the signal stamps every observation on the same
+    key's session closes. `ImmediateSignal` rebalances on those observations and
+    ms-markets values the portfolio on the valuation source's observations
+    (ms-markets >= 1.0.6), so a session-close price source keeps valuations off
+    weekends and holidays. Always-open keys ("24/7") also persist a Calendar row
     to satisfy the FK. `backtest_start_days` (default 60) backdates the
     signal's first observation so the first run backtests that window with the
     current composition before live tracking takes over.
@@ -365,7 +367,7 @@ def build_etf_tracking_portfolio(
         if asset_identifiers is None:
             asset_identifiers = sorted(existing_identifiers.values())
 
-    from mainsequence.meta_tables import TimeIndexTableRef
+    from metatables import TimeIndexTableRef
     from msm.api.portfolios import Portfolio
     from msm_portfolios.configuration import (
         BacktestingWeightsConfig,
@@ -424,7 +426,9 @@ def build_etf_tracking_portfolio(
                 commission_fee=commission_fee
             ),
             backtesting_weights_configuration=BacktestingWeightsConfig(
-                rebalance_strategy_instance=ImmediateSignal(calendar_key=calendar_key),
+                # ms-markets >= 1.0.7 strategies take no calendar_key; the signal
+                # carries the calendar through its session-close stamps.
+                rebalance_strategy_instance=ImmediateSignal(),
                 signal_weights_instance=signal,
             ),
         ),
@@ -469,7 +473,9 @@ def build_etf_tracking_portfolio(
 
     run_result = None
     if run:
-        run_result = node.run(debug_mode=debug_mode, force_update=True)
+        # SDK >= 8.1 / metatables: updater runs always execute in-process and
+        # immediately; the removed debug_mode/force_update controls are not passed.
+        run_result = node.run()
     return EtfTrackingPortfolioBuild(
         etf_ticker=normalized_ticker,
         portfolio_unique_identifier=portfolio_identifier,
@@ -512,7 +518,6 @@ def publish_etf_tracking_portfolio(
     backtest_start_days: int = 60,
     timeout: float = 30.0,
     run: bool = True,
-    debug_mode: bool = True,
     register_missing: bool = False,
     figi_disambiguation_filters: list[dict[str, Any]] | None = None,
     asset_identifiers: list[str] | None = None,
@@ -540,7 +545,6 @@ def publish_etf_tracking_portfolio(
         backtest_start_days=backtest_start_days,
         timeout=timeout,
         run=run,
-        debug_mode=debug_mode,
         register_missing=register_missing,
         figi_disambiguation_filters=figi_disambiguation_filters,
         asset_identifiers=asset_identifiers,

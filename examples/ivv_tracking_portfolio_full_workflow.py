@@ -7,13 +7,15 @@ Pipeline (implementation task 0002 / ADR 0003 — the msm_portfolios signal path
     registered bars table ── TimeIndexTableRef ─┴──> PortfoliosDataNode ──> ETF-tracking portfolio
 
 **Self-sufficient by default** — the only prerequisites are an authenticated Main
-Sequence session and the built-in ms-markets MetaTables registered by the SDK
-migration provider. The flag-free run does everything else itself:
+Sequence session and the built-in ms-markets MetaTables registered by their
+migration provider (`metatables migrations upgrade --provider migrations:migration`).
+The flag-free run does everything else itself:
 
 0. Prepare the **project-owned** `DemoBarsTS` price-table schema the way the
    ms-markets examples do (`examples/prepare_demo_bars_schema.py`): find-or-generate
    the Alembic revision through the project provider
-   (`etfhextractor_migrations:migration`), `mainsequence migrations upgrade head`,
+   (`etfhextractor_migrations:migration`), `metatables migrations upgrade
+   --provider etfhextractor_migrations:migration head`,
    verify the registered `TimeIndexMetaTable` (skip with `--skip-schema-prep`; not
    needed when `--price-source-table-uid` supplies an external price table).
 1. Attach the markets runtime once (`msm_portfolios.start_engine` superset: portfolio
@@ -158,8 +160,8 @@ def _publish_demo_bars(
 
     `DemoBarsStorage` is etfhextractor's own ms-markets table, defined per the
     extension-mixin convention (`etfhextractor/markets_models.py`, logical id
-    `etfhextractor.DemoBarsTS`); it must be migrated/registered
-    by the SDK migration provider before this write. Bars carry `close` and
+    `etfhextractor.DemoBarsTS`); it must be migrated/registered by the project's
+    MetaTables migration provider before this write. Bars carry `close` and
     `volume` (the columns the rebalance logic consumes), one row per
     (session close, asset) on the SAME trading calendar the portfolio is
     scheduled on — so the valuation index and the price index align exactly,
@@ -191,7 +193,7 @@ def _publish_demo_bars(
             )
 
     bars_node = DemoBars().set_bars(rows)
-    error_on_last_update, _frame = bars_node.run(debug_mode=True, force_update=True)
+    error_on_last_update, _frame = bars_node.run()
     if error_on_last_update:
         raise RuntimeError("DemoBars update failed while publishing demo prices.")
     _log(
@@ -217,7 +219,7 @@ def _run_signal_only(
         timeout=timeout,
     )
     signal = ETFHoldingsSignal.from_signal_configuration(signal_config)
-    run_result = signal.run(debug_mode=True, force_update=True)
+    run_result = signal.run()
     if isinstance(run_result, tuple) and len(run_result) == 2:
         error_on_last_update, frame = run_result
         if error_on_last_update:

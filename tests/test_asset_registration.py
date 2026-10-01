@@ -118,7 +118,8 @@ class FigiAssetRegistrationTests(unittest.TestCase):
         self.assertEqual(details_kwargs["ticker"], "AAPL")
         self.assertIn("asset_uid", details_kwargs)
 
-        mocks["snapshot_node"].run.assert_called_once()
+        # SDK >= 8.1 / metatables runs take no debug_mode/force_update controls.
+        mocks["snapshot_node"].run.assert_called_once_with()
 
     def test_no_figi_means_no_registration(self) -> None:
         result, mocks = run_registration(tickers=["NVDA"], figi_rows=[])

@@ -6,8 +6,9 @@ storage app, concrete tables identified by ``__markets_base_identifier__``. The
 stable logical identifier is ``etfhextractor.<identifier>`` —
 never table names, UID maps, or row ``create_schemas()``.
 
-Tables must be migrated/registered through the SDK migration provider before a
-process writes through their DataNodes; runtime only attaches via
+Tables must be migrated/registered through the project's MetaTables migration
+provider (``etfhextractor_migrations:migration``) before a process writes through
+their DataNodes; runtime only attaches via
 ``msm.start_engine(models=[...])``. For isolated tests/examples, set
 ``MSM_AUTO_REGISTER_NAMESPACE`` before importing this module — it overrides the
 mixin namespace without source changes.
@@ -88,12 +89,12 @@ class DemoBarsStorage(EtfhExtractorMarketsStorageMixin, MarketsBase):
 
 
 def etfhextractor_metatable_provider_models() -> list[type[MarketsBase]]:
-    """Project-owned MetaTable models managed by the project's SDK Alembic provider."""
+    """Project-owned MetaTable models managed by the project's MetaTables Alembic provider."""
     return [DemoBarsStorage]
 
 
 def _migration_metadata():
-    from mainsequence.meta_tables.migrations import metadata_for_models
+    from metatables.migrations import metadata_for_models
 
     # AssetTable is included only so the canonical asset_identifier ->
     # AssetTable.unique_identifier foreign key resolves inside the scoped

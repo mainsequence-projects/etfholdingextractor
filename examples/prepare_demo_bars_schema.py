@@ -4,9 +4,9 @@ Mirrors the ms-markets prepare-schema example
 (`examples/msm_portfolios/portfolio_equal_weights_prepare_schema.py`): find or
 generate the Alembic revision for the project migration provider, apply
 `upgrade head`, then verify the registered `TimeIndexMetaTable`. The provider is
-`etfhextractor_migrations:migration` (SDK-scaffolded, scoped to
-`DemoBarsStorage` only — autogenerate never diffs the built-in ms-markets
-graph).
+`etfhextractor_migrations:migration` (scoped to `DemoBarsStorage` only —
+autogenerate never diffs the built-in ms-markets graph); both steps run through
+the `metatables migrations` CLI with `--provider etfhextractor_migrations:migration`.
 
 Run standalone:
 
@@ -31,8 +31,8 @@ _PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
-from mainsequence.client.metatables import TimeIndexMetaTable  # noqa: E402
-from mainsequence.meta_tables.migrations import namespace_version_location  # noqa: E402
+from metatables import TimeIndexMetaTable  # noqa: E402
+from metatables.migrations import namespace_version_location  # noqa: E402
 
 ETFHEXTRACTOR_MIGRATION_PROVIDER = "etfhextractor_migrations:migration"
 VERSION_LOCATION_PREFIX = "etfhextractor_migrations:versions"
@@ -90,7 +90,7 @@ def prepare_demo_bars_schema(
         print_step(2, "Generating the Alembic revision (autogenerate).")
         created_revision = True
         message = revision_message or "etfhextractor_demo_bars"
-        _run_mainsequence(
+        _run_metatables(
             [
                 "migrations",
                 "revision",
@@ -110,7 +110,7 @@ def prepare_demo_bars_schema(
     print_detail("revision_file", revision_file)
 
     print_step(3, "Applying the migration (upgrade head).")
-    _run_mainsequence(
+    _run_metatables(
         [
             "migrations",
             "upgrade",
@@ -172,14 +172,16 @@ def _active_version_directory(namespace: str) -> Path:
     return Path(str(traversable))
 
 
-def _run_mainsequence(args: list[str]) -> None:
+def _run_metatables(args: list[str]) -> None:
     env = os.environ.copy()
     existing_pythonpath = env.get("PYTHONPATH")
     paths = [str(_PROJECT_ROOT)]
     if existing_pythonpath:
         paths.append(existing_pythonpath)
     env["PYTHONPATH"] = os.pathsep.join(paths)
-    command = [sys.executable, "-m", "mainsequence", *args]
+    # `metatables` CLI (mainsequence-metatable) under this interpreter, so the
+    # provider imports from the same environment as the example.
+    command = [sys.executable, "-m", "metatables.cli.app", *args]
     print_detail("command", " ".join(command))
     result = subprocess.run(command, cwd=_PROJECT_ROOT, env=env, check=False, text=True)
     if result.returncode != 0:

@@ -26,7 +26,7 @@ AGENT_CARD_PATH = REPO_ROOT / ".agents" / "agent_card.json"
 
 # Platform-vendored skill trees: never edited, never relocated, never listed in
 # the agent card.
-VENDORED_SKILL_TREES = {"mainsequence", "ms_markets"}
+VENDORED_SKILL_TREES = {"mainsequence", "metatables", "ms_markets"}
 
 LEGACY_CLI_ENTRYPOINT = "etfh-read"
 

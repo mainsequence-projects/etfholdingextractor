@@ -6,7 +6,8 @@ import uuid
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
-from mainsequence.meta_tables import TimeIndexTableRef, TimeIndexTableUpdater
+from metatables import TimeIndexTableRef, TimeIndexTableUpdater
+from msm_portfolios.rebalance_strategy.immediate_signal import ImmediateSignal
 
 from etfhextractor.portfolio_publish import (
     CALENDAR_FUTURE_HORIZON_DAYS,
@@ -52,9 +53,9 @@ class RequiredCalendarWindowTests(unittest.TestCase):
 
 class EnsureTradingCalendarTests(unittest.TestCase):
     def test_always_open_keys_persist_a_calendar_row_for_the_obligatory_fk(self) -> None:
-        # The rebalancer resolves "24/7" synthetically, but the Portfolio row's
-        # calendar remains obligatory in ms-markets 1.x (NOT NULL calendar_uid FK),
-        # so even always-open keys persist a Calendar row + sessions.
+        # Rebalance strategies take no calendar in ms-markets 2.x, but the Portfolio
+        # row's calendar remains obligatory (NOT NULL calendar_uid FK), so even
+        # always-open keys persist a Calendar row + sessions.
         materialization_rows = object()
         with (
             patch("msm.api.calendars.Calendar") as calendar_cls,
@@ -202,9 +203,7 @@ class PortfolioValuationSourceTests(unittest.TestCase):
                 "msm_portfolios.data_nodes.PortfoliosDataNode",
                 return_value=portfolio_node,
             ) as node_cls,
-            patch(
-                "mainsequence.meta_tables.TimeIndexTableRef.from_uid"
-            ) as from_uid,
+            patch("metatables.TimeIndexTableRef.from_uid") as from_uid,
         ):
             from_uid.return_value = object.__new__(TimeIndexTableRef)
             builder = (
@@ -212,18 +211,18 @@ class PortfolioValuationSourceTests(unittest.TestCase):
                 if return_build
                 else publish_etf_tracking_portfolio
             )
+            kwargs.setdefault("run", False)
             payload = builder(
                 etf_ticker="IVV",
                 provider="ishares",
                 asset_identifiers=["BBG000B9XRY4"],
-                run=False,
                 **kwargs,
             )
 
         configuration = node_cls.call_args.kwargs["portfolio_configuration"]
         return payload, configuration, from_uid
 
-    def test_registered_table_uid_uses_sdk8_time_index_table_ref(self) -> None:
+    def test_registered_table_uid_uses_metatables_time_index_table_ref(self) -> None:
         payload, configuration, from_uid = self._publish(
             price_source_table_uid="table-uid-1"
         )
@@ -277,7 +276,28 @@ class PortfolioValuationSourceTests(unittest.TestCase):
         details = configuration.portfolio_markets_configuration.front_end_details
         self.assertEqual(details.signal_name, "IVV holdings signal")
         self.assertEqual(details.rebalance_strategy_name, "ImmediateSignal")
+        # ms-markets >= 1.0.7: the strategy carries no calendar_key; the signal's
+        # session-close stamps carry the calendar.
+        strategy = (
+            configuration.portfolio_build_configuration
+            .backtesting_weights_configuration.rebalance_strategy_instance
+        )
+        self.assertIsInstance(strategy, ImmediateSignal)
         from_uid.assert_not_called()
+
+    def test_run_calls_the_portfolio_node_without_removed_run_controls(self) -> None:
+        updater = MagicMock(spec=TimeIndexTableUpdater)
+
+        build, _configuration, _from_uid = self._publish(
+            return_build=True,
+            price_source_instance=updater,
+            run=True,
+        )
+
+        self.assertTrue(build.ran)
+        # SDK >= 8.1 / metatables runs take no debug_mode/force_update controls.
+        build.portfolio_node.run.assert_called_once_with()
+        self.assertIs(build.run_result, build.portfolio_node.run.return_value)
 
 
 if __name__ == "__main__":
