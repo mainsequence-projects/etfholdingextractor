@@ -1,6 +1,6 @@
 ---
 name: mainsequence-markets-portfolio-workflow
-description: Use this skill when creating, extending, reviewing, or documenting msm_portfolios workflows, including portfolio TimeIndexTableUpdaters, portfolio metadata, portfolio construction examples, contributed price/signal nodes, and portfolio calculations that depend on core PortfolioTable identity.
+description: Use this skill when creating, extending, reviewing, or documenting msm_portfolios workflows, including portfolio TimeIndexTableUpdaters, portfolio metadata, signals and rebalancing, position-aware accounting, lifecycle cash flows, price/FX valuation, canonical ledgers, and portfolio calculations that depend on core PortfolioTable identity.
 ---
 
 # Main Sequence Markets Portfolio Workflow
@@ -27,6 +27,13 @@ Before changing portfolio workflow code, inspect:
 5. `src/msm_portfolios/data_nodes/portfolios/__init__.py`
 6. `docs/knowledge/msm_portfolios/portfolios/index.md`
 7. `docs/knowledge/msm/accounts/index.md`
+
+For position-aware accounting, lifecycle cash flows, or portfolio valuation,
+also read:
+
+8. `docs/knowledge/msm_portfolios/portfolios/accounting.md`
+9. `docs/ADR/0042-position-cash-flow-portfolio-accounting.md`
+10. [references/position_accounting.md](references/position_accounting.md)
 
 ## Account Target Exposure Boundary
 
@@ -160,18 +167,26 @@ portfolio node once with `refresh_dependency_tree=True`, or call
 `set_relation_tree(force_rebuild=True)` during setup, so stale backend edges are
 cleared before dependency execution.
 
-Portfolio construction must consume valuations through an explicit dependency:
+Portfolio construction must expose execution and valuation as separate temporal owners:
 
 ```text
-source prices / valuations TimeIndexTableUpdater -> optional InterpolatedPrices -> SignalWeights -> PortfoliosDataNode
+SignalWeights --------------------+
+                                   +--> PortfolioWeights --> PortfolioWeightsStorage
+calendar events / execution bars -+           |
+execution valuations --------------+           |
+                                               v
+valuation source ----------------------> PortfoliosDataNode --> PortfoliosStorage
+                                                               |
+                                                               v
+                                                     optional PortfolioAnalytics
 ```
 
 `PortfoliosDataNode` must not construct `InterpolatedPrices` from
 `AssetsConfiguration`/`PricesConfiguration`. If persistent interpolation is
 needed, prepare or attach the interpolation node first and pass it as
 `PortfolioBuildConfiguration.valuation_source_instance`. Keep any local
-valuation alignment inside portfolio calculation as a temporary calculation
-step only.
+valuation alignment inside portfolio calculation as bounded per-asset as-of
+selection at source observation timestamps only.
 
 Current portfolio build contract:
 
@@ -179,8 +194,7 @@ Current portfolio build contract:
 PortfolioBuildConfiguration
   valuation_source_instance TimeIndexTableUpdater | TimeIndexTableRef
   valuation_column          str, defaults to close
-  price_alignment_policy    PriceAlignmentPolicy
-  portfolio_prices_frequency
+  valuation_alignment_policy ValuationAlignmentPolicy
   execution_configuration
   backtesting_weights_configuration
 ```
@@ -191,10 +205,9 @@ Rules:
 - `valuation_source_instance` is the recoverable upstream valuation dependency.
   It may be `InterpolatedPrices`, another compatible TimeIndexTableUpdater, or an
   `TimeIndexTableRef` built from a registered TimeIndexMetaTable UID.
-- When `valuation_source_instance` is an `TimeIndexTableRef`, `PortfoliosDataNode`
-  loads the source table update statistics before calculating the update window.
-  Normal `TimeIndexTableUpdater` valuation sources must already have dependency
-  `update_statistics` populated by the SDK runner.
+- `portfolio_prices_frequency` is not part of the core contract. Canonical
+  execution and valuation nodes must not create a generic date range or
+  resample their outputs. Reporting frequency belongs to `PortfolioAnalytics`.
 - `valuation_column` is a strict string column name. Portfolio core must not
   force `close`, `open`, `vwap`, or any other OHLC enum. Specific contributed
   strategies may validate additional OHLC fields only when they truly need
@@ -212,8 +225,21 @@ Rules:
   object in both cases.
 - Persistent interpolation belongs to `msm_portfolios.contrib.prices`, not to
   `PortfoliosDataNode`.
-- `PortfoliosDataNode.dependencies()` must expose both `signal_weights` and
-  `valuation_source`.
+- `PortfolioWeights.dependencies()` exposes `signal_weights` and the explicit
+  execution valuation source. It owns event selection, signal cutoff, previous
+  executed state, and `PortfolioWeightsStorage` production.
+- `PortfoliosDataNode.dependencies()` exposes canonical `portfolio_weights` and
+  `valuation_source`. Signal weights are a transitive execution dependency, not
+  a direct valuation dependency.
+- `ImmediateSignal` executes only at original signal observation timestamps.
+  Use `CalendarEventSignal` when the latest eligible signal should execute at a
+  persisted market open or close. Its calendar identifier, session label,
+  event, offset, cadence, signal selection, and execution valuation convention
+  are hash-bearing configuration. The calendar identifier is required and must
+  resolve to persisted `CalendarSession` rows; missing, ambiguous, or failed
+  governed lookups must not fall back to a local pandas or synthetic calendar.
+- `TimeWeighted` and `VolumeParticipation` are not supported public strategies
+  until their bar-driven execution implementations are complete.
 - The authoritative portfolio universe is the signal output frame. A signal
   `get_asset_list()` is preflight/context only.
 - Required valuation assets are derived from signal output, previous portfolio
@@ -226,13 +252,12 @@ Rules:
   A later row for another portfolio must not move this portfolio's start date.
   The authoritative portfolio update start is this portfolio's latest
   `PortfoliosStorage` timestamp for the resolved `PortfolioTable.unique_identifier`.
-- Portfolio valuation-source coverage is applied after the actual signal frame
-  has been read. The usable valuation end timestamp must be scoped to assets
-  from the signal output frame, previous portfolio-weight assets still needing
-  valuation or liquidation, and any explicit portfolio value override asset. Do
-  not take the minimum progress timestamp across every asset in a large source
-  valuation table, and do not use signal preflight as the authoritative
-  portfolio universe.
+- Portfolio valuation timestamps come from actual valuation-source observations.
+  Executed weights are selected as-of each valuation timestamp, so sparse weekly
+  rebalances can drive daily valuation without daily weight rows.
+- Seed valuation reads must fetch the latest eligible observation for every
+  required asset in one set-based request. Enforce
+  `ValuationAlignmentPolicy.maximum_staleness` per asset.
 - Contributed signal progress must be scoped by `signal_uid`; `SignalWeightsStorage`
   is shared and keyed by `(time_index, signal_uid, asset_identifier)`.
   `signal_uid` is a required reference to `SignalMetadataTable.signal_uid`, so
@@ -242,20 +267,29 @@ Rules:
 - `SignalMetadataTable.signal_description` and signal `get_explanation()` text
   must be plain text or Markdown. Do not return or document HTML tags for signal
   descriptions; rendering belongs to the consuming UI.
-- Missing required valuation assets must be logged with the valuation source,
-  date range, valuation column, and policy. Strict policy fails; permissive
-  policy logs and continues when the downstream calculation can still produce a
-  usable frame.
-- Local reindex/forward-fill inside `PortfoliosDataNode` is only calculation
-  alignment. It must not create persistent storage or hide a valuation TimeIndexTableUpdater.
+- Missing or stale required valuation assets fail under the default strict
+  policy. A permissive policy may yield no eligible rows, but it must never
+  manufacture a timestamp.
+- As-of selection may reindex to explicit signal, calendar, bar, or valuation
+  timestamps. It must not introduce any additional economic timestamp.
+- `PortfolioAnalytics` is the only portfolio component that may resample. Its
+  `time_index` is the actual selected source-observation timestamp; analytical
+  bucket boundaries live in `period_start` and `period_end`, and
+  `source_time_index` preserves lineage.
+- Repair legacy midnight-indexed `PortfoliosStorage` rows only through a
+  dry-run-validated, `portfolio_identifier`-scoped inclusive tail delete using
+  `TimeIndexMetaTable.delete_after_date(...)`, followed immediately by a
+  deterministic portfolio replay. Require persisted `CalendarSession` and
+  historical `close_time` agreement, prove the inspection reaches the latest
+  stored row, and apply one portfolio at a time. Never update indexed
+  coordinates in place or use raw SQL.
 - `PortfoliosDataNode.run(..., update_pointers=True)` is the default portfolio
   workflow behavior. After the graph publishes, it must upsert the resolved
   `PortfolioTable` row with `signal_uid`, `signal_weights_data_node_uid`,
   `portfolio_weights_data_node_uid`, and `portfolio_data_node_uid`. Examples
   should not perform this final pointer upsert manually.
-- If the run produces no new executed weights, pointer update must preserve the
-  existing `PortfolioTable.portfolio_weights_data_node_uid` instead of
-  requiring a fresh `PortfolioWeights` TimeIndexTableUpdate.
+- Rerunning before a new execution event or valuation observation must return an
+  empty incremental update. Job run time is never an economic timestamp.
 - API reads for a portfolio's signal weights must filter by
   `PortfolioTable.signal_uid`. Do not derive the signal from
   `TimeIndexTableUpdate.build_configuration`, runtime update statistics, or distinct
@@ -276,6 +310,43 @@ Contributed signal rules:
 The legacy `get_interpolated_prices_timeseries(...)` helper may remain as a
 non-core transition/helper path in the contributed price package. Do not use it
 from portfolio core or contributed signals.
+
+## Position-Aware Accounting
+
+Use `PortfolioEngine` only when the portfolio needs instrument quantities,
+currency balances, obligations, or position-driven lifecycle events. Preserve
+`PortfoliosDataNode` as the unchanged default when accounting configuration is
+omitted or explicitly `None`.
+
+A Portfolio is a backtest model. It has no Account and must not ingest broker
+orders, trades, fills, account holdings, custody balances, or actual account
+cash. The configured signal and `RebalanceStrategy` are the only source of
+simulated portfolio executions. The strategy emits internal execution facts to
+`PortfolioAccounting`; do not expose an external execution-fact input lane or a
+compatibility fallback for one.
+
+For the built-in position-aware path, configure a `TargetWeightExecutionModel`
+on that existing strategy and provide an explicit `InstrumentExecutionSpec` for
+every simulated Asset. Keep fill-time `ExecutionCostModel`s on the strategy and
+holding-period funding/dividend/coupon economics in `LifecycleEventModel`s.
+Variation-margin instruments change quantity without a full-notional cash leg;
+their valuation model must implement the corresponding instrument-value
+semantics.
+
+`PortfolioEventLedgerStorage` is the sole authoritative position-accounting
+output. `PortfolioAccounting` is the pure reducer, not a MetaTable or updater.
+State, cash-flow, weights, values, and analytics are ledger-derived read models.
+Do not introduce a second authoritative checkpoint or claim a cross-table
+transaction requirement.
+
+All accounting implementation work belongs to `msm_portfolios`. The existing
+`TimeIndexTableUpdater`, `PlatformTimeIndexMetaTable`, and MetaTables-managed migration
+contracts are sufficient; ADR 0042 has no `mainsequence-sdk` blocker.
+
+Read [references/position_accounting.md](references/position_accounting.md)
+before changing the accounting engine, lifecycle-model boundary, valuation/FX
+contract, canonical ledger, projections, restart behavior, accounting examples,
+or the ADR.
 
 ## Write Pattern
 
@@ -346,6 +417,16 @@ For explicit portfolio valuation-source changes, run:
 uv run --extra portfolios --extra dev ruff check src/msm_portfolios/configuration.py src/msm_portfolios/data_nodes/portfolios src/msm_portfolios/contrib/signals examples/msm_portfolios tests/msm_portfolios/data_nodes/test_portfolio_contracts.py
 uv run --extra portfolios --extra dev pytest tests/msm_portfolios/data_nodes/test_portfolio_contracts.py tests/msm_portfolios/examples/test_equal_weight_portfolio_schema.py tests/msm_portfolios/configuration/test_prices_configuration.py
 uv run --extra portfolios --extra dev mkdocs build --strict --site-dir /private/tmp/msmarkets-docs-site
+```
+
+For position-aware accounting changes, also run:
+
+```bash
+uv run --extra portfolios --extra dev ruff check src/msm_portfolios/accounting src/msm_portfolios/data_nodes/portfolios examples/msm_portfolios tests/msm_portfolios/accounting
+uv run --extra portfolios --extra dev pytest tests/msm_portfolios/accounting/test_accounting.py
+uv run --extra portfolios python examples/msm_portfolios/portfolio_cashflows_and_fx_valuation_example.py
+uv run --extra portfolios python examples/msm_portfolios/portfolio_custom_cashflow_model_example.py
+uv run --extra portfolios python examples/msm_portfolios/portfolio_perpetual_funding_example.py
 ```
 
 For portfolio target-position changes, run:
