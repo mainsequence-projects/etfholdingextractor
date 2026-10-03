@@ -1,7 +1,7 @@
 schema=1
 library_name=mainsequence
 namespace=mainsequence
-pinned_version=9.0.2
+pinned_version=9.0.5
 skills_path=agent_scaffold/skills
-copied_at_utc=2026-10-01T15:05:37Z
+copied_at_utc=2026-10-03T15:57:11Z
 command=mainsequence code-repository update-agent-skills

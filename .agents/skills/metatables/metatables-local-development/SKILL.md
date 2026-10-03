@@ -38,6 +38,20 @@ storage isolation. Require `local_mode: true`; after initialization also require
 stop the mutating work and select Local in Settings or restart with `serve --local`.
 Do not retry against automatic hosted discovery when a local connection fails.
 
+## One local runtime per laptop
+
+The local runtime is a single SQLite file, `~/.local/share/metatables/metatables.sqlite`
+by default, shared by every project, checkout and branch on the machine. Each project
+records it under `local` in its `.local/runtime-data-sources.json`.
+
+- A checkout that ran an earlier MetaTables release may still have its own
+  per-checkout file saved there; upgrading does not move it. To join the shared
+  runtime, select the shared file in Settings. The old file's tables are not copied:
+  run the application's migrations and fixtures again, and leave the old file in place.
+- The shared runtime is at the newest system migration any project applied. If
+  status reports an unsupported revision, upgrade the application's
+  `mainsequence-metatable` instead of selecting another database.
+
 ## Establish the development loop
 
 1. Work in the consuming application's Git checkout, with its commit and origin
@@ -72,6 +86,8 @@ Do not retry against automatic hosted discovery when a local connection fails.
    Substitute the application's own module. Provider code and revisions are
    installed in the application process; the API requires no provider approval
    or installation. System initialization and application histories remain separate.
+   Running the provider yourself is for the local runtime only; hosted runtimes
+   receive the same revisions from the deployment workflow's migration Job.
 5. Build application contracts/queries with the
    [table skill](../metatables-meta-tables/SKILL.md), or producers/readers with the
    [updater skill](../metatables-time-index-table-updates/SKILL.md). Use small,
@@ -118,9 +134,10 @@ or idempotent behavior. For a persistence claim, restart and read existing rows
 before seeding again. Recheck runtime state after any restart or mode/source change;
 do not switch modes while tests or producers are running.
 
-Local storage persists across launches and Git branches of the checkout. A new
-branch does not create a fresh test database. Use identifiable fixtures and clean
-up only the rows owned by the test. When a fresh database is necessary, select a
+Local storage persists across launches, and other projects' tables and fixtures share
+the same runtime. A new branch or project does not create a fresh test database. Use
+identifiable fixtures in the application's own namespace and clean up only the rows
+owned by the test. When a fresh database is necessary, select a
 separate temporary SQLite file through Settings and initialize it explicitly;
 restore the previous selection afterwards. Do not delete or replace a developer's
 existing database just to obtain a clean test run.
@@ -128,32 +145,47 @@ existing database just to obtain a clean test run.
 SQLite verifies portable application behavior, not PostgreSQL/MySQL/MSSQL-specific
 SQL, Timescale features, database roles or every concurrency behavior. Report that
 limit and use the intended engine in an isolated test database when the task
-requires those checks. Do not use the shared environment database as the default
+requires those checks. Application models keep their hosted column types: a
+PostgreSQL `JSONB` column runs as JSON, and `Numeric` runs as a SQLite number exact
+to about 15 significant digits, the precision the client's float64 frames carry on
+every engine. Unsigned 64-bit integers and arrays are rejected, naming the column.
+Revisions need no SQLite variants: column and constraint changes run through Alembic
+batch mode. Only raw PostgreSQL SQL must check `op.get_bind().dialect.name`. Do not use the shared environment database as the default
 integration-test fixture.
 
 ## Finish verification and switch back
 
 Record what passed, the runtime/DataSource used, and any engine-specific work still
-unverified. Carry forward the reviewed application code and migration revisions;
+unverified. Commit the reviewed application code and its migration revisions together;
 local rows, catalog UIDs, credentials and fixture data are not promoted by a switch.
+The application's deployment workflow applies those revisions to the hosted runtime
+before the code rolls out; see the [migrations skill](../metatables-migrations/SKILL.md)
+and `docs/client/deploy-application-migrations.md`. Add the migration Job if the
+workflow lacks one.
 
 When returning to the environment is part of the requested workflow:
 
 1. Finish local tests and stop active writers. In Admin **Settings → Runtime mode**,
-   inspect the displayed hosted environment and choose the intended registered
-   DataSource. Use **Switch to Hosted**. This changes the API worker and selected
-   database; it does not copy or merge the local database. Leave local capability
-   enabled if the developer needs to switch back later.
+   inspect the displayed hosted environment and use **Switch to Hosted**. Hosted
+   opens the runtime database the API's deployment declares, through the same
+   Environment Secret; there is no DataSource to choose and the launcher never
+   migrates it. This changes the API worker and database; it does not copy or merge
+   the local database. Leave local capability enabled if the developer needs to
+   switch back later.
 2. Re-read runtime status and verify `local_mode: false`, the intended verified
-   hosted environment, the expected DataSource and readiness. The same local
+   hosted environment, the expected DataSource and readiness. `migration_required`
+   means the branch has system migrations the deployed API does not have yet; it
+   clears once that code is deployed. The same local
    connection command still reaches this supervised API; its `--local` flag alone
    does not prove SQLite. If the switch fails and the old worker is restored,
    report the actual mode instead of claiming the switch succeeded.
 3. Restart application/test client processes and resolve catalog bindings again.
    Do not reuse local table UIDs or already-bound updater instances against the
-   environment database. Apply reviewed revisions or perform environment writes
-   only within the user's requested scope; passing local tests is not itself a
-   request to seed fixtures, run backfills or migrate that database.
+   environment database. Do not apply application revisions from this session;
+   the deployment's migration Job does. `migrations current` can confirm the
+   deployed revision. Perform other environment writes only within the user's
+   requested scope; passing local tests is not itself a request to seed fixtures
+   or run backfills.
 
 If the user instead wants to connect to a separately deployed API, follow the
 installation guide's hosted endpoint selection. Restore prior connection settings
