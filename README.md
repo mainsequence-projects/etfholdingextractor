@@ -146,6 +146,9 @@ its single table `DemoBarsTS` (the example's demo price source; version table
   metatables --local migrations current --provider etfhextractor_migrations:migration
   ```
 
+  The local runtime must already hold the ms-markets tables: MetaTables finalizes `DemoBarsTS`
+  only once its foreign-key target, the ms-markets Asset table, is registered there.
+
 Nothing migrates at import or start-up. Details: [docs/library.md](docs/library.md)
 ("Who applies the provider").
 
