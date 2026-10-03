@@ -1,12 +1,12 @@
-# 0007 — SDK 9.0.5, MetaTables 0.1.14 and deployment-Job migrations
+# 0007 — SDK 9.0.5, MetaTables 0.1.18 and deployment-Job migrations
 
-Status: implemented in 0.4.3. The provider was proven on an isolated local SQLite runtime. No
-hosted runtime was read or migrated.
+Status: implemented in 0.4.3. The provider was proven on an isolated local SQLite runtime against
+the real ms-markets 2.2.2 schema. No hosted runtime was read or migrated.
 
 ## Goal
 
-Move `etfhextractor` to `mainsequence` 9.0.5, `mainsequence-metatable` 0.1.14 and ms-markets
-2.1.1, and adopt the MetaTables 0.1.14 migration recommendation
+Move `etfhextractor` to `mainsequence` 9.0.5, `mainsequence-metatable` 0.1.18 and ms-markets
+2.2.2, and adopt the MetaTables migration recommendation introduced in 0.1.14
 (`docs/client/deploy-application-migrations.md` in the vendored `metatables` skills):
 
 1. Develop locally: author and apply revisions with `metatables --local migrations ...`.
@@ -18,11 +18,11 @@ Move `etfhextractor` to `mainsequence` 9.0.5, `mainsequence-metatable` 0.1.14 an
 ## Dependency contract
 
 - `mainsequence>=9.0.5,<10` (locked 9.0.5)
-- `mainsequence-metatable>=0.1.14,<0.2` (locked 0.1.14)
-- `ms-markets>=2.1.1,<3` (locked 2.1.1)
+- `mainsequence-metatable>=0.1.18,<0.2` (locked 0.1.18)
+- `ms-markets>=2.2.2,<3` (locked 2.2.2)
 
-`uv lock --upgrade-package` moved only these three packages. `requirements.txt` was regenerated
-with the command in its header.
+`uv lock --upgrade-package` moved only these packages; `mainsequence` 9.0.5 is the latest
+release. `requirements.txt` was regenerated with the command in its header.
 
 ## The recommendation, applied to a library
 
@@ -71,13 +71,39 @@ generic top-level `migrations` provider or hosted upgrades. Its prerequisite is 
 runtime that already holds the ms-markets tables. The VS Code launch entry for the schema step
 passes `--local`.
 
-## ms-markets 2.1.1
+## ms-markets 2.1.1 to 2.2.2
 
-- `cli` and `command_center` were renamed `msm_cli` and `msm_command_center`. This repository
-  imports neither, and its own CLI is the subpackage `etfhextractor.cli`.
+- 2.1.1 renamed `cli` and `command_center` to `msm_cli` and `msm_command_center`. This
+  repository imports neither, and its own CLI is the subpackage `etfhextractor.cli`.
+- 2.2.0 removed `msm_command_center`, the `apps/v1` re-export modules, the Asset Monitor frame
+  and workspace builders, and the fixed income `response_mappings`. This repository uses none of
+  them: all 51 distinct `msm` and `msm_portfolios` imports in the package, the migration
+  provider, the examples and the tests resolve on 2.2.2.
+- 2.2.2 requires `mainsequence-metatable>=0.1.17` and gives `PortfolioEventLedgerTS` an explicit
+  `__storage_layout__`, whose lookup index name fits PostgreSQL's 63-character limit, so the
+  ms-markets provider finalizes on a fresh runtime.
 - The history is one revision, `0018_initial_schema`. Consumers never apply it.
-- `.agents/skills/ms_markets/` was refreshed with `msm copy-msm-skills --path .`; its
-  `metatable_migrations` skill states the same rule.
+- `.agents/skills/ms_markets/` was refreshed with `msm copy-msm-skills --path .`. The refresh
+  removed the Command Center Asset Monitor skills, which 2.2.0 dropped. Its
+  `metatable_migrations` skill states the same migration rule.
+
+## MetaTables 0.1.17 and 0.1.18
+
+- 0.1.17 allows foreign keys with `ON DELETE` and `ON UPDATE` `CASCADE`, `SET NULL` and
+  `SET DEFAULT` (amendment of 2026-10-03 to API ADR 0007). The catalog records each table's
+  cascade targets (system migration `0010_cascade_targets`), and
+  `MetaTable.get_impact(action="delete_rows" | "update_keys" | "drop_table")` previews what an
+  action reaches (API ADR 0016).
+- 0.1.18 removes the 0.1.17 cascade write narrowing. Write on a table depends only on that
+  table's own grants, and the pre-flight reports cascade effects as information, never as
+  blockers.
+- The only foreign key in this repository, `DemoBarsTS.asset_identifier` →
+  `ms_markets__asset.unique_identifier`, has been `ON DELETE RESTRICT` since the table was
+  introduced. The asset keys of ms-markets' own time-series tables (`AssetSnapshotsTS`,
+  `ExternalPricesTS`, `SignalWeightsTS`, `PortfolioCashFlowsTS` and others) use the same action.
+  It was never changed to work around MetaTables, so there is nothing to restore, and revision
+  `0001` is unchanged.
+- `.agents/skills/metatables/` was refreshed with `metatables copy-metatables-skills --path .`.
 
 ## SDK 9.0.5
 
@@ -89,24 +115,20 @@ this repository declares none. `.agents/skills/mainsequence/` is the SDK 9.0.5 b
 
 ## Local migration proof
 
-Every run used `METATABLES_LOCAL_STORAGE_DIR` set to an isolated scratch directory, a dedicated
-local API port, and `metatables --local` only. The runtime reported `local_mode: true`,
-`dialect: sqlite` and system revision `0009_timescale_policies` after
-`metatables --local runtime initialize`.
+Run on 2026-10-03 with `mainsequence-metatable` 0.1.18 and ms-markets 2.2.2. Every command used
+`METATABLES_LOCAL_STORAGE_DIR` set to a fresh scratch directory, a dedicated local API port, a
+scratch launcher configuration (`local_mode_available: true`, credential keys in a scratch
+directory) and `metatables --local` only.
 
-`DemoBarsTS` has a foreign key to `ms_markets__asset`, and MetaTables finalization preflights
-every foreign-key target. The provider therefore finalizes only in a runtime where the ms-markets
-Asset table is a finalized MetaTable:
-
-1. Standalone, in an empty runtime: Alembic applied `0001` on SQLite and the version registry
-   became active, but `DemoBarsTS` stayed reserved with
-   `physical_contract_reconciliation_failed`, because its foreign-key target does not exist in
-   that runtime.
-2. With the real ms-markets 2.1.1 schema: the MetaTables 0.1.14 API rejects the ms-markets
-   provider, so its tables never finalize (see the next section). `DemoBarsTS` then failed with
-   `foreign_key_target_columns_not_unique`; `migrations current` reported `0001 (head)`.
-3. With a scratch-only stand-in provider that registers an exact replica of `ms_markets__asset`
-   (msm's own `AssetTable` model, which has no outgoing foreign keys):
+1. `metatables --local runtime initialize` applied the system migrations `0001_initial` through
+   `0010_cascade_targets`. Status then reported `local_mode: true`, `dialect: sqlite`, bootstrap
+   `ready` and a local SQLite DataSource.
+2. As a local-only prerequisite, the ms-markets 2.2.2 provider was applied to the same runtime:
+   `Running upgrade  -> 0018, initial schema`, then 62 tables finalized, 62 active and 0 failed,
+   including `ms_markets__asset` and `ms_markets__portfolioeventledgerts`. On hosted runtimes the
+   ms-markets deployment applies that schema; this repository's docs and its consumers' Jobs do
+   not.
+3. This repository's provider finalized with the ms-markets cascades in place:
 
    ```text
    $ metatables --local migrations upgrade --provider etfhextractor_migrations:migration head
@@ -114,6 +136,7 @@ Asset table is a finalized MetaTable:
    ok: True
    finalized_count: 2
    active_count: 2
+   reserved_count: 0
    failed_count: 0
    revision: 0001
    migrated: True
@@ -121,26 +144,26 @@ Asset table is a finalized MetaTable:
    0001 (head)
    ```
 
-   A repeated upgrade reported `migrated: False` with both tables active, and `DemoBarsTS` was
-   registered as a `TimeIndexMetaTable` with index names `["time_index", "asset_identifier"]`.
-   `examples/prepare_demo_bars_schema.py --local --check-only` and `--local` both passed against
-   that runtime.
+   The ms-markets provider reported `0018 (head)`. A repeated upgrade reported
+   `migrated: False` with both tables active.
+4. The catalog rows for `etfhextractor_markets__alembic_version`,
+   `etfhextractor_markets__demobarsts` and `ms_markets__asset` were `active` in the local
+   DataSource. `DemoBarsTS` is a `TimeIndexMetaTable` with index names
+   `["time_index", "asset_identifier"]`.
+5. `get_impact(action="delete_rows")` on `ms_markets__asset` returned `allowed: true` and no
+   blockers. Of its 34 foreign-key edges, 6 were `cascade_delete` and 28 `restrict`, including
+   `etfhextractor_markets__demobarsts` → `ms_markets__asset`.
+6. `examples/prepare_demo_bars_schema.py --local --check-only` and `--local` both passed. Run
+   through `configure_local_client()`,
+   `metatables.upgrade_application("etfhextractor_migrations:migration")`, the call a consuming
+   application's migration Job makes, reported `ok: True`, `migrated: False` and 2 active tables.
 
-## Known upstream issues
-
-The ms-markets 2.1.1 provider cannot finalize on a MetaTables 0.1.14 API. This is not worked
-around here:
-
-- `PortfolioEventLedgerStorage` has four identity dimensions, so the API's default
-  secondary-index name is 70 characters long. Reservation fails with 422
-  `secondary index name must be a valid PostgreSQL identifier` (63 characters at most).
-- The `0018_initial_schema` tables declare cascading foreign keys. Finalization fails with 400
-  `cascading_foreign_key_unsupported`; MetaTables 0.1.14 accepts only `RESTRICT` and
-  `NO ACTION` on every backend.
-
-Until ms-markets ships a fix, a fresh local runtime cannot hold a finalized ms-markets schema,
-so the local example run and the end-to-end local proof of `DemoBarsTS` against the real
-ms-markets tables remain open.
+Finalization preflights every foreign-key target: the target must be an active MetaTable in the
+same DataSource, with a primary-key or unique target column set. `DemoBarsTS` therefore
+finalizes only in a runtime that already holds the ms-markets Asset table. The first draft of
+this task proved the provider against a scratch replica of `ms_markets__asset`, because the
+ms-markets 2.1.1 schema could not be applied to a fresh runtime then. The replica is no longer
+needed.
 
 ## Validation
 
@@ -150,4 +173,5 @@ uv run ruff check --no-fix .
 uv run python -m metatables.sdk_compat
 ```
 
-Not verified: the hosted migration state, live provider extraction, and a live portfolio run.
+Not verified: the hosted migration state, live provider extraction, a live portfolio run, and
+the full example against the local runtime, which needs live iShares and OpenFIGI calls.

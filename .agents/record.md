@@ -19,9 +19,9 @@
 - CodeRepositoryBranch UID for `main`: `41ddaf20-9077-4e42-bc24-cace28efd5d7`
 - Python: `3.13`
 - Main Sequence SDK: `>=9.0.5,<10` (locked and verified with `9.0.5`)
-- MetaTables client: `mainsequence-metatable>=0.1.14,<0.2` (import and CLI `metatables`; locked
-  and verified with `0.1.14`)
-- ms-markets: `>=2.1.1,<3` (locked and verified with `2.1.1`)
+- MetaTables client: `mainsequence-metatable>=0.1.18,<0.2` (import and CLI `metatables`; locked
+  and verified with `0.1.18`)
+- ms-markets: `>=2.2.2,<3` (locked and verified with `2.2.2`)
 - Deployment: none. No `.mainsequence/workflows/` file and no migration Job.
 - Migration namespace: `etfhextractor`
 - Alembic head: `0001`

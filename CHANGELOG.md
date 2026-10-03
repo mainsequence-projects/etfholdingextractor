@@ -7,13 +7,18 @@ their Git tags and by the implementation tasks in `docs/implementation_task/`.
 
 ### Changed
 
-- Require `mainsequence>=9.0.5,<10`, `mainsequence-metatable>=0.1.14,<0.2` and
-  `ms-markets>=2.1.1,<3`. `uv.lock` resolves 9.0.5, 0.1.14 and 2.1.1, and `requirements.txt` was
-  regenerated from it.
-- Adopt the MetaTables 0.1.14 migration recommendation. Hosted runtimes are migrated only by a
-  deployment workflow's migration Job. etfholdingextractor has no deployment, so the application
-  that deploys code using `DemoBarsTS` applies `etfhextractor_migrations:migration` in its own
-  migration Job. Local development uses
+- Require `mainsequence>=9.0.5,<10`, `mainsequence-metatable>=0.1.18,<0.2` and
+  `ms-markets>=2.2.2,<3`. `uv.lock` resolves 9.0.5, 0.1.18 and 2.2.2, and `requirements.txt` was
+  regenerated from it. MetaTables 0.1.17 allows cascading foreign keys and adds the `get_impact`
+  pre-flight, and 0.1.18 makes write on a table depend only on that table's own grants.
+  ms-markets 2.2.2 requires MetaTables 0.1.17 or later and gives `PortfolioEventLedgerTS` an
+  explicit storage layout, so the ms-markets schema now applies to a fresh local runtime. This
+  package imports nothing that ms-markets 2.2.0 removed (`msm_command_center`, the `apps/v1`
+  re-exports).
+- Adopt the MetaTables deployment-Job migration recommendation (introduced in 0.1.14). Hosted
+  runtimes are migrated only by a deployment workflow's migration Job. etfholdingextractor has no
+  deployment, so the application that deploys code using `DemoBarsTS` applies
+  `etfhextractor_migrations:migration` in its own migration Job. Local development uses
   `metatables --local migrations upgrade --provider etfhextractor_migrations:migration head`.
   Neither this package nor its consumers apply the ms-markets provider; the ms-markets deployment
   migrates that schema.
@@ -27,7 +32,8 @@ their Git tags and by the implementation tasks in `docs/implementation_task/`.
   applies the provider, and that since SDK 9.0.5 `mainsequence code-repository sync` only
   refreshes local dependencies; publishing is a plain `git push` plus the version tag.
 - Refreshed the vendored skills: SDK 9.0.5 (`.agents/skills/mainsequence/`, plus the managed
-  AGENTS.md block), `metatables` 0.1.14 and ms-markets 2.1.1.
+  AGENTS.md block), `metatables` 0.1.18 and ms-markets 2.2.2. The ms-markets refresh drops the
+  Command Center Asset Monitor skills, which ms-markets 2.2.0 removed.
 
 ### Added
 
@@ -35,7 +41,8 @@ their Git tags and by the implementation tasks in `docs/implementation_task/`.
   example's local-only writes, and the absence of non-local upgrade or downgrade instructions in
   repository-owned files.
 - Implementation task [0007](docs/implementation_task/0007-deployment-job-migrations.md),
-  including the local SQLite proof of the provider.
+  including the local SQLite proof of the provider against the real ms-markets 2.2.2 schema on a
+  MetaTables 0.1.18 runtime.
 
 ### Fixed
 
@@ -46,10 +53,6 @@ their Git tags and by the implementation tasks in `docs/implementation_task/`.
 
 - The provider `etfhextractor_migrations:migration`: package `etfhextractor`, namespace
   `etfhextractor`, version table `etfhextractor_markets__alembic_version`, revision `0001`.
+- The `DemoBarsTS` foreign key to the ms-markets Asset table keeps `ON DELETE RESTRICT`, the
+  action it was authored with and the one ms-markets' own asset-keyed time-series tables use.
 - Every public name of the library, the `etfh` CLI and the agent card's skills.
-
-### Known issues
-
-- The ms-markets 2.1.1 provider cannot finalize on a MetaTables 0.1.14 API (a 70-character
-  default secondary-index name on `PortfolioEventLedgerStorage`, and cascading foreign keys), so
-  a fresh local runtime cannot yet hold the real ms-markets schema that `DemoBarsTS` references.

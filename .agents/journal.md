@@ -16,6 +16,15 @@
   cannot finalize on a MetaTables 0.1.14 API (70-character secondary-index name, cascading
   foreign keys), so `DemoBarsTS` was finalized against a scratch replica of `ms_markets__asset`.
   Nothing ran against a hosted runtime.
+- Moved 0.4.3 to `mainsequence-metatable` 0.1.18 and ms-markets 2.2.2 before release. MetaTables
+  0.1.17 allows cascading foreign keys and 0.1.18 makes write depend only on a table's own grants;
+  ms-markets 2.2.2 fixes the 70-character index name. Refreshed the `metatables` and ms-markets
+  skills (the refresh drops the Asset Monitor skills). `DemoBarsTS` keeps its original
+  `ON DELETE RESTRICT`, so no revision changed.
+- Proved the provider again on a fresh isolated local SQLite runtime at system revision
+  `0010_cascade_targets`, this time against the real ms-markets 2.2.2 schema, which was applied
+  first as a local-only prerequisite; the scratch replica is no longer needed. Nothing ran
+  against a hosted runtime.
 
 ## 2026-10-01
 

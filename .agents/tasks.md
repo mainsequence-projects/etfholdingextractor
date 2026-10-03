@@ -7,19 +7,20 @@
 - Merge the 0.4.3 branch, tag `v0.4.3`, and publish with a plain `git push`. Since SDK 9.0.5,
   `mainsequence code-repository sync` only refreshes local dependencies; it does not bump, tag,
   commit or push.
-- Update consumer locks (e.g. Alpaca Connectors: `uv lock --upgrade-package etfhextractor`). An
-  application that deploys code reading or writing `DemoBarsTS` lists
+- Update consumer locks (e.g. Alpaca Connectors: `uv lock --upgrade-package etfhextractor`).
+  Locking 0.4.3 also moves a consumer to `mainsequence-metatable>=0.1.18` and
+  `ms-markets>=2.2.2`. An application that deploys code reading or writing `DemoBarsTS` lists
   `etfhextractor_migrations:migration` in its own migration Job.
 - Install the platform-owned skills under `.agents/skills/mainsequence_platform/` with the
   authenticated `mainsequence code-repository update-platform-skills --path .` if the owner asks
   for it.
 
-### Local proof against the real ms-markets schema
+### Local example run against the real ms-markets schema
 
-- Once ms-markets ships a provider that finalizes on MetaTables 0.1.14 (no cascading foreign
-  keys, secondary-index names within 63 characters), apply it to a fresh local runtime, then
-  rerun `metatables --local migrations upgrade --provider etfhextractor_migrations:migration head`
-  and `python examples/ivv_tracking_portfolio_full_workflow.py --local`.
+- The provider is proven against the real ms-markets 2.2.2 schema on a MetaTables 0.1.18 local
+  runtime (implementation task 0007). Still open: run
+  `python examples/ivv_tracking_portfolio_full_workflow.py --local` against a local runtime that
+  holds the ms-markets tables. It needs live iShares and OpenFIGI calls.
 
 ### Signal validity under ms-markets 2.x
 
@@ -33,6 +34,13 @@
 - Run `etfh portfolio-publish`, then verify signal, value, and weight rows plus the Portfolio row.
 
 ## Completed
+
+### Move to MetaTables 0.1.18 and ms-markets 2.2.2 (0.4.3)
+
+- Required `mainsequence-metatable` 0.1.18 and ms-markets 2.2.2, relocked, refreshed the
+  `metatables` and ms-markets skills, removed the notes that cascading foreign keys block the
+  ms-markets schema, and proved the provider against the real ms-markets 2.2.2 schema on an
+  isolated local runtime. `DemoBarsTS` keeps its original `ON DELETE RESTRICT`.
 
 ### Adopt MetaTables 0.1.14 deployment-Job migrations (0.4.3)
 
