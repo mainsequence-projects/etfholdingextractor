@@ -1,19 +1,34 @@
-"""Prepare the project-owned DemoBarsTS schema (revision + upgrade + verify).
+"""Apply (local runtime) or verify (hosted runtime) the project-owned DemoBarsTS schema.
 
-Mirrors the ms-markets prepare-schema example
-(`examples/msm_portfolios/portfolio_equal_weights_prepare_schema.py`): find or
-generate the Alembic revision for the project migration provider, apply
-`upgrade head`, then verify the registered `TimeIndexMetaTable`. The provider is
-`etfhextractor_migrations:migration` (scoped to `DemoBarsStorage` only —
-autogenerate never diffs the built-in ms-markets graph); both steps run through
-the `metatables migrations` CLI with `--provider etfhextractor_migrations:migration`.
+`DemoBarsTS` belongs to the project migration provider
+`etfhextractor_migrations:migration` (scoped to `DemoBarsStorage` only, so
+autogenerate never diffs the built-in ms-markets graph). Who applies it depends
+on the runtime:
+
+- **Local development** (`--local`): the script selects the project's running
+  local MetaTables API, checks that it is an initialized local SQLite runtime,
+  applies the provider exactly like
+  `metatables --local migrations upgrade --provider etfhextractor_migrations:migration head`,
+  and verifies the registered `TimeIndexMetaTable`. Start the local API first
+  (`metatables init --local`, `metatables serve --local`,
+  `metatables --local runtime initialize`). The local runtime must already hold
+  the ms-markets tables: `DemoBarsTS` has a foreign key to the ms-markets Asset
+  table, and this repository never applies the ms-markets provider.
+- **Hosted environments**: nobody migrates them by hand. A hosted runtime is
+  migrated only by the migration Job of a deployment workflow, and
+  etfholdingextractor has no deployment: the application that deploys code
+  using these tables applies `etfhextractor_migrations:migration` in its own
+  migration Job (`metatables.upgrade_application(...)`). Without `--local` this
+  script only verifies that `DemoBarsTS` is registered and explains how it gets
+  migrated when it is not.
 
 Run standalone:
 
-    python examples/prepare_demo_bars_schema.py
-    python examples/prepare_demo_bars_schema.py --check-only
+    python examples/prepare_demo_bars_schema.py --local                # apply + verify
+    python examples/prepare_demo_bars_schema.py --local --check-only   # verify locally
+    python examples/prepare_demo_bars_schema.py                        # verify (hosted)
 
-or let the full workflow run it (`--demo-prices` does, unless
+or let the full workflow run it (default demo-prices run, unless
 `--skip-schema-prep`).
 """
 
@@ -36,6 +51,10 @@ from metatables.migrations import namespace_version_location  # noqa: E402
 
 ETFHEXTRACTOR_MIGRATION_PROVIDER = "etfhextractor_migrations:migration"
 VERSION_LOCATION_PREFIX = "etfhextractor_migrations:versions"
+LOCAL_RUNTIME_SETUP = (
+    "metatables init --local; metatables serve --local; "
+    "metatables --local runtime initialize"
+)
 
 
 def print_step(step: int, message: str) -> None:
@@ -46,12 +65,54 @@ def print_detail(label: str, value: object) -> None:
     print(f"   {label}: {value}", flush=True)
 
 
+def require_local_runtime() -> dict[str, Any]:
+    """Select the project's local MetaTables API and refuse anything but local SQLite.
+
+    `configure_local_client()` points this process (and the CLI subprocesses it
+    starts) at the project's running loopback API; it never falls back to hosted
+    discovery. The runtime must then report Local mode, the SQLite dialect and
+    an initialized runtime DataSource before anything is written.
+    """
+    from metatables import configure_local_client, get_runtime_status
+
+    configure_local_client()
+    state = get_runtime_status()
+    source = state.get("data_source") or {}
+    bootstrap = state.get("bootstrap") or {}
+    if not (
+        state.get("local_mode") is True
+        and state.get("dialect") == "sqlite"
+        and source.get("uid")
+        and bootstrap.get("active") is True
+        and bootstrap.get("status") == "ready"
+        and not state.get("data_source_error")
+    ):
+        raise RuntimeError(
+            "--local needs the project's local MetaTables API in Local mode with an "
+            f"initialized SQLite runtime ({LOCAL_RUNTIME_SETUP}). Runtime reported "
+            f"local_mode={state.get('local_mode')!r}, dialect={state.get('dialect')!r}, "
+            f"bootstrap={bootstrap.get('status')!r}, "
+            f"data_source_error={state.get('data_source_error')!r}."
+        )
+    print_detail("runtime", f"local {state.get('dialect')} DataSource {source.get('uid')}")
+    return state
+
+
 def prepare_demo_bars_schema(
     *,
+    local: bool = False,
     check_only: bool = False,
     revision_message: str | None = None,
 ) -> dict[str, Any]:
-    """Create/apply the DemoBarsTS Alembic revision and verify registration."""
+    """Apply the DemoBarsTS provider to the local runtime, or verify its registration.
+
+    With ``local=True`` the provider is applied to the project's local MetaTables
+    runtime (find-or-generate the revision, ``upgrade head``, verify). Without it,
+    or with ``check_only=True``, nothing is generated or applied: the function
+    verifies that the revision ships with the package and that the
+    ``TimeIndexMetaTable`` is registered, and raises with the migration rule when
+    it is not.
+    """
     from etfhextractor_migrations import migration  # noqa: F401 — validates provider import
     from msm.settings import markets_configured_namespace
 
@@ -62,36 +123,42 @@ def prepare_demo_bars_schema(
     # mixin namespace) — revisions live in this namespace's versions directory.
     namespace = markets_configured_namespace(DemoBarsStorage.__metatable_namespace__)
     print_detail("provider", ETFHEXTRACTOR_MIGRATION_PROVIDER)
+    print_detail("runtime_mode", "local" if local else "hosted (verify only)")
     print_detail("configured_storage_table", table_name)
     print_detail("configured_storage_identifier", DemoBarsStorage.__metatable_identifier__)
+    if local:
+        require_local_runtime()
 
-    print_step(1, "Checking the DemoBarsTS migration revision.")
+    print_step(1, "Checking the DemoBarsTS migration revision and registration.")
     revision_file = _find_revision_file(table_name, namespace=namespace)
-    existing = _find_time_index_meta_table(table_name)
-    if check_only:
+    if check_only or not local:
         if revision_file is None:
             raise RuntimeError(
-                f"DemoBarsTS revision is missing and --check-only was set: {table_name}"
+                f"No DemoBarsTS revision for namespace {namespace!r} in "
+                f"{VERSION_LOCATION_PREFIX}: {table_name}. Author it against the local "
+                "runtime with --local."
             )
+        existing = _find_time_index_meta_table(table_name)
         if existing is None:
-            raise RuntimeError(
-                f"DemoBarsTS MetaTable is not registered and --check-only was set: {table_name}"
-            )
+            raise RuntimeError(_not_registered_message(table_name, local=local))
         print_detail("revision_file", revision_file)
         print_detail("time_index_meta_table_uid", existing.uid)
         return {
             "configured_storage_table": table_name,
             "configured_storage_uid": existing.uid,
             "created_revision": False,
+            "applied": False,
+            "runtime_mode": "local" if local else "hosted",
         }
 
     created_revision = False
     if revision_file is None:
-        print_step(2, "Generating the Alembic revision (autogenerate).")
+        print_step(2, "Generating the Alembic revision against the local runtime.")
         created_revision = True
         message = revision_message or "etfhextractor_demo_bars"
         _run_metatables(
             [
+                "--local",
                 "migrations",
                 "revision",
                 "--provider",
@@ -109,9 +176,10 @@ def prepare_demo_bars_schema(
             )
     print_detail("revision_file", revision_file)
 
-    print_step(3, "Applying the migration (upgrade head).")
+    print_step(3, "Applying the provider to the local runtime (upgrade head).")
     _run_metatables(
         [
+            "--local",
             "migrations",
             "upgrade",
             "--provider",
@@ -123,17 +191,37 @@ def prepare_demo_bars_schema(
     existing = _find_time_index_meta_table(table_name)
     if existing is None:
         raise RuntimeError(
-            f"DemoBarsTS still is not registered after upgrade: {table_name}"
+            f"DemoBarsTS still is not registered after the local upgrade: {table_name}"
         )
 
-    print_step(4, "DemoBarsTS is migrated and registered.")
+    print_step(4, "DemoBarsTS is migrated and registered in the local runtime.")
     print_detail("time_index_meta_table_uid", existing.uid)
     print_detail("created_revision", created_revision)
     return {
         "configured_storage_table": table_name,
         "configured_storage_uid": existing.uid,
         "created_revision": created_revision,
+        "applied": True,
+        "runtime_mode": "local",
     }
+
+
+def _not_registered_message(table_name: str, *, local: bool) -> str:
+    if local:
+        return (
+            f"DemoBarsTS is not registered in the local runtime: {table_name}. Rerun with "
+            "--local and without --check-only to apply "
+            f"{ETFHEXTRACTOR_MIGRATION_PROVIDER} there."
+        )
+    return (
+        f"DemoBarsTS is not registered in this runtime: {table_name}. Hosted runtimes are "
+        "migrated only by a deployment workflow's migration Job. etfholdingextractor has "
+        "no deployment, so the application that deploys code using these tables applies "
+        f"{ETFHEXTRACTOR_MIGRATION_PROVIDER} in its own migration Job. For local "
+        f"development, start the local MetaTables API ({LOCAL_RUNTIME_SETUP}) and rerun "
+        "with --local, or pass --price-source-table-uid to the full workflow to use a "
+        "registered price table instead."
+    )
 
 
 def _find_time_index_meta_table(table_name: str) -> Any | None:
@@ -173,6 +261,9 @@ def _active_version_directory(namespace: str) -> Path:
 
 
 def _run_metatables(args: list[str]) -> None:
+    if args[:1] != ["--local"]:
+        # Hosted runtimes are migrated only by a deployment workflow's migration Job.
+        raise RuntimeError("This example runs metatables commands only with --local.")
     env = os.environ.copy()
     existing_pythonpath = env.get("PYTHONPATH")
     paths = [str(_PROJECT_ROOT)]
@@ -190,7 +281,20 @@ def _run_metatables(args: list[str]) -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Create/apply the DemoBarsTS migration revision and verify registration.",
+        description=(
+            "Apply the DemoBarsTS provider to the project's local MetaTables runtime "
+            "(--local), or verify that a hosted runtime already has it."
+        ),
+    )
+    parser.add_argument(
+        "--local",
+        action="store_true",
+        help=(
+            "Use the project's running local MetaTables API (local SQLite) and apply "
+            f"{ETFHEXTRACTOR_MIGRATION_PROVIDER} there. Without it the script only "
+            "verifies: hosted runtimes are migrated by a deployment workflow's "
+            "migration Job."
+        ),
     )
     parser.add_argument(
         "--check-only",
@@ -199,10 +303,14 @@ def main() -> int:
     )
     parser.add_argument(
         "--revision-message",
-        help="Custom Alembic revision message when a new revision is needed.",
+        help=(
+            "Alembic revision message used with --local when the selected namespace "
+            "has no DemoBarsTS revision yet."
+        ),
     )
     args = parser.parse_args()
     prepare_demo_bars_schema(
+        local=args.local,
         check_only=args.check_only,
         revision_message=args.revision_message,
     )

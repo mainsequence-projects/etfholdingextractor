@@ -121,10 +121,13 @@
       "justMyCode": true
     },
     {
-      "name": "8. DemoBars price table \u2014 prepare schema (alembic)",
+      "name": "8. DemoBars price table \u2014 apply schema to the local runtime (--local)",
       "type": "python",
       "request": "launch",
       "program": "${workspaceFolder}/examples/prepare_demo_bars_schema.py",
+      "args": [
+        "--local"
+      ],
       "console": "integratedTerminal",
       "envFile": "${workspaceFolder}/.env",
       "env": {

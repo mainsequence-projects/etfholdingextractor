@@ -4,7 +4,7 @@
 [![Version](https://img.shields.io/badge/version-0.4.1-blue.svg)](pyproject.toml)
 [![Python](https://img.shields.io/badge/python-3.13-blue.svg)](pyproject.toml)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
-[![ms-markets](https://img.shields.io/badge/ms--markets-%3E%3D2%2C%3C3-black.svg)](pyproject.toml)
+[![ms-markets](https://img.shields.io/badge/ms--markets-%3E%3D2.1.1%2C%3C3-black.svg)](pyproject.toml)
 [![Tests](https://img.shields.io/badge/tests-87%20passing-green.svg)](tests/)
 [![Maintained](https://img.shields.io/badge/maintained-actively-green.svg)](docs/)
 
@@ -37,13 +37,14 @@ kept out of `__init__` so pure extraction never loads the msm_portfolios stack).
 
 - Current package version: `0.4.1`
 - Python: `>=3.13,<3.14`
-- Key dependencies: `mainsequence >=9.0.2,<10` (identity, secrets, logging),
-  `mainsequence-metatable >=0.1.6,<0.2` (the MetaTables client, imported as `metatables`),
-  `ms-markets >=2,<3` (typed MetaTable rows; obligatory-calendar portfolio architecture),
+- Key dependencies: `mainsequence >=9.0.5,<10` (identity, secrets, logging),
+  `mainsequence-metatable >=0.1.14,<0.2` (the MetaTables client, imported as `metatables`),
+  `ms-markets >=2.1.1,<3` (typed MetaTable rows; obligatory-calendar portfolio architecture),
   `pandas-market-calendars` (trading sessions)
 - License: [Apache License 2.0](LICENSE)
 - Documentation: [docs/library.md](docs/library.md) · [docs/reader.md](docs/reader.md) ·
-  [examples/README.md](examples/README.md) · [docs/adr/](docs/adr/)
+  [examples/README.md](examples/README.md) · [docs/adr/](docs/adr/) ·
+  [CHANGELOG.md](CHANGELOG.md)
 - Agent capabilities: coding-agent setup per `.agents/agent_card.json` (three CLI-aligned
   skills; parity-tested)
 
@@ -122,6 +123,45 @@ publisher above wraps that same builder and returns its JSON-friendly summary.
 | `OPEN_FIGI_API_KEY` (Main Sequence secret) | FIGI registration (`--register-missing`) |
 | `ETFH_PORTFOLIO_PRICE_SOURCE_TABLE_UID` | default price-source table for `portfolio-publish` |
 | `MSM_AUTO_REGISTER_NAMESPACE` | tests/sandboxes only: override the `etfhextractor` table namespace |
+
+## Migrations
+
+The package owns one MetaTables migration provider, `etfhextractor_migrations:migration`, for
+its single table `DemoBarsTS` (the example's demo price source; version table
+`etfhextractor_markets__alembic_version`, head `0001`).
+
+- **Hosted environments** are migrated only by the migration Job of a deployment workflow.
+  etfholdingextractor is a library with no deployment of its own, so the application that
+  deploys code using `DemoBarsTS` applies `etfhextractor_migrations:migration` in its own
+  migration Job (`metatables.upgrade_application("etfhextractor_migrations:migration")`). The
+  ms-markets schema, which `DemoBarsTS` references by foreign key, is migrated by the ms-markets
+  deployment, not by this package or its consumers.
+- **Local development** uses the project's local MetaTables runtime:
+
+  ```bash
+  metatables init --local
+  metatables serve --local                # another terminal; needs `mainsequence login`
+  metatables --local runtime initialize   # once per new local runtime
+  metatables --local migrations upgrade --provider etfhextractor_migrations:migration head
+  metatables --local migrations current --provider etfhextractor_migrations:migration
+  ```
+
+Nothing migrates at import or start-up. Details: [docs/library.md](docs/library.md)
+("Who applies the provider").
+
+## Development and releases
+
+Since `mainsequence` 9.0.5, `mainsequence code-repository sync` only refreshes local
+dependencies (`uv lock`, `uv sync`, `uv export --locked --no-dev --no-hashes`); it no longer
+bumps, tags, commits or pushes. Releasing is repository work: bump the version in
+`pyproject.toml`, `.agents/agent_card.json` and the README badge, refresh `uv.lock` (the sync
+does it), add a [CHANGELOG.md](CHANGELOG.md) entry, commit, and publish with a plain `git push`
+plus the version tag. Workflow files decide what a push deploys; this repository declares none.
+
+```bash
+uv run pytest -q
+uv run ruff check --no-fix .
+```
 
 ## Documentation
 

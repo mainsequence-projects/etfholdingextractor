@@ -48,9 +48,21 @@ When serving those capabilities:
   project-owned table must follow the extension-mixin convention in `docs/library.md`
   ("Project-Owned ms-markets Tables"): local abstract mixin with
   `__metatable_namespace__`/`__markets_storage_app__`, identity via `__markets_base_identifier__`,
-  MetaTables-provider migration (`metatables migrations ... --provider
-  etfhextractor_migrations:migration`), `msm.start_engine(models=[...])` attachment — never
-  table-name identity, UID maps, or `create_schemas()`.
+  MetaTables-provider migration (`etfhextractor_migrations:migration`),
+  `msm.start_engine(models=[...])` attachment — never table-name identity, UID maps, or
+  `create_schemas()`.
+- Migrations follow the MetaTables 0.1.14 rule (`docs/library.md`, "Who applies the provider").
+  Run the provider yourself only against the local runtime:
+  `metatables --local migrations upgrade --provider etfhextractor_migrations:migration head`.
+  Hosted runtimes are migrated only by a deployment workflow's migration Job, never from a
+  developer or agent session. This repository has no deployment and no workflow file, so the
+  application that deploys code using `DemoBarsTS` applies `etfhextractor_migrations:migration`
+  in its own migration Job. The ms-markets schema belongs to the ms-markets deployment; this
+  repository never applies the ms-markets provider. Nothing migrates at import or start-up.
+- Since SDK 9.0.5, `mainsequence code-repository sync` only refreshes local dependencies
+  (`uv lock`, `uv sync`, `uv export --locked --no-dev --no-hashes`); it never bumps, tags,
+  commits or pushes. Publishing is a plain `git push` plus the version tag, and this repository
+  declares no workflow file, so a push deploys nothing.
 - Distinguish clearly between local extraction work and MainSequence platform-dependent category
   sync work. Do not imply platform state has been verified unless it was actually checked.
 

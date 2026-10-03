@@ -8,8 +8,10 @@ never table names, UID maps, or row ``create_schemas()``.
 
 Tables must be migrated/registered through the project's MetaTables migration
 provider (``etfhextractor_migrations:migration``) before a process writes through
-their DataNodes; runtime only attaches via
-``msm.start_engine(models=[...])``. For isolated tests/examples, set
+their DataNodes: locally with ``metatables --local migrations upgrade``; on hosted
+runtimes only by the migration Job of the application that deploys these tables
+(this package has no deployment). Runtime code never migrates; it only attaches
+via ``msm.start_engine(models=[...])``. For isolated tests/examples, set
 ``MSM_AUTO_REGISTER_NAMESPACE`` before importing this module — it overrides the
 mixin namespace without source changes.
 

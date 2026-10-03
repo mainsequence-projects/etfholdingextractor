@@ -398,18 +398,50 @@ Its migrations are owned by the project's MetaTables migration provider
 (`build_alembic_version_metatable` + `build_metatable_migration_provider`, target metadata scoped
 to the project tables only so autogenerate never diffs the built-in ms-markets graph). The SDK 9
 move kept its package, namespace, version table (`etfhextractor_markets__alembic_version`) and
-revisions. Create and apply revisions through the `metatables` CLI (installed by
-`mainsequence-metatable`) exactly like ms-markets does:
+revisions. The provider passes explicit `script_location="etfhextractor_migrations:"` and
+`version_location_prefix="etfhextractor_migrations:versions"`, so it never resolves another
+distribution's top-level `migrations` package.
 
-```bash
-metatables migrations revision --provider etfhextractor_migrations:migration --autogenerate -m demo_bars
-metatables migrations upgrade  --provider etfhextractor_migrations:migration head
-metatables migrations current  --provider etfhextractor_migrations:migration
-```
+### Who applies the provider
 
-`examples/prepare_demo_bars_schema.py` wraps that find-or-generate → upgrade → verify flow (the
-full workflow runs it automatically on the default self-sufficient run; skip with
-`--skip-schema-prep`).
+Since MetaTables 0.1.14 a hosted runtime is migrated only from a deployment workflow
+(implementation task [0007](implementation_task/0007-deployment-job-migrations.md)):
+
+- **Hosted environments.** The migration Job of a deployment workflow runs
+  `metatables.upgrade_application(...)` for each provider the deployed application needs, from
+  the candidate image, before anything that uses the tables rolls out. etfholdingextractor has
+  **no deployment** (no `.mainsequence/workflows/` file, no migration Job), so the application
+  that deploys code reading or writing `DemoBarsTS` applies `etfhextractor_migrations:migration`
+  in its own migration Job. That Job does not apply the ms-markets provider: the ms-markets
+  deployment migrates the ms-markets schema, which `DemoBarsTS` references by foreign key.
+  Nobody runs a hosted upgrade or downgrade by hand.
+- **Local development.** Use the project's local MetaTables runtime (local SQLite) through the
+  `metatables` CLI installed by `mainsequence-metatable`:
+
+  ```bash
+  metatables init --local
+  metatables serve --local                # another terminal; needs `mainsequence login`
+  metatables --local runtime initialize   # once per new local runtime
+  metatables --local migrations revision --provider etfhextractor_migrations:migration -m <change>
+  metatables --local migrations upgrade  --provider etfhextractor_migrations:migration head
+  metatables --local migrations current  --provider etfhextractor_migrations:migration
+  ```
+
+  The local runtime must already hold the ms-markets tables: MetaTables finalizes `DemoBarsTS`
+  only when its foreign-key target, the ms-markets Asset table, is a registered MetaTable in the
+  same runtime.
+- **Never at start-up.** The library, the `etfh` CLI and the examples never migrate on import or
+  start-up; runtime code only attaches with `msm.start_engine(models=[...])`.
+- **Backward-compatible revisions.** Applied revisions are immutable: never edit a revision ID or
+  `down_revision`, and add a new revision for every change. The previous release keeps serving
+  while a deploying application's Job migrates, so add tables and nullable or defaulted columns
+  first and drop or rename in a later release. Raw PostgreSQL SQL must branch on
+  `op.get_bind().dialect.name` so the revision also runs on local SQLite; revision `0001` uses
+  portable DDL only.
+
+`examples/prepare_demo_bars_schema.py` wraps the local flow (`--local`: find-or-generate →
+`metatables --local migrations upgrade` → verify) and only verifies a hosted runtime. The full
+workflow runs it on the default self-sufficient run; skip it with `--skip-schema-prep`.
 
 Everything else goes through built-in `msm` / `msm_portfolios` models (the holdings signal uses
 the canonical `SignalWeightsStorage`, dimensioned by `signal_uid`). Built-in tables are used
@@ -451,10 +483,11 @@ Rules:
 - The stable logical identifier is `etfhextractor.<__markets_base_identifier__>`.
   Do **not** use table names as identity, do **not** build UID maps, do **not** call row
   `create_schemas()`.
-- Register/migrate through the project's MetaTables migration provider
-  (`metatables migrations upgrade --provider etfhextractor_migrations:migration`), then attach at
-  runtime with `msm.start_engine(models=[MyDetailsTable, MyBarsStorage])` (backend classes, not
-  strings or typed rows).
+- Register/migrate through the project's MetaTables migration provider (locally
+  `metatables --local migrations upgrade --provider etfhextractor_migrations:migration`; on hosted
+  runtimes the deploying application's migration Job), then attach at runtime with
+  `msm.start_engine(models=[MyDetailsTable, MyBarsStorage])` (backend classes, not strings or
+  typed rows).
 - For tests/examples only, set `MSM_AUTO_REGISTER_NAMESPACE` before importing the models; it
   overrides the mixin namespace without source changes.
 

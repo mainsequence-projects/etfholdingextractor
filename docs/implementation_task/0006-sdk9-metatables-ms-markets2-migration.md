@@ -3,6 +3,10 @@
 Status: implemented and verified offline. Regenerating `uv.lock` and `requirements.txt`, and
 checking the backend migration state, are release steps: ms-markets 2.0.0 is not on PyPI yet.
 
+Superseded for migrations by [0007](0007-deployment-job-migrations.md): since 0.4.3 a session
+migrates only a local runtime (`metatables --local migrations ...`), and hosted runtimes are
+migrated only by the migration Job of the application that deploys these tables.
+
 ## Goal
 
 Move `etfhextractor` off the MetaTables code that shipped inside Main Sequence SDK 8 without

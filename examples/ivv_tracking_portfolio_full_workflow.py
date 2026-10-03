@@ -6,18 +6,26 @@ Pipeline (implementation task 0002 / ADR 0003 — the msm_portfolios signal path
                                           │ (time_index, asset_identifier) → signal_weight
     registered bars table ── TimeIndexTableRef ─┴──> PortfoliosDataNode ──> ETF-tracking portfolio
 
-**Self-sufficient by default** — the only prerequisites are an authenticated Main
-Sequence session and the built-in ms-markets MetaTables registered by their
-migration provider (`metatables migrations upgrade --provider migrations:migration`).
-The flag-free run does everything else itself:
+**Self-sufficient by default** — the prerequisites are an authenticated Main
+Sequence session and a MetaTables runtime that already holds the ms-markets
+tables. The ms-markets deployment migrates its own schema; this example never
+applies the ms-markets provider. The runtime is the hosted one of your
+Environment, or, with `--local`, the project's running local MetaTables API
+(local SQLite; `metatables init --local`, `metatables serve --local`,
+`metatables --local runtime initialize`). The flag-free run does everything else
+itself:
 
-0. Prepare the **project-owned** `DemoBarsTS` price-table schema the way the
-   ms-markets examples do (`examples/prepare_demo_bars_schema.py`): find-or-generate
-   the Alembic revision through the project provider
-   (`etfhextractor_migrations:migration`), `metatables migrations upgrade
-   --provider etfhextractor_migrations:migration head`,
-   verify the registered `TimeIndexMetaTable` (skip with `--skip-schema-prep`; not
-   needed when `--price-source-table-uid` supplies an external price table).
+0. Get the **project-owned** `DemoBarsTS` price-table schema ready
+   (`examples/prepare_demo_bars_schema.py`; skip with `--skip-schema-prep`; not
+   needed when `--price-source-table-uid` supplies an external price table):
+   - with `--local`, apply the project provider to the local runtime, exactly like
+     `metatables --local migrations upgrade --provider
+     etfhextractor_migrations:migration head`, then verify the registered
+     `TimeIndexMetaTable`;
+   - on a hosted runtime, only verify it. Hosted runtimes are migrated only by a
+     deployment workflow's migration Job, and etfholdingextractor has no
+     deployment: the application that deploys code using these tables applies
+     `etfhextractor_migrations:migration` in its own migration Job.
 1. Attach the markets runtime once (`msm_portfolios.start_engine` superset: portfolio
    graph + asset snapshots + category tables + `DemoBarsStorage`).
 2. Extract the ETF holdings with the same `ETFHoldingsReader` the category workflow uses.
@@ -52,7 +60,8 @@ For isolated sandboxes set `MSM_AUTO_REGISTER_NAMESPACE` before running.
 
 Run:
 
-    python examples/ivv_tracking_portfolio_full_workflow.py                  # everything
+    python examples/ivv_tracking_portfolio_full_workflow.py --local          # local runtime
+    python examples/ivv_tracking_portfolio_full_workflow.py                  # hosted runtime
     python examples/ivv_tracking_portfolio_full_workflow.py --plan-only      # no writes
     python examples/ivv_tracking_portfolio_full_workflow.py --signal-only
     python examples/ivv_tracking_portfolio_full_workflow.py \
@@ -161,7 +170,9 @@ def _publish_demo_bars(
     `DemoBarsStorage` is etfhextractor's own ms-markets table, defined per the
     extension-mixin convention (`etfhextractor/markets_models.py`, logical id
     `etfhextractor.DemoBarsTS`); it must be migrated/registered by the project's
-    MetaTables migration provider before this write. Bars carry `close` and
+    MetaTables migration provider before this write (step 0 applies it to a
+    local runtime; a hosted runtime gets it from the migration Job of the
+    application that deploys these tables). Bars carry `close` and
     `volume` (the columns the rebalance logic consumes), one row per
     (session close, asset) on the SAME trading calendar the portfolio is
     scheduled on — so the valuation index and the price index align exactly,
@@ -305,9 +316,21 @@ def run_full_workflow(
     calendar_key: str = US_EQUITY_CALENDAR_KEY,
     backtest_start_days: int = 60,
     timeout: float = 30.0,
+    local: bool = False,
 ) -> dict[str, Any]:
     etf_ticker = etf_ticker.strip().upper()
-    summary: dict[str, Any] = {"etf_ticker": etf_ticker}
+    summary: dict[str, Any] = {
+        "etf_ticker": etf_ticker,
+        "runtime_mode": "local" if local else "hosted",
+    }
+
+    # --local: select the project's running local MetaTables API (local SQLite)
+    # before any client call, and refuse to continue against anything else.
+    if local:
+        from prepare_demo_bars_schema import require_local_runtime
+
+        _log("runtime", "Selecting the project's local MetaTables runtime...")
+        require_local_runtime()
 
     # Self-sufficient by default: when no external price table is given, the
     # example owns the price source end-to-end (DemoBarsTS schema + demo bars).
@@ -326,13 +349,22 @@ def run_full_workflow(
     )
 
     # 0. Demo prices need the project-owned DemoBarsTS schema migrated/registered
-    #    first — same pattern as the ms-markets examples: find-or-generate the
-    #    Alembic revision through the project provider, upgrade head, verify.
+    #    first. A local runtime gets the project provider applied here; a hosted
+    #    runtime is only verified, because hosted runtimes are migrated only by
+    #    the migration Job of the application that deploys these tables.
     if use_demo_prices and prepare_schema and not plan_only:
-        _log("schema", "Preparing the DemoBarsTS schema (revision + upgrade + verify)...")
+        if local:
+            _log("schema", "Applying the DemoBarsTS provider to the local runtime...")
+        else:
+            _log(
+                "schema",
+                "Verifying the DemoBarsTS schema (hosted runtimes are migrated by the "
+                "deploying application's migration Job)...",
+            )
         from prepare_demo_bars_schema import prepare_demo_bars_schema
 
         summary["schema_preparation"] = prepare_demo_bars_schema(
+            local=local,
             revision_message=revision_message,
         )
 
@@ -526,22 +558,35 @@ def main(argv: list[str] | None = None) -> int:
         help=(
             "Optional registered bars TimeIndexMetaTable uid with close+volume "
             "(defaults to the ETFH_PORTFOLIO_PRICE_SOURCE_TABLE_UID environment "
-            "variable). When omitted, the example is self-sufficient: it prepares the "
-            "project-owned DemoBarsTS schema (Alembic revision + upgrade) and publishes "
-            "deterministic demo bars as the price source."
+            "variable). When omitted, the example is self-sufficient: it gets the "
+            "project-owned DemoBarsTS schema ready (applied to a --local runtime, "
+            "verified on a hosted one) and publishes deterministic demo bars as the "
+            "price source."
+        ),
+    )
+    parser.add_argument(
+        "--local",
+        action="store_true",
+        help=(
+            "Run against the project's running local MetaTables API (local SQLite) and "
+            "apply etfhextractor_migrations:migration there. Without it the example "
+            "uses the hosted runtime and never migrates it."
         ),
     )
     parser.add_argument(
         "--skip-schema-prep",
         action="store_true",
         help=(
-            "Skip DemoBarsTS schema preparation. Use only when the table has already "
-            "been migrated and registered."
+            "Skip the DemoBarsTS schema step. Use only when the table is already "
+            "migrated and registered in the selected runtime."
         ),
     )
     parser.add_argument(
         "--revision-message",
-        help="Optional Alembic revision message for the DemoBarsTS schema step.",
+        help=(
+            "Alembic revision message used with --local when the selected namespace "
+            "has no DemoBarsTS revision yet."
+        ),
     )
     parser.add_argument(
         "--plan-only",
@@ -615,6 +660,7 @@ def main(argv: list[str] | None = None) -> int:
         calendar_key=args.calendar_key,
         backtest_start_days=args.backtest_start_days,
         timeout=args.timeout,
+        local=args.local,
     )
     print(json.dumps(summary, indent=2, sort_keys=True, default=str))
     return 1 if summary.get("blocked") else 0

@@ -24,10 +24,28 @@ written (`SignalWeightsTS`, `PortfoliosTS`, `PortfolioWeightsTS`, and the `Portf
 ### Prerequisites
 
 **Only two:** an authenticated Main Sequence session (`mainsequence code-repository current
---debug`; renew the saved session with `mainsequence refresh-token` before live runs) and the
-built-in ms-markets MetaTables registered by their migration provider
-(`metatables migrations upgrade --provider migrations:migration`). Everything else is handled by
-the example itself on the default run:
+--debug`; renew the saved session with `mainsequence refresh-token` before live runs) and a
+MetaTables runtime that already holds the ms-markets tables. The ms-markets deployment migrates
+the ms-markets schema; this example never applies the ms-markets provider.
+
+The runtime is either:
+
+- **local** (`--local`): the project's running local MetaTables API on local SQLite, the
+  recommended place to develop and try the example:
+
+  ```bash
+  metatables init --local
+  metatables serve --local                # keep it running in another terminal
+  metatables --local runtime initialize   # once per new local runtime
+  ```
+
+- **hosted** (no flag): your Environment's MetaTables runtime. Hosted runtimes are migrated
+  only by a deployment workflow's migration Job, never by this example. etfholdingextractor has
+  no deployment, so `DemoBarsTS` must already have been applied by the application that deploys
+  code using it: that application lists `etfhextractor_migrations:migration` in its own
+  migration Job.
+
+Everything else is handled by the example itself on the default run:
 
 - **Missing component assets** are FIGI-registered automatically (ADR 0004: no asset
   without a FIGI, only unique ticker→FIGI mappings register; reads the
@@ -35,13 +53,13 @@ the example itself on the default run:
   resolve ambiguous tickers with `--figi-filter`.
 - **The price source** defaults to the **project-owned** `DemoBarsTS` table
   (`etfhextractor/markets_models.py`, logical id
-  `etfhextractor.DemoBarsTS`, ms-markets extension-mixin convention):
-  the example prepares its schema the way the ms-markets examples do
-  ([prepare_demo_bars_schema.py](prepare_demo_bars_schema.py) — find-or-generate the
-  Alembic revision via the project provider `etfhextractor_migrations:migration`,
-  `metatables migrations upgrade --provider etfhextractor_migrations:migration head`, verify the
-  registered `TimeIndexMetaTable`)
-  and publishes deterministic demo bars **on the NYSE session closes**
+  `etfhextractor.DemoBarsTS`, ms-markets extension-mixin convention).
+  [prepare_demo_bars_schema.py](prepare_demo_bars_schema.py) gets its schema ready: with
+  `--local` it applies the project provider to the local runtime, exactly like
+  `metatables --local migrations upgrade --provider etfhextractor_migrations:migration head`,
+  and verifies the registered `TimeIndexMetaTable`; on a hosted runtime it only verifies the
+  registration and stops with the migration rule when the table is missing. The example then
+  publishes deterministic demo bars **on the NYSE session closes**
   (pandas_market_calendars), aligned with the portfolio's valuation index. Pass
   `--price-source-table-uid <UID>` (or set `ETFH_PORTFOLIO_PRICE_SOURCE_TABLE_UID`)
   to use a real registered bars table with `close` and `volume` instead. For isolated
@@ -61,9 +79,16 @@ the example itself on the default run:
 ### Usage
 
 ```bash
-# Everything, self-sufficient: FIGI-register missing components, prepare DemoBarsTS,
-# publish demo bars, build + verify the IVV tracking portfolio.
+# Everything, self-sufficient, on the local runtime: FIGI-register missing components,
+# apply DemoBarsTS locally, publish demo bars, build + verify the IVV tracking portfolio.
+python examples/ivv_tracking_portfolio_full_workflow.py --local
+
+# The same on the hosted runtime (DemoBarsTS is verified, never migrated here).
 python examples/ivv_tracking_portfolio_full_workflow.py
+
+# Only the DemoBarsTS schema step: apply locally, or verify a hosted runtime.
+python examples/prepare_demo_bars_schema.py --local
+python examples/prepare_demo_bars_schema.py
 
 # No writes: extract IVV, resolve components, report blockers.
 python examples/ivv_tracking_portfolio_full_workflow.py --plan-only
