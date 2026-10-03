@@ -1,5 +1,22 @@
 # Journal
 
+## 2026-10-03
+
+- Released 0.4.3 on `mainsequence` 9.0.5, `mainsequence-metatable` 0.1.14 and ms-markets 2.1.1
+  (implementation task 0007). Relocked with `uv lock --upgrade-package` for the three packages
+  and regenerated `requirements.txt`.
+- Adopted the MetaTables 0.1.14 migration recommendation. The repository has no deployment, so
+  it gets no workflow or migration Job; the docs now say that the application deploying code
+  using `DemoBarsTS` applies `etfhextractor_migrations:migration` in its own migration Job and
+  that local development uses `metatables --local`. The schema-prep example no longer migrates
+  hosted runtimes, and the full workflow example gained `--local`.
+- Refreshed the SDK 9.0.5, `metatables` 0.1.14 and ms-markets 2.1.1 skills and the managed
+  AGENTS.md block, offline.
+- Proved the provider on an isolated local SQLite runtime. The real ms-markets 2.1.1 provider
+  cannot finalize on a MetaTables 0.1.14 API (70-character secondary-index name, cascading
+  foreign keys), so `DemoBarsTS` was finalized against a scratch replica of `ms_markets__asset`.
+  Nothing ran against a hosted runtime.
+
 ## 2026-10-01
 
 - Moved the package to Main Sequence SDK 9, the `metatables` client (`mainsequence-metatable`

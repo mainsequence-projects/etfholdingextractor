@@ -2,17 +2,24 @@
 
 ## Open
 
-### Release the SDK 9 migration and refresh consumers
+### Publish 0.4.3 and refresh consumers
 
-- After ms-markets 2.0.0 is on PyPI, regenerate `uv.lock` and `requirements.txt`
-  (implementation task 0006) and rerun the offline checks.
-- Run the canonical `mainsequence code-repository sync` only after reviewing the complete diff.
-- Verify the backend state with `metatables migrations current --provider
-  etfhextractor_migrations:migration`.
+- Merge the 0.4.3 branch, tag `v0.4.3`, and publish with a plain `git push`. Since SDK 9.0.5,
+  `mainsequence code-repository sync` only refreshes local dependencies; it does not bump, tag,
+  commit or push.
+- Update consumer locks (e.g. Alpaca Connectors: `uv lock --upgrade-package etfhextractor`). An
+  application that deploys code reading or writing `DemoBarsTS` lists
+  `etfhextractor_migrations:migration` in its own migration Job.
 - Install the platform-owned skills under `.agents/skills/mainsequence_platform/` with the
   authenticated `mainsequence code-repository update-platform-skills --path .` if the owner asks
   for it.
-- Update consumer locks (e.g. Alpaca Connectors: `uv lock --upgrade-package etfhextractor`).
+
+### Local proof against the real ms-markets schema
+
+- Once ms-markets ships a provider that finalizes on MetaTables 0.1.14 (no cascading foreign
+  keys, secondary-index names within 63 characters), apply it to a fresh local runtime, then
+  rerun `metatables --local migrations upgrade --provider etfhextractor_migrations:migration head`
+  and `python examples/ivv_tracking_portfolio_full_workflow.py --local`.
 
 ### Signal validity under ms-markets 2.x
 
@@ -26,6 +33,13 @@
 - Run `etfh portfolio-publish`, then verify signal, value, and weight rows plus the Portfolio row.
 
 ## Completed
+
+### Adopt MetaTables 0.1.14 deployment-Job migrations (0.4.3)
+
+- Required `mainsequence` 9.0.5, `mainsequence-metatable` 0.1.14 and ms-markets 2.1.1,
+  regenerated the lock and `requirements.txt`, refreshed the SDK, `metatables` and ms-markets
+  skills, documented who applies the provider, made the schema-prep example local-only for
+  writes, and proved the provider on isolated local SQLite (implementation task 0007).
 
 ### Require mainsequence 9.0.2 and mainsequence-metatable 0.1.6
 
