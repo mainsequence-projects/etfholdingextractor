@@ -427,9 +427,12 @@ Since MetaTables 0.1.14 a hosted runtime is migrated only from a deployment work
   metatables --local migrations current  --provider etfhextractor_migrations:migration
   ```
 
-  The local runtime must already hold the ms-markets tables: MetaTables finalizes `DemoBarsTS`
-  only when its foreign-key target, the ms-markets Asset table, is a registered MetaTable in the
-  same runtime.
+  The local runtime must already hold the ms-markets tables: finalization preflights every
+  foreign-key target, so MetaTables finalizes `DemoBarsTS` only when the ms-markets Asset table is
+  an active MetaTable in the same runtime. Since ms-markets 2.2.2 (which needs
+  `mainsequence-metatable` 0.1.17 or later) that schema applies to a fresh local runtime; the
+  [ms-markets getting-started guide](https://mainsequence-projects.github.io/MainSequenceMarkets/getting-started/#first-market-setup)
+  shows how. This package never applies the ms-markets provider.
 - **Never at start-up.** The library, the `etfh` CLI and the examples never migrate on import or
   start-up; runtime code only attaches with `msm.start_engine(models=[...])`.
 - **Backward-compatible revisions.** Applied revisions are immutable: never edit a revision ID or
@@ -488,6 +491,12 @@ Rules:
   runtimes the deploying application's migration Job), then attach at runtime with
   `msm.start_engine(models=[MyDetailsTable, MyBarsStorage])` (backend classes, not strings or
   typed rows).
+- Give each foreign key the `ondelete` action its rows need. MetaTables 0.1.17 and later accept
+  `CASCADE`, `SET NULL` and `SET DEFAULT` as well as `RESTRICT`, and since 0.1.18 write on a table
+  depends only on that table's own grants. `DemoBarsTS` keeps `ondelete="RESTRICT"` on its asset
+  key, as ms-markets' own asset-keyed time-series tables do. Before deleting or re-keying
+  referenced rows, `table.get_impact(action="delete_rows")` (or `update_keys`, `drop_table`)
+  shows what the action reaches.
 - For tests/examples only, set `MSM_AUTO_REGISTER_NAMESPACE` before importing the models; it
   overrides the mixin namespace without source changes.
 

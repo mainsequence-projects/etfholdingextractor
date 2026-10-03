@@ -4,7 +4,7 @@
 [![Version](https://img.shields.io/badge/version-0.4.3-blue.svg)](pyproject.toml)
 [![Python](https://img.shields.io/badge/python-3.13-blue.svg)](pyproject.toml)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
-[![ms-markets](https://img.shields.io/badge/ms--markets-%3E%3D2.1.1%2C%3C3-black.svg)](pyproject.toml)
+[![ms-markets](https://img.shields.io/badge/ms--markets-%3E%3D2.2.2%2C%3C3-black.svg)](pyproject.toml)
 [![Tests](https://img.shields.io/badge/tests-95%20passing-green.svg)](tests/)
 [![Maintained](https://img.shields.io/badge/maintained-actively-green.svg)](docs/)
 
@@ -38,8 +38,8 @@ kept out of `__init__` so pure extraction never loads the msm_portfolios stack).
 - Current package version: `0.4.3`
 - Python: `>=3.13,<3.14`
 - Key dependencies: `mainsequence >=9.0.5,<10` (identity, secrets, logging),
-  `mainsequence-metatable >=0.1.14,<0.2` (the MetaTables client, imported as `metatables`),
-  `ms-markets >=2.1.1,<3` (typed MetaTable rows; obligatory-calendar portfolio architecture),
+  `mainsequence-metatable >=0.1.18,<0.2` (the MetaTables client, imported as `metatables`),
+  `ms-markets >=2.2.2,<3` (typed MetaTable rows; obligatory-calendar portfolio architecture),
   `pandas-market-calendars` (trading sessions)
 - License: [Apache License 2.0](LICENSE)
 - Documentation: [docs/library.md](docs/library.md) · [docs/reader.md](docs/reader.md) ·
@@ -147,7 +147,10 @@ its single table `DemoBarsTS` (the example's demo price source; version table
   ```
 
   The local runtime must already hold the ms-markets tables: MetaTables finalizes `DemoBarsTS`
-  only once its foreign-key target, the ms-markets Asset table, is registered there.
+  only once its foreign-key target, the ms-markets Asset table, is an active MetaTable there.
+  Since ms-markets 2.2.2 that schema applies to a fresh local runtime; the
+  [ms-markets getting-started guide](https://mainsequence-projects.github.io/MainSequenceMarkets/getting-started/#first-market-setup)
+  shows how. This package never applies the ms-markets provider.
 
 Nothing migrates at import or start-up. Details: [docs/library.md](docs/library.md)
 ("Who applies the provider").

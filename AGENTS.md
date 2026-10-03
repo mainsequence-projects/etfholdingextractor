@@ -51,7 +51,8 @@ When serving those capabilities:
   MetaTables-provider migration (`etfhextractor_migrations:migration`),
   `msm.start_engine(models=[...])` attachment — never table-name identity, UID maps, or
   `create_schemas()`.
-- Migrations follow the MetaTables 0.1.14 rule (`docs/library.md`, "Who applies the provider").
+- Migrations follow the MetaTables deployment-Job rule, introduced in 0.1.14 (`docs/library.md`,
+  "Who applies the provider").
   Run the provider yourself only against the local runtime:
   `metatables --local migrations upgrade --provider etfhextractor_migrations:migration head`.
   Hosted runtimes are migrated only by a deployment workflow's migration Job, never from a

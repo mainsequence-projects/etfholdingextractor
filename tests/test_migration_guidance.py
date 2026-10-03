@@ -1,4 +1,4 @@
-"""Guard the MetaTables 0.1.14 migration rule (implementation task 0007).
+"""Guard the MetaTables deployment-Job migration rule (implementation task 0007).
 
 - The provider keeps explicit, package-local script and version locations.
 - The schema-prep example writes only to a local runtime (`metatables --local ...`)

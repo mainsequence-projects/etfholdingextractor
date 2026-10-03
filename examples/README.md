@@ -26,7 +26,7 @@ written (`SignalWeightsTS`, `PortfoliosTS`, `PortfolioWeightsTS`, and the `Portf
 **Only two:** an authenticated Main Sequence session (`mainsequence code-repository current
 --debug`; renew the saved session with `mainsequence refresh-token` before live runs) and a
 MetaTables runtime that already holds the ms-markets tables. The ms-markets deployment migrates
-the ms-markets schema; this example never applies the ms-markets provider.
+the hosted ms-markets schema; this example never applies the ms-markets provider.
 
 The runtime is either:
 
@@ -38,6 +38,10 @@ The runtime is either:
   metatables serve --local                # keep it running in another terminal
   metatables --local runtime initialize   # once per new local runtime
   ```
+
+  Since ms-markets 2.2.2 the ms-markets schema applies to a fresh local runtime; the
+  [ms-markets getting-started guide](https://mainsequence-projects.github.io/MainSequenceMarkets/getting-started/#first-market-setup)
+  shows how.
 
 - **hosted** (no flag): your Environment's MetaTables runtime. Hosted runtimes are migrated
   only by a deployment workflow's migration Job, never by this example. etfholdingextractor has
