@@ -14,6 +14,24 @@
 > `metatables` schema and tables in the DataSource's default schema; it need not
 > own the database.
 
+> Amendment (2026-10-03): Cascading foreign keys are allowed, and write on a table
+> depends only on that table's own grants. A foreign key's `CASCADE`, `SET NULL` or
+> `SET DEFAULT` action belongs to the referencing table: whoever controls that
+> table's schema decided what happens to its rows when the referenced row changes.
+> A caller who deletes or re-keys a referenced row therefore needs no access to
+> the referencing tables, however long the chain, and no table that references
+> another ever changes who may write it. This withdraws three rules:
+>
+> - foreign keys must use `restrict` or `no action`, which the implementation
+>   applied on every engine, not only where the explorer is enabled;
+> - the MySQL and SQL Server check that refused writes whose cascades reached
+>   other tables (`unscoped_cascade_denied`);
+> - an interim development change that removed write on a table from callers who
+>   could not write every table referencing it.
+>
+> Reconciliation still records each table's cascade targets, but only so the
+> [impact pre-flight](0016-impact-preflight.md) can show their effects.
+
 
 Date: 2026-09-29
 
@@ -150,8 +168,8 @@ The API removes every check of what the SQL means:
   statement the role lacks privileges for.
 - No declared table scope. A request names only its DataSource.
 - No checks for views, triggers or cascades before query execution. Registration
-  and schema management establish and preserve the safeguards and foreign-key
-  rule below, without inspecting each submitted query.
+  and schema management establish and preserve the safeguards below, without
+  inspecting each submitted query.
 - One statement per request comes from the extended query protocol, and row limits
   from fetching at most `max_rows` rows, not from rewriting the query.
 
@@ -193,8 +211,9 @@ client.
 - Any role can see the names, columns and row counts of every table in PostgreSQL's
   system catalogs, but not their data. MetaTables accepts this where the explorer
   is enabled. Role names are opaque, because table permissions are visible too.
-- PostgreSQL runs foreign-key cascades as the table owner. Where the explorer is
-  enabled, foreign keys must use `restrict` or `no action`.
+- Databases run foreign-key cascades as the table owner. The referencing table's
+  own foreign key authorizes them, so they need no access from the caller
+  (amendment 2026-10-03). SQLite is the exception described below.
 - Heavy queries still consume resources. Per-role connection limits, time limits
   and, optionally, a read replica bound them.
 
@@ -205,6 +224,10 @@ runtimes: reads on the caller's Reader and Writer tables, writes on Writer table
 only, and nothing else, including catalog tables, schema changes, transaction
 control and `PRAGMA`. The callback responds to SQLite's own authorization events
 inside the backend adapter; the API does not parse the query to infer its access.
+SQLite also asks it about the reads and writes of foreign-key actions, which it
+cannot tell apart from the caller's own. A local delete or key update on a
+referenced table therefore fails unless the caller can access every referencing
+table.
 
 ### Engine-specific enforcement
 
@@ -274,7 +297,8 @@ and [MySQL implicit commits](https://dev.mysql.com/doc/refman/8.4/en/implicit-co
 - The DataSource login needs `CREATEROLE` and the right to create the `metatables`
   schema; it does not need to own the database.
 - Physical table names become visible to explorer users.
-- Cascading foreign keys are unavailable where the explorer is enabled.
+- Cascading foreign keys are allowed. Tables that reference a table never change
+  who may write it.
 - Team membership reaches the database at the pace of the existing one-hour
   platform-fact cache.
 

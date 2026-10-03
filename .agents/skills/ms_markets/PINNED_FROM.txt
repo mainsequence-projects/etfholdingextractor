@@ -1,7 +1,7 @@
 schema=1
 library_name=ms-markets
 namespace=ms_markets
-pinned_version=2.1.1
+pinned_version=2.2.2
 skills_path=msm_cli/_skills/ms_markets
-copied_at_utc=2026-10-03T15:57:24Z
+copied_at_utc=2026-10-03T19:42:45Z
 command=msm copy-msm-skills
