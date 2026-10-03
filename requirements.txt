@@ -87,12 +87,12 @@ keyring==25.7.0
     #   mainsequence-metatable
 korean-lunar-calendar==0.3.1
     # via exchange-calendars
-mainsequence==9.0.3
+mainsequence==9.0.5
     # via
     #   etfhextractor
     #   mainsequence-metatable
     #   ms-markets
-mainsequence-metatable==0.1.6
+mainsequence-metatable==0.1.14
     # via
     #   etfhextractor
     #   ms-markets
@@ -108,7 +108,7 @@ more-itertools==11.1.0
     # via
     #   jaraco-classes
     #   jaraco-functools
-ms-markets==2.0.1
+ms-markets==2.1.1
     # via etfhextractor
 numpy==2.4.6
     # via
