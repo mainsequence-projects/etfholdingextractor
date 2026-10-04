@@ -51,7 +51,8 @@
   relocked, refreshed the SDK, `metatables` and ms-markets skills, and rewrote the local
   development notes for the laptop's one local MetaTables API (MetaTables 0.1.19), which every
   checkout shares and which has no Local/Hosted switch. `tests/test_migration_guidance.py`
-  guards against the retired wording.
+  guards against the retired wording. The local migration proof passed on 0.1.20 and ms-markets
+  2.2.5 on 2026-10-04 (implementation task 0007).
 
 ### Move to MetaTables 0.1.18 and ms-markets 2.2.2 (0.4.3)
 

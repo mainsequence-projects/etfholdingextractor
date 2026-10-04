@@ -18,11 +18,12 @@
 - CodeRepository UID: `2b634665-d3c0-4cf4-a8ed-f4446eba7891`
 - CodeRepositoryBranch UID for `main`: `41ddaf20-9077-4e42-bc24-cace28efd5d7`
 - Python: `3.13`
-- Main Sequence SDK: `>=9.0.6,<10` (locked with `9.0.6`; offline checks only, local proof
-  pending)
+- Main Sequence SDK: `>=9.0.6,<10` (locked with `9.0.6`; local migration proof passed
+  2026-10-04)
 - MetaTables client: `mainsequence-metatable>=0.1.20,<0.2` (import and CLI `metatables`; locked
-  with `0.1.20`; offline checks only, local proof pending)
-- ms-markets: `>=2.2.5,<3` (locked with `2.2.5`; offline checks only, local proof pending)
+  with `0.1.20`; local migration proof on isolated SQLite passed 2026-10-04)
+- ms-markets: `>=2.2.5,<3` (locked with `2.2.5`; applied as a local prerequisite in the
+  2026-10-04 proof, 62 tables active)
 - Deployment: none. No `.mainsequence/workflows/` file and no migration Job.
 - Migration namespace: `etfhextractor`
 - Alembic head: `0001`

@@ -2,6 +2,13 @@
 
 ## 2026-10-04
 
+- Ran the pending local migration proof on MetaTables 0.1.20 and ms-markets 2.2.5, signed in to
+  the development backend, on a fresh isolated local SQLite runtime with its own local API. It
+  passed: ms-markets `0018 (head)` with 62 tables active, then `0001` with 2 tables finalized
+  and active, 64 catalog rows active, the impact pre-flight unchanged (34 edges, 6
+  `cascade_delete`, 28 `restrict`), both schema-prep runs green and `upgrade_application` a
+  no-op at `0001`. The API was stopped and its `server.json` removed. No hosted runtime was
+  touched; no push, tag or sync.
 - Moved the unreleased 0.4.3 to `mainsequence` 9.0.6, `mainsequence-metatable` 0.1.20 and
   ms-markets 2.2.5, the latest releases. Relocked with `uv lock --upgrade-package` for the three
   packages and regenerated `requirements.txt`; the lock no longer carries the SDK's `server`

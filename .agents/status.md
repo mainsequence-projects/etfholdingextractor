@@ -30,7 +30,18 @@
   reported the `DemoBarsTS` foreign key as a `restrict` edge and no blockers. The schema-prep
   example passed with `--local` and `--local --check-only`, and
   `upgrade_application("etfhextractor_migrations:migration")` through `configure_local_client()`
-  was a no-op. That proof predates MetaTables 0.1.20 and ms-markets 2.2.5; see Pending.
+  was a no-op.
+- On 2026-10-04 the same proof passed on MetaTables 0.1.20 with ms-markets 2.2.5 and SDK 9.0.6,
+  against the development backend, on a fresh isolated local SQLite runtime with its own local
+  API (stopped afterwards). System revision `0010_cascade_targets`; ms-markets `0018 (head)` with
+  62 tables active; `0001` applied with 2 tables finalized and active (0 reserved, 0 failed),
+  `migrations current` reported `0001 (head)` and a repeated upgrade was a no-op. All 64 catalog
+  rows were active. `get_impact(action="delete_rows")` on `ms_markets__asset` reported no
+  blockers and 34 edges (6 `cascade_delete`, 28 `restrict`), with the `DemoBarsTS` foreign key a
+  `restrict` edge. Both schema-prep runs passed, and
+  `upgrade_application("etfhextractor_migrations:migration")` through `configure_local_client()`
+  reported `0001`, `migrated: False` and 2 active tables (implementation task 0007, "Re-run on
+  MetaTables 0.1.20").
 - The SDK 9.0.6, `metatables` 0.1.20 and ms-markets 2.2.5 skill bundles are copied and the
   managed AGENTS.md block was regenerated (already current), all offline. Platform-owned skills
   (`.agents/skills/mainsequence_platform/`) are not installed, because that update needs a
@@ -62,11 +73,6 @@
 
 ## Pending
 
-- Re-run the local migration proof on MetaTables 0.1.20 and ms-markets 2.2.5 (implementation
-  task 0007, "Re-run on MetaTables 0.1.20"). On 2026-10-04 the local API could not start: its
-  worker resolves the developer through the platform before it reports ready, and the local
-  Main Sequence backend did not answer. A later check the same day (`/api/v1/users/me/`,
-  10-second timeout) still got no answer.
 - Publishing: the local annotated tag `v0.4.3` still points at `ceabfb9`, the commit with the
   SDK 9.0.5, MetaTables 0.1.18 and ms-markets 2.2.2 floors, and is not on origin. Move it to the
   merged commit before pushing it (`.agents/tasks.md`, "Publish 0.4.3 and refresh consumers").

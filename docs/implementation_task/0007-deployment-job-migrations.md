@@ -1,9 +1,9 @@
 # 0007 — SDK 9.0.6, MetaTables 0.1.20 and deployment-Job migrations
 
 Status: implemented in 0.4.3. On 2026-10-03 the provider was proven on an isolated local SQLite
-runtime with MetaTables 0.1.18 against the real ms-markets 2.2.2 schema. The re-run on MetaTables
-0.1.20 and ms-markets 2.2.5 is pending (see "Local migration proof"). No hosted runtime was read
-or migrated.
+runtime with MetaTables 0.1.18 against the real ms-markets 2.2.2 schema, and on 2026-10-04 the
+re-run on MetaTables 0.1.20 and ms-markets 2.2.5 passed (see "Local migration proof"). No hosted
+runtime was read or migrated.
 
 ## Goal
 
@@ -207,29 +207,60 @@ this task proved the provider against a scratch replica of `ms_markets__asset`, 
 ms-markets 2.1.1 schema could not be applied to a fresh runtime then. The replica is no longer
 needed.
 
-### Re-run on MetaTables 0.1.20 (pending)
+### Re-run on MetaTables 0.1.20
 
-The re-run with `mainsequence-metatable` 0.1.20 and ms-markets 2.2.5 could not start on
-2026-10-04. Before the local API reports ready, its worker resolves the developer through the
-platform (`/api/v1/users/me/`) with the saved SDK session. The Main Sequence backend did not
-answer, so the worker missed the launcher's 45-second startup deadline and the launcher exited.
-Nothing was written to the scratch runtime.
+A first attempt on 2026-10-04 could not start. Before the local API reports ready, its worker
+resolves the developer through the platform (`/api/v1/users/me/`) with the saved SDK session, and
+the Main Sequence backend did not answer, so the launcher's 45-second startup deadline passed.
 
-Neither provider changed, ms-markets 2.2.5 has the same models and migration history as 2.2.2,
-and MetaTables 0.1.19 and 0.1.20 add no system migration (the head is still
-`0010_cascade_targets`). The re-run is therefore expected to reproduce steps 1 to 6, but until it
-runs the 0.1.20 runtime is unverified for this repository. It repeats the same steps, with
-`METATABLES_LOCAL_STORAGE_DIR` set to a fresh scratch directory for every command, so that
-`--local` reads that directory's `server.json` instead of the laptop's default local API:
+Later on 2026-10-04, signed in to the development backend, the re-run passed with
+`mainsequence` 9.0.6, `mainsequence-metatable` 0.1.20 and ms-markets 2.2.5. It used a fresh
+scratch `METATABLES_LOCAL_STORAGE_DIR` for every command, its own
+`metatables serve --local --port <free port> --configuration <scratch configuration>` (so
+`--local` read that directory's `server.json`, never the laptop's default local API), and
+`metatables --local` only. The API was stopped afterwards and its `server.json` was removed.
 
-1. `metatables serve --local --port <free port> --configuration <scratch configuration>`, then
-   `metatables --local runtime initialize`.
-2. Apply the ms-markets provider to the same runtime as a local-only prerequisite.
-3. `metatables --local migrations upgrade --provider etfhextractor_migrations:migration head`,
-   `migrations current`, and a repeated upgrade.
-4. Steps 4 to 6 above: the catalog and impact checks, both schema-prep runs, and
-   `upgrade_application("etfhextractor_migrations:migration")` through
-   `configure_local_client()`.
+1. `metatables --local runtime initialize` reported bootstrap `ready`, system revision
+   `0010_cascade_targets` with no pending revisions, and a local SQLite DataSource; runtime
+   status reported `local_mode: true` and `dialect: sqlite`.
+2. The ms-markets 2.2.5 provider applied to the same runtime as a
+   local-only prerequisite: revision `0018`, 62 tables finalized, 62 active, 0 reserved and
+   0 failed; `migrations current` reported `0018 (head)`.
+3. This repository's provider finalized:
+
+   ```text
+   $ metatables --local migrations upgrade --provider etfhextractor_migrations:migration head
+   [alembic] INFO alembic.runtime.migration: Running upgrade  -> 0001, etfhextractor_demo_bars
+   ok: True
+   finalized_count: 2
+   active_count: 2
+   reserved_count: 0
+   failed_count: 0
+   revision: 0001
+   migrated: True
+   $ metatables --local migrations current --provider etfhextractor_migrations:migration
+   0001 (head)
+   ```
+
+   A repeated upgrade reported `migrated: False`, `finalized_count: 0` and both tables active.
+4. The catalog held 64 MetaTables, all `active` (62 `ms_markets`, 2 `etfhextractor_markets`),
+   none reserved or failed. `etfhextractor_markets__alembic_version`,
+   `etfhextractor_markets__demobarsts` and `ms_markets__asset` were active in the local
+   DataSource, and `DemoBarsTS` is a `TimeIndexMetaTable` with index names
+   `["time_index", "asset_identifier"]` and time index `time_index`.
+5. `get_impact(action="delete_rows")` on `ms_markets__asset` returned `allowed: true`, no
+   blockers, 23 nodes and 34 foreign-key edges: 6 `cascade_delete` and 28 `restrict`, including
+   `etfhextractor_markets__demobarsts` → `ms_markets__asset` (`on_delete=restrict`). On
+   `etfhextractor_markets__demobarsts` it returned `allowed: true` and no edges.
+6. `examples/prepare_demo_bars_schema.py --local --check-only` and `--local` both passed (the
+   second was a no-op upgrade). Run through `configure_local_client()`,
+   `metatables.upgrade_application("etfhextractor_migrations:migration")`, the call a consuming
+   application's migration Job makes, reported revision `0001`, `ok: True`, `migrated: False`,
+   2 active, 0 reserved and 0 failed.
+
+The 0.1.20 runtime therefore reproduces the 0.1.18 proof for this repository, as expected:
+neither provider changed, ms-markets 2.2.5 has the same models and migration history as 2.2.2,
+and MetaTables 0.1.19 and 0.1.20 add no system migration.
 
 ## Validation
 

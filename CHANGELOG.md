@@ -60,7 +60,8 @@ their Git tags and by the implementation tasks in `docs/implementation_task/`.
   switch.
 - Implementation task [0007](docs/implementation_task/0007-deployment-job-migrations.md),
   including the local SQLite proof of the provider against the real ms-markets 2.2.2 schema on a
-  MetaTables 0.1.18 runtime. The re-run on MetaTables 0.1.20 and ms-markets 2.2.5 is pending.
+  MetaTables 0.1.18 runtime, and its re-run on MetaTables 0.1.20 and ms-markets 2.2.5, which
+  passed on 2026-10-04.
 
 ### Fixed
 
