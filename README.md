@@ -4,8 +4,8 @@
 [![Version](https://img.shields.io/badge/version-0.4.3-blue.svg)](pyproject.toml)
 [![Python](https://img.shields.io/badge/python-3.13-blue.svg)](pyproject.toml)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
-[![ms-markets](https://img.shields.io/badge/ms--markets-%3E%3D2.2.2%2C%3C3-black.svg)](pyproject.toml)
-[![Tests](https://img.shields.io/badge/tests-95%20passing-green.svg)](tests/)
+[![ms-markets](https://img.shields.io/badge/ms--markets-%3E%3D2.2.5%2C%3C3-black.svg)](pyproject.toml)
+[![Tests](https://img.shields.io/badge/tests-96%20passing-green.svg)](tests/)
 [![Maintained](https://img.shields.io/badge/maintained-actively-green.svg)](docs/)
 
 `etfhextractor` turns provider-published ETF holdings into Main Sequence / ms-markets
@@ -37,9 +37,9 @@ kept out of `__init__` so pure extraction never loads the msm_portfolios stack).
 
 - Current package version: `0.4.3`
 - Python: `>=3.13,<3.14`
-- Key dependencies: `mainsequence >=9.0.5,<10` (identity, secrets, logging),
-  `mainsequence-metatable >=0.1.18,<0.2` (the MetaTables client, imported as `metatables`),
-  `ms-markets >=2.2.2,<3` (typed MetaTable rows; obligatory-calendar portfolio architecture),
+- Key dependencies: `mainsequence >=9.0.6,<10` (identity, secrets, logging),
+  `mainsequence-metatable >=0.1.20,<0.2` (the MetaTables client, imported as `metatables`),
+  `ms-markets >=2.2.5,<3` (typed MetaTable rows; obligatory-calendar portfolio architecture),
   `pandas-market-calendars` (trading sessions)
 - License: [Apache License 2.0](LICENSE)
 - Documentation: [docs/library.md](docs/library.md) · [docs/reader.md](docs/reader.md) ·
@@ -136,7 +136,7 @@ its single table `DemoBarsTS` (the example's demo price source; version table
   migration Job (`metatables.upgrade_application("etfhextractor_migrations:migration")`). The
   ms-markets schema, which `DemoBarsTS` references by foreign key, is migrated by the ms-markets
   deployment, not by this package or its consumers.
-- **Local development** uses the project's local MetaTables runtime:
+- **Local development** uses the laptop's local MetaTables runtime (local SQLite):
 
   ```bash
   metatables init --local
@@ -145,6 +145,11 @@ its single table `DemoBarsTS` (the example's demo price source; version table
   metatables --local migrations upgrade --provider etfhextractor_migrations:migration head
   metatables --local migrations current --provider etfhextractor_migrations:migration
   ```
+
+  A laptop runs one local MetaTables API, shared by every checkout. When one is already
+  running, from this project or any other, `serve --local` reports it and exits, and the
+  `--local` commands connect to it. Commits and branch switches need no API restart. The local
+  API always runs Local; it has no switch to a hosted runtime.
 
   The local runtime must already hold the ms-markets tables: MetaTables finalizes `DemoBarsTS`
   only once its foreign-key target, the ms-markets Asset table, is an active MetaTable there.

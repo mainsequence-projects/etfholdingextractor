@@ -1,5 +1,21 @@
 # Journal
 
+## 2026-10-04
+
+- Moved the unreleased 0.4.3 to `mainsequence` 9.0.6, `mainsequence-metatable` 0.1.20 and
+  ms-markets 2.2.5, the latest releases. Relocked with `uv lock --upgrade-package` for the three
+  packages and regenerated `requirements.txt`; the lock no longer carries the SDK's `server`
+  extra, which 9.0.6 folded into the base package.
+- Refreshed the SDK 9.0.6, `metatables` 0.1.20 and ms-markets 2.2.5 skills offline; the managed
+  AGENTS.md block was already current.
+- MetaTables 0.1.19 runs one local API per laptop and removed the launcher's Local/Hosted switch.
+  README, `docs/library.md`, `examples/README.md` and both examples described a per-project
+  local API; they now describe the shared one, and `tests/test_migration_guidance.py` fails on
+  the retired wording. No code changed.
+- The local migration proof on 0.1.20 could not run: the local API resolves the developer
+  through the platform at startup, and the local backend did not answer. The 2026-10-03 proof on
+  0.1.18 stands; the re-run is pending. Nothing ran against a hosted runtime.
+
 ## 2026-10-03
 
 - Released 0.4.3 on `mainsequence` 9.0.5, `mainsequence-metatable` 0.1.14 and ms-markets 2.1.1

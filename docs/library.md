@@ -415,7 +415,7 @@ Since MetaTables 0.1.14 a hosted runtime is migrated only from a deployment work
   in its own migration Job. That Job does not apply the ms-markets provider: the ms-markets
   deployment migrates the ms-markets schema, which `DemoBarsTS` references by foreign key.
   Nobody runs a hosted upgrade or downgrade by hand.
-- **Local development.** Use the project's local MetaTables runtime (local SQLite) through the
+- **Local development.** Use the laptop's local MetaTables runtime (local SQLite) through the
   `metatables` CLI installed by `mainsequence-metatable`:
 
   ```bash
@@ -426,6 +426,12 @@ Since MetaTables 0.1.14 a hosted runtime is migrated only from a deployment work
   metatables --local migrations upgrade  --provider etfhextractor_migrations:migration head
   metatables --local migrations current  --provider etfhextractor_migrations:migration
   ```
+
+  A laptop runs one local MetaTables API, shared by every checkout. `serve --local` reports an
+  API that is already running, from this project or any other, and exits; the `--local`
+  commands and `metatables.configure_local_client()` connect to it through `server.json` in the
+  local storage directory. Commits and branch switches need no API restart. The local API always
+  runs Local; hosted data is reached through the deployed API, never by switching the local one.
 
   The local runtime must already hold the ms-markets tables: finalization preflights every
   foreign-key target, so MetaTables finalizes `DemoBarsTS` only when the ms-markets Asset table is

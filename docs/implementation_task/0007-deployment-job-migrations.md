@@ -1,12 +1,14 @@
-# 0007 — SDK 9.0.5, MetaTables 0.1.18 and deployment-Job migrations
+# 0007 — SDK 9.0.6, MetaTables 0.1.20 and deployment-Job migrations
 
-Status: implemented in 0.4.3. The provider was proven on an isolated local SQLite runtime against
-the real ms-markets 2.2.2 schema. No hosted runtime was read or migrated.
+Status: implemented in 0.4.3. On 2026-10-03 the provider was proven on an isolated local SQLite
+runtime with MetaTables 0.1.18 against the real ms-markets 2.2.2 schema. The re-run on MetaTables
+0.1.20 and ms-markets 2.2.5 is pending (see "Local migration proof"). No hosted runtime was read
+or migrated.
 
 ## Goal
 
-Move `etfhextractor` to `mainsequence` 9.0.5, `mainsequence-metatable` 0.1.18 and ms-markets
-2.2.2, and adopt the MetaTables migration recommendation introduced in 0.1.14
+Move `etfhextractor` to `mainsequence` 9.0.6, `mainsequence-metatable` 0.1.20 and ms-markets
+2.2.5, and adopt the MetaTables migration recommendation introduced in 0.1.14
 (`docs/client/deploy-application-migrations.md` in the vendored `metatables` skills):
 
 1. Develop locally: author and apply revisions with `metatables --local migrations ...`.
@@ -17,12 +19,14 @@ Move `etfhextractor` to `mainsequence` 9.0.5, `mainsequence-metatable` 0.1.18 an
 
 ## Dependency contract
 
-- `mainsequence>=9.0.5,<10` (locked 9.0.5)
-- `mainsequence-metatable>=0.1.18,<0.2` (locked 0.1.18)
-- `ms-markets>=2.2.2,<3` (locked 2.2.2)
+- `mainsequence>=9.0.6,<10` (locked 9.0.6)
+- `mainsequence-metatable>=0.1.20,<0.2` (locked 0.1.20)
+- `ms-markets>=2.2.5,<3` (locked 2.2.5)
 
-`uv lock --upgrade-package` moved only these packages; `mainsequence` 9.0.5 is the latest
-release. `requirements.txt` was regenerated with the command in its header.
+`uv lock --upgrade-package` moved only these packages, each to its latest release. The lock no
+longer carries the SDK's `server` extra, which 9.0.6 folded into the base package (PyJWT with
+cryptography is now a plain dependency). `requirements.txt` was regenerated with the command in
+its header.
 
 ## The recommendation, applied to a library
 
@@ -55,7 +59,7 @@ project text and `.agents/` state files say so.
 `--local`, so it migrated whatever runtime the Environment selected: a hosted migration by
 hand. Now:
 
-- `--local` selects the project's running local MetaTables API with
+- `--local` selects the laptop's running local MetaTables API with
   `metatables.configure_local_client()`, refuses unless the runtime reports Local mode, the
   SQLite dialect and an initialized DataSource, then runs
   `metatables --local migrations upgrade --provider etfhextractor_migrations:migration head`
@@ -71,23 +75,27 @@ generic top-level `migrations` provider or hosted upgrades. Its prerequisite is 
 runtime that already holds the ms-markets tables. The VS Code launch entry for the schema step
 passes `--local`.
 
-## ms-markets 2.1.1 to 2.2.2
+## ms-markets 2.1.1 to 2.2.5
 
 - 2.1.1 renamed `cli` and `command_center` to `msm_cli` and `msm_command_center`. This
   repository imports neither, and its own CLI is the subpackage `etfhextractor.cli`.
 - 2.2.0 removed `msm_command_center`, the `apps/v1` re-export modules, the Asset Monitor frame
   and workspace builders, and the fixed income `response_mappings`. This repository uses none of
   them: all 51 distinct `msm` and `msm_portfolios` imports in the package, the migration
-  provider, the examples and the tests resolve on 2.2.2.
+  provider, the examples and the tests resolve on 2.2.5.
 - 2.2.2 requires `mainsequence-metatable>=0.1.17` and gives `PortfolioEventLedgerTS` an explicit
   `__storage_layout__`, whose lookup index name fits PostgreSQL's 63-character limit, so the
   ms-markets provider finalizes on a fresh runtime.
+- 2.2.3 adds the MetaTables `delete_rows` impact to the portfolio, portfolio-group and
+  asset-category bulk-delete preflights (`msm.api.http`, `msm.services`), and 2.2.4 and 2.2.5
+  omit unset optional fields from the bulk-action and tabular-frame contract models. This
+  repository uses none of them. The models and the migration history are unchanged since 2.2.2.
 - The history is one revision, `0018_initial_schema`. Consumers never apply it.
-- `.agents/skills/ms_markets/` was refreshed with `msm copy-msm-skills --path .`. The refresh
-  removed the Command Center Asset Monitor skills, which 2.2.0 dropped. Its
-  `metatable_migrations` skill states the same migration rule.
+- `.agents/skills/ms_markets/` was refreshed with `msm copy-msm-skills --path .`. The 2.2.2
+  refresh removed the Command Center Asset Monitor skills, which 2.2.0 dropped; the 2.2.5 refresh
+  changed only the pin. Its `metatable_migrations` skill states the same migration rule.
 
-## MetaTables 0.1.17 and 0.1.18
+## MetaTables 0.1.17 to 0.1.20
 
 - 0.1.17 allows foreign keys with `ON DELETE` and `ON UPDATE` `CASCADE`, `SET NULL` and
   `SET DEFAULT` (amendment of 2026-10-03 to API ADR 0007). The catalog records each table's
@@ -97,21 +105,48 @@ passes `--local`.
 - 0.1.18 removes the 0.1.17 cascade write narrowing. Write on a table depends only on that
   table's own grants, and the pre-flight reports cascade effects as information, never as
   blockers.
+- 0.1.19 runs one local API per laptop (amendment of 2026-10-03 to client ADR 0011). The
+  launcher publishes its address, private token and process in `server.json` in the local
+  storage directory (`METATABLES_LOCAL_STORAGE_DIR`, by default `~/.local/share/metatables`)
+  instead of a per-project connection file under `.local/`. `metatables --local` and
+  `configure_local_client()` read it from any checkout, `serve --local` reports an API that is
+  already running and exits, and the API no longer rejects clients from another checkout or
+  branch, so commits need no restart. 0.1.19 also removes the launcher's Local/Hosted switch
+  (amendment to API ADR 0001): the local API always runs Local, and hosted data is reached
+  through the deployed API.
+- 0.1.20 requires SDK 9.0.6 and retries runtime-access requests that time out during hosted
+  endpoint discovery.
+- README, `docs/library.md`, `examples/README.md` and both examples described a per-project
+  local API; they now describe the laptop's one local API, and
+  `tests/test_migration_guidance.py` fails on the retired wording. No code changed: the
+  examples already call `configure_local_client()` without arguments (0.1.19 removed its
+  `project` parameter), and the runtime still reports `local_mode`, which `--local` requires
+  together with the SQLite dialect and a ready bootstrap.
 - The only foreign key in this repository, `DemoBarsTS.asset_identifier` →
   `ms_markets__asset.unique_identifier`, has been `ON DELETE RESTRICT` since the table was
   introduced. The asset keys of ms-markets' own time-series tables (`AssetSnapshotsTS`,
   `ExternalPricesTS`, `SignalWeightsTS`, `PortfolioCashFlowsTS` and others) use the same action.
   It was never changed to work around MetaTables, so there is nothing to restore, and revision
   `0001` is unchanged.
-- `.agents/skills/metatables/` was refreshed with `metatables copy-metatables-skills --path .`.
+- `.agents/skills/metatables/` was refreshed with `metatables copy-metatables-skills --path .`
+  (0.1.20).
 
-## SDK 9.0.5
+## SDK 9.0.5 and 9.0.6
 
-`mainsequence code-repository sync` only refreshes local dependencies (`uv lock`, `uv sync`,
-`uv export --locked --no-dev --no-hashes`). It no longer bumps, tags, commits or pushes.
-Publishing is a plain `git push` plus the version tag, and workflow files decide what deploys;
-this repository declares none. `.agents/skills/mainsequence/` is the SDK 9.0.5 bundle (it adds
-`mainsequence-inference`) and the managed AGENTS.md block was regenerated, both offline.
+- Since 9.0.5, `mainsequence code-repository sync` only refreshes local dependencies (`uv lock`,
+  `uv sync`, `uv export --locked --no-dev --no-hashes`). It no longer bumps, tags, commits or
+  pushes. Publishing is a plain `git push` plus the version tag, and workflow files decide what
+  deploys; this repository declares none.
+- 9.0.6 retries only read-only requests, with exponential backoff inside one timeout budget,
+  and never replays a POST, PUT, PATCH or DELETE. This package has no retry logic of its own.
+  Caller verification's PyJWT and cryptography moved into the base package, so the `server`
+  extra is gone; this package never installed it. 9.0.6 also documents that a workflow
+  declaration owns its target (ADR-077) and that a matching tag deploys the commit it points at.
+  Neither applies to a repository without a workflow file.
+- `.agents/skills/mainsequence/` is the SDK 9.0.6 bundle; 9.0.6 changed its
+  `code_repository_maintenance` and `orchestration_and_releases` skills. The managed AGENTS.md
+  block, regenerated offline, was already current. Each vendored `PINNED_FROM.txt` keeps a
+  package-relative `skills_path`.
 
 ## Local migration proof
 
@@ -164,6 +199,30 @@ finalizes only in a runtime that already holds the ms-markets Asset table. The f
 this task proved the provider against a scratch replica of `ms_markets__asset`, because the
 ms-markets 2.1.1 schema could not be applied to a fresh runtime then. The replica is no longer
 needed.
+
+### Re-run on MetaTables 0.1.20 (pending)
+
+The re-run with `mainsequence-metatable` 0.1.20 and ms-markets 2.2.5 could not start on
+2026-10-04. Before the local API reports ready, its worker resolves the developer through the
+platform (`/api/v1/users/me/`) with the saved SDK session. The Main Sequence backend did not
+answer, so the worker missed the launcher's 45-second startup deadline and the launcher exited.
+Nothing was written to the scratch runtime.
+
+Neither provider changed, ms-markets 2.2.5 has the same models and migration history as 2.2.2,
+and MetaTables 0.1.19 and 0.1.20 add no system migration (the head is still
+`0010_cascade_targets`). The re-run is therefore expected to reproduce steps 1 to 6, but until it
+runs the 0.1.20 runtime is unverified for this repository. It repeats the same steps, with
+`METATABLES_LOCAL_STORAGE_DIR` set to a fresh scratch directory for every command, so that
+`--local` reads that directory's `server.json` instead of the laptop's default local API:
+
+1. `metatables serve --local --port <free port> --configuration <scratch configuration>`, then
+   `metatables --local runtime initialize`.
+2. Apply the ms-markets provider to the same runtime as a local-only prerequisite.
+3. `metatables --local migrations upgrade --provider etfhextractor_migrations:migration head`,
+   `migrations current`, and a repeated upgrade.
+4. Steps 4 to 6 above: the catalog and impact checks, both schema-prep runs, and
+   `upgrade_application("etfhextractor_migrations:migration")` through
+   `configure_local_client()`.
 
 ## Validation
 

@@ -18,10 +18,10 @@
 - CodeRepository UID: `2b634665-d3c0-4cf4-a8ed-f4446eba7891`
 - CodeRepositoryBranch UID for `main`: `41ddaf20-9077-4e42-bc24-cace28efd5d7`
 - Python: `3.13`
-- Main Sequence SDK: `>=9.0.5,<10` (locked and verified with `9.0.5`)
-- MetaTables client: `mainsequence-metatable>=0.1.18,<0.2` (import and CLI `metatables`; locked
-  and verified with `0.1.18`)
-- ms-markets: `>=2.2.2,<3` (locked and verified with `2.2.2`)
+- Main Sequence SDK: `>=9.0.6,<10` (locked and verified with `9.0.6`)
+- MetaTables client: `mainsequence-metatable>=0.1.20,<0.2` (import and CLI `metatables`; locked
+  and verified with `0.1.20`)
+- ms-markets: `>=2.2.5,<3` (locked and verified with `2.2.5`)
 - Deployment: none. No `.mainsequence/workflows/` file and no migration Job.
 - Migration namespace: `etfhextractor`
 - Alembic head: `0001`
@@ -35,6 +35,9 @@
   `metatables.TimeIndexTableRef.from_uid`. Updater runs take no `debug_mode`/`force_update`.
 - A session migrates only the local runtime:
   `metatables --local migrations <command> --provider etfhextractor_migrations:migration`.
+  The laptop runs one local MetaTables API, shared by every checkout through `server.json` in
+  the local storage directory (MetaTables 0.1.19); `serve --local` reports a running one and
+  exits.
   Hosted runtimes are migrated only by the migration Job of the application that deploys code
   using `DemoBarsTS`; this repository never applies the ms-markets provider
   (implementation task 0007). The old `mainsequence migrations` commands are gone.

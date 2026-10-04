@@ -8,9 +8,10 @@
   `mainsequence code-repository sync` only refreshes local dependencies; it does not bump, tag,
   commit or push.
 - Update consumer locks (e.g. Alpaca Connectors: `uv lock --upgrade-package etfhextractor`).
-  Locking 0.4.3 also moves a consumer to `mainsequence-metatable>=0.1.18` and
-  `ms-markets>=2.2.2`. An application that deploys code reading or writing `DemoBarsTS` lists
-  `etfhextractor_migrations:migration` in its own migration Job.
+  Locking 0.4.3 also moves a consumer to `mainsequence>=9.0.6`,
+  `mainsequence-metatable>=0.1.20` and `ms-markets>=2.2.5`. An application that deploys code
+  reading or writing `DemoBarsTS` lists `etfhextractor_migrations:migration` in its own
+  migration Job.
 - Install the platform-owned skills under `.agents/skills/mainsequence_platform/` with the
   authenticated `mainsequence code-repository update-platform-skills --path .` if the owner asks
   for it.
@@ -34,6 +35,14 @@
 - Run `etfh portfolio-publish`, then verify signal, value, and weight rows plus the Portfolio row.
 
 ## Completed
+
+### Move to SDK 9.0.6, MetaTables 0.1.20 and ms-markets 2.2.5 (0.4.3)
+
+- Required `mainsequence` 9.0.6, `mainsequence-metatable` 0.1.20 and ms-markets 2.2.5,
+  relocked, refreshed the SDK, `metatables` and ms-markets skills, and rewrote the local
+  development notes for the laptop's one local MetaTables API (MetaTables 0.1.19), which every
+  checkout shares and which has no Local/Hosted switch. `tests/test_migration_guidance.py`
+  guards against the retired wording.
 
 ### Move to MetaTables 0.1.18 and ms-markets 2.2.2 (0.4.3)
 

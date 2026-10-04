@@ -3,13 +3,14 @@
 ## Verified
 
 - Release version is `0.4.3`; runtime is Python `3.13`. `pyproject.toml` declares
-  `mainsequence>=9.0.5,<10`, `mainsequence-metatable>=0.1.18,<0.2` and `ms-markets>=2.2.2,<3`;
-  `uv.lock` resolves 9.0.5, 0.1.18 and 2.2.2, and `requirements.txt` was regenerated from it
+  `mainsequence>=9.0.6,<10`, `mainsequence-metatable>=0.1.20,<0.2` and `ms-markets>=2.2.5,<3`;
+  `uv.lock` resolves 9.0.6, 0.1.20 and 2.2.5, and `requirements.txt` was regenerated from it
   (implementation task 0007).
 - Migrations follow the MetaTables deployment-Job rule, introduced in 0.1.14. This repository
   has no deployment and no workflow file; the application that deploys code using `DemoBarsTS`
   applies `etfhextractor_migrations:migration` in its own migration Job, and local development
-  uses `metatables --local migrations ...`. Nothing migrates at import or start-up.
+  uses `metatables --local migrations ...` against the laptop's one local MetaTables API, which
+  every checkout shares (MetaTables 0.1.19). Nothing migrates at import or start-up.
 - `examples/prepare_demo_bars_schema.py` applies the provider only with `--local`, after checking
   that the runtime is an initialized local SQLite runtime, and only verifies a hosted runtime.
   The full workflow example has `--local` and no longer cites the generic top-level
@@ -29,9 +30,9 @@
   reported the `DemoBarsTS` foreign key as a `restrict` edge and no blockers. The schema-prep
   example passed with `--local` and `--local --check-only`, and
   `upgrade_application("etfhextractor_migrations:migration")` through `configure_local_client()`
-  was a no-op.
-- The SDK 9.0.5, `metatables` 0.1.18 and ms-markets 2.2.2 skill bundles are copied and the
-  managed AGENTS.md block was regenerated, all offline. Platform-owned skills
+  was a no-op. That proof predates MetaTables 0.1.20 and ms-markets 2.2.5; see Pending.
+- The SDK 9.0.6, `metatables` 0.1.20 and ms-markets 2.2.5 skill bundles are copied and the
+  managed AGENTS.md block was regenerated (already current), all offline. Platform-owned skills
   (`.agents/skills/mainsequence_platform/`) are not installed, because that update needs a
   signed-in session.
 - Product code passes no `data_source_uid`, so msm SQL takes the DataSource and dialect from the
@@ -46,12 +47,17 @@
 
 ## Validation
 
-- Full pytest suite: 95 passed, offline.
+- Full pytest suite: 96 passed, offline.
 - `ruff check --no-fix .` passed. Vendored `.agents/` skills are excluded from ruff.
-- `python -m metatables.sdk_compat` passed (distribution 9.0.5).
+- `python -m metatables.sdk_compat` passed (distribution 9.0.6).
+- All 51 distinct `msm` and `msm_portfolios` imports resolve on ms-markets 2.2.5.
 
 ## Pending
 
+- Re-run the local migration proof on MetaTables 0.1.20 and ms-markets 2.2.5 (implementation
+  task 0007, "Re-run on MetaTables 0.1.20"). On 2026-10-04 the local API could not start: its
+  worker resolves the developer through the platform before it reports ready, and the local
+  Main Sequence backend did not answer.
 - No hosted state was read or migrated in this pass.
 - The full example has not run against a local runtime (`--local`); it needs live iShares and
   OpenFIGI calls.

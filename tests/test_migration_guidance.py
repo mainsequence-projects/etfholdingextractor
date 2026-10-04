@@ -6,6 +6,9 @@
 - Repository-owned docs, examples and code never tell anyone to run a non-local
   `metatables migrations upgrade|downgrade`, and never cite the ms-markets provider
   or the generic top-level `migrations:migration`.
+- They describe the laptop's one local MetaTables API (MetaTables 0.1.19): no
+  per-project local API, no `.local/development-client.json`, and no Local/Hosted
+  switch.
 """
 
 from __future__ import annotations
@@ -30,6 +33,13 @@ NON_LOCAL_MIGRATION = re.compile(
 )
 FOREIGN_PROVIDER = re.compile(
     r"(?<![A-Za-z0-9_.])(?:msm_migrations|msm\.migrations|migrations):migration\b"
+)
+# MetaTables 0.1.19 runs one local API per laptop and removed the launcher's
+# Local/Hosted switch; these phrases describe the retired behavior.
+RETIRED_LOCAL_RUNTIME = re.compile(
+    r"project's\s+(?:running\s+)?local\s+MetaTables"
+    r"|development-client\.json|runtime-selection\.json|Switch\s+to\s+Hosted",
+    re.IGNORECASE,
 )
 
 
@@ -167,6 +177,19 @@ class MigrationGuidanceTests(unittest.TestCase):
                 offenders.append(f"{path.relative_to(REPO_ROOT)}:{line}: {match.group(0)}")
         self.assertEqual(offenders, [])
 
+    def test_owned_files_describe_one_local_api_per_laptop(self) -> None:
+        offenders = []
+        for path in repository_owned_files():
+            text = path.read_text(encoding="utf-8")
+            for match in RETIRED_LOCAL_RUNTIME.finditer(text):
+                line = text.count("\n", 0, match.start()) + 1
+                offenders.append(f"{path.relative_to(REPO_ROOT)}:{line}: {match.group(0)}")
+        self.assertEqual(
+            offenders,
+            [],
+            "Every checkout shares the laptop's one local MetaTables API (MetaTables 0.1.19).",
+        )
+
     def test_guard_patterns_catch_the_retired_guidance(self) -> None:
         self.assertIsNotNone(
             NON_LOCAL_MIGRATION.search("metatables migrations upgrade --provider x head")
@@ -179,6 +202,16 @@ class MigrationGuidanceTests(unittest.TestCase):
         self.assertIsNotNone(FOREIGN_PROVIDER.search("--provider migrations:migration"))
         self.assertIsNotNone(FOREIGN_PROVIDER.search("`msm_migrations:migration`"))
         self.assertIsNone(FOREIGN_PROVIDER.search(f"--provider {PROVIDER}"))
+        for retired in (
+            "the project's running local MetaTables API",
+            "the project's local MetaTables runtime",
+            "the private .local/development-client.json",
+            "Settings → Runtime mode → Switch to Hosted",
+        ):
+            self.assertIsNotNone(RETIRED_LOCAL_RUNTIME.search(retired), retired)
+        self.assertIsNone(
+            RETIRED_LOCAL_RUNTIME.search("the laptop's running local MetaTables API")
+        )
 
 
 if __name__ == "__main__":

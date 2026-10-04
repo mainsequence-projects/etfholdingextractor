@@ -10,10 +10,10 @@ Pipeline (implementation task 0002 / ADR 0003 — the msm_portfolios signal path
 Sequence session and a MetaTables runtime that already holds the ms-markets
 tables. The ms-markets deployment migrates its own schema; this example never
 applies the ms-markets provider. The runtime is the hosted one of your
-Environment, or, with `--local`, the project's running local MetaTables API
-(local SQLite; `metatables init --local`, `metatables serve --local`,
-`metatables --local runtime initialize`). The flag-free run does everything else
-itself:
+Environment, or, with `--local`, the laptop's running local MetaTables API
+(local SQLite, one API shared by every checkout; `metatables init --local`,
+`metatables serve --local`, `metatables --local runtime initialize`). The
+flag-free run does everything else itself:
 
 0. Get the **project-owned** `DemoBarsTS` price-table schema ready
    (`examples/prepare_demo_bars_schema.py`; skip with `--skip-schema-prep`; not
@@ -324,12 +324,12 @@ def run_full_workflow(
         "runtime_mode": "local" if local else "hosted",
     }
 
-    # --local: select the project's running local MetaTables API (local SQLite)
+    # --local: select the laptop's running local MetaTables API (local SQLite)
     # before any client call, and refuse to continue against anything else.
     if local:
         from prepare_demo_bars_schema import require_local_runtime
 
-        _log("runtime", "Selecting the project's local MetaTables runtime...")
+        _log("runtime", "Selecting the laptop's local MetaTables runtime...")
         require_local_runtime()
 
     # Self-sufficient by default: when no external price table is given, the
@@ -568,7 +568,7 @@ def main(argv: list[str] | None = None) -> int:
         "--local",
         action="store_true",
         help=(
-            "Run against the project's running local MetaTables API (local SQLite) and "
+            "Run against the laptop's running local MetaTables API (local SQLite) and "
             "apply etfhextractor_migrations:migration there. Without it the example "
             "uses the hosted runtime and never migrates it."
         ),

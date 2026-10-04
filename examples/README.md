@@ -30,7 +30,7 @@ the hosted ms-markets schema; this example never applies the ms-markets provider
 
 The runtime is either:
 
-- **local** (`--local`): the project's running local MetaTables API on local SQLite, the
+- **local** (`--local`): the laptop's running local MetaTables API on local SQLite, the
   recommended place to develop and try the example:
 
   ```bash
@@ -38,6 +38,10 @@ The runtime is either:
   metatables serve --local                # keep it running in another terminal
   metatables --local runtime initialize   # once per new local runtime
   ```
+
+  One local API serves every checkout on the laptop. If one is already running, from this
+  project or any other, `serve --local` reports it and exits, and `--local` connects to it.
+  Commits need no API restart.
 
   Since ms-markets 2.2.2 the ms-markets schema applies to a fresh local runtime; the
   [ms-markets getting-started guide](https://mainsequence-projects.github.io/MainSequenceMarkets/getting-started/#first-market-setup)

@@ -5,9 +5,9 @@
 autogenerate never diffs the built-in ms-markets graph). Who applies it depends
 on the runtime:
 
-- **Local development** (`--local`): the script selects the project's running
-  local MetaTables API, checks that it is an initialized local SQLite runtime,
-  applies the provider exactly like
+- **Local development** (`--local`): the script selects the laptop's running
+  local MetaTables API (one per laptop, shared by every checkout), checks that
+  it is an initialized local SQLite runtime, applies the provider exactly like
   `metatables --local migrations upgrade --provider etfhextractor_migrations:migration head`,
   and verifies the registered `TimeIndexMetaTable`. Start the local API first
   (`metatables init --local`, `metatables serve --local`,
@@ -66,12 +66,13 @@ def print_detail(label: str, value: object) -> None:
 
 
 def require_local_runtime() -> dict[str, Any]:
-    """Select the project's local MetaTables API and refuse anything but local SQLite.
+    """Select the laptop's local MetaTables API and refuse anything but local SQLite.
 
     `configure_local_client()` points this process (and the CLI subprocesses it
-    starts) at the project's running loopback API; it never falls back to hosted
-    discovery. The runtime must then report Local mode, the SQLite dialect and
-    an initialized runtime DataSource before anything is written.
+    starts) at the laptop's running loopback API, which every checkout shares
+    through `server.json` in the local storage directory; it never falls back to
+    hosted discovery. The runtime must then report Local mode, the SQLite dialect
+    and an initialized runtime DataSource before anything is written.
     """
     from metatables import configure_local_client, get_runtime_status
 
@@ -88,7 +89,7 @@ def require_local_runtime() -> dict[str, Any]:
         and not state.get("data_source_error")
     ):
         raise RuntimeError(
-            "--local needs the project's local MetaTables API in Local mode with an "
+            "--local needs the laptop's running local MetaTables API with an "
             f"initialized SQLite runtime ({LOCAL_RUNTIME_SETUP}). Runtime reported "
             f"local_mode={state.get('local_mode')!r}, dialect={state.get('dialect')!r}, "
             f"bootstrap={bootstrap.get('status')!r}, "
@@ -106,7 +107,7 @@ def prepare_demo_bars_schema(
 ) -> dict[str, Any]:
     """Apply the DemoBarsTS provider to the local runtime, or verify its registration.
 
-    With ``local=True`` the provider is applied to the project's local MetaTables
+    With ``local=True`` the provider is applied to the laptop's local MetaTables
     runtime (find-or-generate the revision, ``upgrade head``, verify). Without it,
     or with ``check_only=True``, nothing is generated or applied: the function
     verifies that the revision ships with the package and that the
@@ -282,7 +283,7 @@ def _run_metatables(args: list[str]) -> None:
 def main() -> int:
     parser = argparse.ArgumentParser(
         description=(
-            "Apply the DemoBarsTS provider to the project's local MetaTables runtime "
+            "Apply the DemoBarsTS provider to the laptop's local MetaTables runtime "
             "(--local), or verify that a hosted runtime already has it."
         ),
     )
@@ -290,7 +291,7 @@ def main() -> int:
         "--local",
         action="store_true",
         help=(
-            "Use the project's running local MetaTables API (local SQLite) and apply "
+            "Use the laptop's running local MetaTables API (local SQLite) and apply "
             f"{ETFHEXTRACTOR_MIGRATION_PROVIDER} there. Without it the script only "
             "verifies: hosted runtimes are migrated by a deployment workflow's "
             "migration Job."
