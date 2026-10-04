@@ -5,7 +5,7 @@ Reader/Writer ownership, live namespace inheritance, and sharing endpoints.
 
 ## Hosted requests
 
-The API's request boundary calls the verifier from `mainsequence[server]` for
+The API's request boundary calls the verifier from the `mainsequence` SDK for
 platform-signed caller assertions. The SDK owns issuer, key discovery, claim,
 request-target, signature, and expiry verification. MetaTables only maps
 its verified identity and exceptions into request context and HTTP responses.
@@ -41,8 +41,8 @@ admission after cache expiry, with a maximum one-hour cache lifetime. Reads do
 not extend that lifetime. Table and namespace grants are checked live against
 the catalog, so their revocation does not wait for the platform-fact cache.
 An expired entry whose refresh fails returns 503; it cannot supply stale access.
-Restart the API after changing its SDK account or endpoint. Worker restarts and
-runtime-mode changes discard caches. No cache environment variables are needed.
+Restart the API after changing its SDK account or endpoint. Worker restarts
+discard caches. No cache environment variables are needed.
 
 Environment display metadata is cached separately for one hour, including
 not-found and unavailable results. `/runtime-context/` still reads current runtime,

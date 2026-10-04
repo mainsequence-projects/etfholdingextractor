@@ -40,14 +40,16 @@ distribution.
 CI installs dependencies from `uv.lock` and PyPI. An editable SDK checkout cannot
 substitute for the published SDK in a release. The selected SDK artifact must
 provide ordinary `Secret.get_by_uid`, independent Git source context, and
-`CallerAssertionVerifier.from_environment` through its `server` extra.
+`CallerAssertionVerifier.from_environment`.
 
-The next MetaTables stable release is `0.1.8`; its supported SDK range is
-`mainsequence[server]>=9.0.4,<10`. Development builds use `0.1.8.devN`.
-The minimum and lockfile now select published SDK `9.0.4`, which supplies those
-interfaces and is the first SDK whose caller-assertion verifier accepts the
-platform's EdDSA (Ed25519) caller assertions. Earlier SDKs verify only RS256, so a
-hosted API built with them cannot authenticate platform callers.
+The next MetaTables stable release is `0.1.20`; its supported SDK range is
+`mainsequence>=9.0.6,<10`. Development builds use `0.1.20.devN`.
+The minimum and lockfile now select published SDK `9.0.6`. SDK 9.0.4 is the first
+whose caller-assertion verifier accepts the platform's EdDSA (Ed25519) caller
+assertions; earlier SDKs verify only RS256, so a hosted API built with them cannot
+authenticate platform callers. SDK 9.0.6 ships the verifier's dependencies in the
+base package (there is no `server` extra) and bounds each call, retries included,
+by its timeout without replaying a POST, which runtime-access discovery relies on.
 Runtime compatibility is verified manually with the published artifact;
 package/static CI does not establish runtime compatibility. When changing the SDK
 minimum, update it in `pyproject.toml`, then run:

@@ -58,7 +58,6 @@ These methods and paths are mounted by the current application. See the [OpenAPI
 | POST | `/runtime-bootstrap/migrate/` | Migrate | 200 |
 | GET | `/runtime-context/` | Runtime Context | 200 |
 | POST | `/runtime-migrations/{lease_uid}/release/` | Release Migration | 200 |
-| POST | `/runtime-mode/` | Select Runtime | 202 |
 | GET | `/security/access-history/` | Security History | 200 |
 | GET | `/security/database-permissions/` | Database Permission Status | 200 |
 | POST | `/security/namespaces/` | Create Namespace | 201 |

@@ -3148,16 +3148,6 @@
               }
             ]
           },
-          "hosted_environment_target": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/HostedEnvironment"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
           "is_admin": {
             "default": false,
             "title": "Is Admin",
@@ -3200,22 +3190,6 @@
             ],
             "title": "Runtime Instance Id"
           },
-          "runtime_switch_available": {
-            "default": false,
-            "title": "Runtime Switch Available",
-            "type": "boolean"
-          },
-          "runtime_switch_error": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Runtime Switch Error"
-          },
           "transfer_limits": {
             "anyOf": [
               {
@@ -3246,24 +3220,6 @@
           "default_schema"
         ],
         "title": "RuntimeContext",
-        "type": "object"
-      },
-      "RuntimeSelection": {
-        "additionalProperties": false,
-        "properties": {
-          "mode": {
-            "enum": [
-              "local",
-              "hosted"
-            ],
-            "title": "Mode",
-            "type": "string"
-          }
-        },
-        "required": [
-          "mode"
-        ],
-        "title": "RuntimeSelection",
         "type": "object"
       },
       "RuntimeSourceInput": {
@@ -7366,45 +7322,6 @@
           }
         },
         "summary": "Release Migration",
-        "tags": [
-          "Runtime"
-        ]
-      }
-    },
-    "/runtime-mode/": {
-      "post": {
-        "operationId": "select_runtime_runtime_mode__post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/RuntimeSelection"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "202": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Select Runtime",
         "tags": [
           "Runtime"
         ]

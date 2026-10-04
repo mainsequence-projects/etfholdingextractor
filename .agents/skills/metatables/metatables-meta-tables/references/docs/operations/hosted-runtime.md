@@ -167,14 +167,6 @@ application tables stay in that one database.
 The verified hosted Environment remains display metadata supplied through ordinary SDK
 interfaces. The declared database does not change SDK context or Environment requirements.
 
-## Developer launcher in Hosted mode
-
-After `metatables serve --local --admin` is switched to Hosted, the launcher reads
-the API's packaged deployment configuration and the same Secret, resolved in the
-developer's SDK Environment, so it uses the same database as the deployed API.
-It never migrates. If the local branch has newer migrations than the deployed API,
-it reports `migration_required` until that code is deployed.
-
 ## Application grants
 
 Platform Users, Teams and their membership are resolved through the SDK. MetaTables
