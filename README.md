@@ -135,7 +135,11 @@ its single table `DemoBarsTS` (the example's demo price source; version table
   deploys code using `DemoBarsTS` applies `etfhextractor_migrations:migration` in its own
   migration Job (`metatables.upgrade_application("etfhextractor_migrations:migration")`). The
   ms-markets schema, which `DemoBarsTS` references by foreign key, is migrated by the ms-markets
-  deployment, not by this package or its consumers.
+  deployment, not by this package or its consumers. Because this package requires
+  `mainsequence-metatable` 0.1.20, the Environment's hosted MetaTables API must run 0.1.19 or
+  later before a consumer that locks it pushes: the 0.1.20 client rejects an older API's
+  runtime context, so that consumer's migration Job would fail before it migrates anything
+  ([MetaTables#33](https://github.com/mainsequence-projects/MetaTables/issues/33)).
 - **Local development** uses the laptop's local MetaTables runtime (local SQLite):
 
   ```bash

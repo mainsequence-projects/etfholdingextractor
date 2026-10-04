@@ -42,6 +42,13 @@ specific to this application, which the MetaTables provider-placement rule allow
   `etfhextractor_migrations:migration` in its own migration Job. It does not apply the
   ms-markets provider: since ms-markets 2.1.1 only the ms-markets deployment migrates the
   ms-markets schema.
+- Before that application pushes a lock on 0.4.3, its Environment's hosted MetaTables API must
+  run 0.1.19 or later. The `mainsequence-metatable` 0.1.20 client validates
+  `/runtime-context/` against a `RuntimeContext` that forbids extra fields, and an API on
+  0.1.18 or older still sends `runtime_switch_available`, `runtime_switch_error` and
+  `hosted_environment_target`, so the migration Job fails before it reserves or migrates
+  anything and the rollout stops
+  ([MetaTables#33](https://github.com/mainsequence-projects/MetaTables/issues/33)).
 - Local development applies the provider with
   `metatables --local migrations upgrade --provider etfhextractor_migrations:migration head`.
 - Nothing migrates at import or start-up. The package has no API, lifespan or start-up hook;

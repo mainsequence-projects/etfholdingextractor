@@ -18,10 +18,11 @@
 - CodeRepository UID: `2b634665-d3c0-4cf4-a8ed-f4446eba7891`
 - CodeRepositoryBranch UID for `main`: `41ddaf20-9077-4e42-bc24-cace28efd5d7`
 - Python: `3.13`
-- Main Sequence SDK: `>=9.0.6,<10` (locked and verified with `9.0.6`)
+- Main Sequence SDK: `>=9.0.6,<10` (locked with `9.0.6`; offline checks only, local proof
+  pending)
 - MetaTables client: `mainsequence-metatable>=0.1.20,<0.2` (import and CLI `metatables`; locked
-  and verified with `0.1.20`)
-- ms-markets: `>=2.2.5,<3` (locked and verified with `2.2.5`)
+  with `0.1.20`; offline checks only, local proof pending)
+- ms-markets: `>=2.2.5,<3` (locked with `2.2.5`; offline checks only, local proof pending)
 - Deployment: none. No `.mainsequence/workflows/` file and no migration Job.
 - Migration namespace: `etfhextractor`
 - Alembic head: `0001`
@@ -41,6 +42,9 @@
   Hosted runtimes are migrated only by the migration Job of the application that deploys code
   using `DemoBarsTS`; this repository never applies the ms-markets provider
   (implementation task 0007). The old `mainsequence migrations` commands are gone.
+- A consumer that locks 0.4.3 (`mainsequence-metatable` 0.1.20) needs its Environment's hosted
+  MetaTables API on 0.1.19 or later before it pushes; the 0.1.20 client rejects an older API's
+  runtime context, so the migration Job fails before migrating (MetaTables#33).
 - The portfolio builder owns calendar, signal, Portfolio row, configuration, and
   `PortfoliosDataNode` assembly but never guesses or owns the caller's price source.
 - MetaTable schema is migration-owned; runtime attachment does not create it.

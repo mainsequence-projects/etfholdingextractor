@@ -415,6 +415,13 @@ Since MetaTables 0.1.14 a hosted runtime is migrated only from a deployment work
   in its own migration Job. That Job does not apply the ms-markets provider: the ms-markets
   deployment migrates the ms-markets schema, which `DemoBarsTS` references by foreign key.
   Nobody runs a hosted upgrade or downgrade by hand.
+
+  Since 0.4.3 this package requires `mainsequence-metatable` 0.1.20, so the Environment's hosted
+  MetaTables API must run 0.1.19 or later before a consumer that locks it pushes. The 0.1.20
+  client rejects the runtime context of an older API, which still sends the runtime-switch
+  fields that 0.1.19 removed: the consumer's migration Job fails before it migrates anything
+  ([MetaTables#33](https://github.com/mainsequence-projects/MetaTables/issues/33)), and every
+  other call the library or the examples make against that API fails the same way.
 - **Local development.** Use the laptop's local MetaTables runtime (local SQLite) through the
   `metatables` CLI installed by `mainsequence-metatable`:
 

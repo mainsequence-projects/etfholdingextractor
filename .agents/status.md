@@ -35,6 +35,14 @@
   managed AGENTS.md block was regenerated (already current), all offline. Platform-owned skills
   (`.agents/skills/mainsequence_platform/`) are not installed, because that update needs a
   signed-in session.
+- Read in the MetaTables source: the 0.1.20 client validates `/runtime-context/` against a
+  `RuntimeContext` that forbids extra fields, and an API on 0.1.18 or older still sends
+  `runtime_switch_available`, `runtime_switch_error` and `hosted_environment_target`. A consumer
+  that locks 0.4.3 therefore needs its Environment's hosted MetaTables API on 0.1.19 or later
+  before it pushes, or its migration Job fails before migrating
+  ([MetaTables#33](https://github.com/mainsequence-projects/MetaTables/issues/33)). README,
+  `docs/library.md`, `examples/README.md`, the CHANGELOG, implementation task 0007 and the
+  publish task say so.
 - Product code passes no `data_source_uid`, so msm SQL takes the DataSource and dialect from the
   MetaTables runtime of the caller's Organization Environment (implementation task 0006,
   "Runtime DataSource").
@@ -57,7 +65,11 @@
 - Re-run the local migration proof on MetaTables 0.1.20 and ms-markets 2.2.5 (implementation
   task 0007, "Re-run on MetaTables 0.1.20"). On 2026-10-04 the local API could not start: its
   worker resolves the developer through the platform before it reports ready, and the local
-  Main Sequence backend did not answer.
+  Main Sequence backend did not answer. A later check the same day (`/api/v1/users/me/`,
+  10-second timeout) still got no answer.
+- Publishing: the local annotated tag `v0.4.3` still points at `ceabfb9`, the commit with the
+  SDK 9.0.5, MetaTables 0.1.18 and ms-markets 2.2.2 floors, and is not on origin. Move it to the
+  merged commit before pushing it (`.agents/tasks.md`, "Publish 0.4.3 and refresh consumers").
 - No hosted state was read or migrated in this pass.
 - The full example has not run against a local runtime (`--local`); it needs live iShares and
   OpenFIGI calls.

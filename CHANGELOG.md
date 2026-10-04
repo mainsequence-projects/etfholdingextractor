@@ -16,6 +16,11 @@ their Git tags and by the implementation tasks in `docs/implementation_task/`.
     directory, so commits and branch switches no longer need an API restart; it also removes the
     launcher's Local/Hosted switch. 0.1.20 requires SDK 9.0.6 and retries runtime-access
     requests that time out.
+  - Before a consumer that locks 0.4.3 pushes, its Environment's hosted MetaTables API must run
+    0.1.19 or later. The 0.1.20 client rejects the runtime context of an older API, which still
+    sends the runtime-switch fields that 0.1.19 removed, so the consumer's migration Job fails
+    before it migrates anything
+    ([MetaTables#33](https://github.com/mainsequence-projects/MetaTables/issues/33)).
   - SDK 9.0.6 retries only read-only requests, within one timeout budget, and never replays a
     write; caller verification no longer needs a `server` extra. This package has no retry logic
     of its own and installs no extra.

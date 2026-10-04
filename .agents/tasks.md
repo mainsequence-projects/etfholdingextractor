@@ -7,11 +7,20 @@
 - Merge the 0.4.3 branch, tag `v0.4.3`, and publish with a plain `git push`. Since SDK 9.0.5,
   `mainsequence code-repository sync` only refreshes local dependencies; it does not bump, tag,
   commit or push.
+- The tag already exists locally and is stale: an annotated `v0.4.3` from 2026-10-03 points at
+  `ceabfb9`, which still requires `mainsequence>=9.0.5`, `mainsequence-metatable>=0.1.18` and
+  `ms-markets>=2.2.2`. It is not on origin, whose latest tag is `v0.4.2`. After the merge, move
+  it with `git tag -f -a v0.4.3 -m v0.4.3 <merged commit>`, check that
+  `git show v0.4.3:pyproject.toml` requires `mainsequence>=9.0.6`,
+  `mainsequence-metatable>=0.1.20` and `ms-markets>=2.2.5`, and only then push it.
 - Update consumer locks (e.g. Alpaca Connectors: `uv lock --upgrade-package etfhextractor`).
   Locking 0.4.3 also moves a consumer to `mainsequence>=9.0.6`,
   `mainsequence-metatable>=0.1.20` and `ms-markets>=2.2.5`. An application that deploys code
   reading or writing `DemoBarsTS` lists `etfhextractor_migrations:migration` in its own
-  migration Job.
+  migration Job. The consumer's Environment must run its hosted MetaTables API on 0.1.19 or
+  later before the consumer pushes, or its migration Job fails before migrating: the 0.1.20
+  client rejects an older API's runtime context
+  ([MetaTables#33](https://github.com/mainsequence-projects/MetaTables/issues/33)).
 - Install the platform-owned skills under `.agents/skills/mainsequence_platform/` with the
   authenticated `mainsequence code-repository update-platform-skills --path .` if the owner asks
   for it.

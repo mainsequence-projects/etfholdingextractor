@@ -51,7 +51,9 @@ The runtime is either:
   only by a deployment workflow's migration Job, never by this example. etfholdingextractor has
   no deployment, so `DemoBarsTS` must already have been applied by the application that deploys
   code using it: that application lists `etfhextractor_migrations:migration` in its own
-  migration Job.
+  migration Job. The Environment's MetaTables API must run 0.1.19 or later, because the
+  `mainsequence-metatable` 0.1.20 client rejects an older API's runtime context
+  ([MetaTables#33](https://github.com/mainsequence-projects/MetaTables/issues/33)).
 
 Everything else is handled by the example itself on the default run:
 

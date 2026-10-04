@@ -15,6 +15,17 @@
 - The local migration proof on 0.1.20 could not run: the local API resolves the developer
   through the platform at startup, and the local backend did not answer. The 2026-10-03 proof on
   0.1.18 stands; the re-run is pending. Nothing ran against a hosted runtime.
+- Documented the hosted prerequisite of the 0.1.20 lock. The 0.1.20 client rejects the runtime
+  context of a MetaTables API on 0.1.18 or older (`RuntimeContext` forbids the runtime-switch
+  fields such an API still sends), so a consumer that locks 0.4.3 needs its Environment's hosted
+  MetaTables API on 0.1.19 or later before it pushes (MetaTables#33). README,
+  `docs/library.md`, `examples/README.md`, the CHANGELOG, implementation task 0007 and the
+  publish task now say so.
+- The publish task now says that the local annotated tag `v0.4.3` points at `ceabfb9`, which
+  still has the SDK 9.0.5, MetaTables 0.1.18 and ms-markets 2.2.2 floors, and must move to the
+  merged commit before it is pushed. No tag was created or moved.
+- The record no longer calls the 9.0.6, 0.1.20 and 2.2.5 locks verified: only offline checks ran.
+  The local backend still did not answer, so the local proof stays pending.
 
 ## 2026-10-03
 
