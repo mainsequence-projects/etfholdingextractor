@@ -25,9 +25,9 @@ classifiers = [
 ]
 dependencies = [
     "certifi>=2024.2.2",
-    "mainsequence>=9.0.5,<10",
-    "mainsequence-metatable>=0.1.18,<0.2",
-    "ms-markets>=2.2.2,<3",
+    "mainsequence>=9.0.6,<10",
+    "mainsequence-metatable>=0.1.20,<0.2",
+    "ms-markets>=2.2.5,<3",
     "pandas-market-calendars>=5.4.0",
 ]
 
