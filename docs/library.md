@@ -416,12 +416,25 @@ Since MetaTables 0.1.14 a hosted runtime is migrated only from a deployment work
   deployment migrates the ms-markets schema, which `DemoBarsTS` references by foreign key.
   Nobody runs a hosted upgrade or downgrade by hand.
 
-  Since 0.4.3 this package requires `mainsequence-metatable` 0.1.20, so the Environment's hosted
-  MetaTables API must run 0.1.19 or later before a consumer that locks it pushes. The 0.1.20
-  client rejects the runtime context of an older API, which still sends the runtime-switch
-  fields that 0.1.19 removed: the consumer's migration Job fails before it migrates anything
-  ([MetaTables#33](https://github.com/mainsequence-projects/MetaTables/issues/33)), and every
-  other call the library or the examples make against that API fails the same way.
+  Since 0.4.4 this package requires `mainsequence-metatable` 0.1.34, the client a consumer's
+  migration Job then runs. Before that consumer pushes:
+  - the Environment's hosted MetaTables API must run 0.1.32 or later. Since 0.1.32 the client
+    sends changed table and column descriptions and labels with finalization
+    (`authored_metadata`), even at an unchanged revision, and an older API rejects the field.
+    MetaTables runs 0.1.34 in Production and development (checked 2026-10-11);
+  - the migration Job declares `access.branches: [{repository: MetaTables, level: view}]`, without
+    which it cannot discover the MetaTables API;
+  - one Team per Environment owns the provider's tables (MetaTables 0.1.27): it has Writer on the
+    `etfhextractor` namespace, where both `DemoBarsTS` and the version table are registered, and
+    its members are the migration Job's workload User and the workload User of every resource
+    that reads or writes `DemoBarsTS`. Without it the Job fails with `403`
+    `namespace_not_writable` or `table_not_editable`. A namespace registered before its Team
+    existed may list only a retired workload User as Writer; an Organization admin grants the
+    Team Writer on it.
+
+  The 0.1.19 prerequisite of 0.4.3 is gone: MetaTables 0.1.21 made the client ignore
+  runtime-context fields it does not know, so either side can be upgraded first
+  ([MetaTables#33](https://github.com/mainsequence-projects/MetaTables/issues/33)).
 - **Local development.** Use the laptop's local MetaTables runtime (local SQLite) through the
   `metatables` CLI installed by `mainsequence-metatable`:
 
@@ -446,6 +459,13 @@ Since MetaTables 0.1.14 a hosted runtime is migrated only from a deployment work
   `mainsequence-metatable` 0.1.17 or later) that schema applies to a fresh local runtime; the
   [ms-markets getting-started guide](https://mainsequence-projects.github.io/MainSequenceMarkets/getting-started/#first-market-setup)
   shows how. This package never applies the ms-markets provider.
+
+  With ms-markets 2.2.10 a local SQLite runtime cannot yet run the asset-writing workflows end to
+  end: inserting Asset rows, keeping `HOLDINGS__<ETF>` memberships and the final portfolio
+  pointer update fail there, because of ms-markets defects in its SQLite path. Migrations, demo
+  bars, the signal, portfolio values and weights work. Implementation task
+  [0007](implementation_task/0007-deployment-job-migrations.md) ("Local end-to-end run on
+  0.4.4") has the details.
 - **Never at start-up.** The library, the `etfh` CLI and the examples never migrate on import or
   start-up; runtime code only attaches with `msm.start_engine(models=[...])`.
 - **Backward-compatible revisions.** Applied revisions are immutable: never edit a revision ID or

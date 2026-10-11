@@ -4,8 +4,8 @@
 [![Version](https://img.shields.io/badge/version-0.4.3-blue.svg)](pyproject.toml)
 [![Python](https://img.shields.io/badge/python-3.13-blue.svg)](pyproject.toml)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
-[![ms-markets](https://img.shields.io/badge/ms--markets-%3E%3D2.2.5%2C%3C3-black.svg)](pyproject.toml)
-[![Tests](https://img.shields.io/badge/tests-96%20passing-green.svg)](tests/)
+[![ms-markets](https://img.shields.io/badge/ms--markets-%3D%3D2.2.10-black.svg)](pyproject.toml)
+[![Tests](https://img.shields.io/badge/tests-101%20passing-green.svg)](tests/)
 [![Maintained](https://img.shields.io/badge/maintained-actively-green.svg)](docs/)
 
 `etfhextractor` turns provider-published ETF holdings into Main Sequence / ms-markets
@@ -37,9 +37,10 @@ kept out of `__init__` so pure extraction never loads the msm_portfolios stack).
 
 - Current package version: `0.4.3`
 - Python: `>=3.13,<3.14`
-- Key dependencies: `mainsequence >=9.0.6,<10` (identity, secrets, logging),
-  `mainsequence-metatable >=0.1.20,<0.2` (the MetaTables client, imported as `metatables`),
-  `ms-markets >=2.2.5,<3` (typed MetaTable rows; obligatory-calendar portfolio architecture),
+- Key dependencies: `mainsequence >=9.0.22,<10` (identity, secrets, logging),
+  `mainsequence-metatable >=0.1.34,<0.2` (the MetaTables client, imported as `metatables`),
+  `ms-markets ==2.2.10` (typed MetaTable rows; obligatory-calendar portfolio architecture;
+  pinned to the release the deployed MainSequence Markets runs),
   `pandas-market-calendars` (trading sessions)
 - License: [Apache License 2.0](LICENSE)
 - Documentation: [docs/library.md](docs/library.md) · [docs/reader.md](docs/reader.md) ·
@@ -135,10 +136,17 @@ its single table `DemoBarsTS` (the example's demo price source; version table
   deploys code using `DemoBarsTS` applies `etfhextractor_migrations:migration` in its own
   migration Job (`metatables.upgrade_application("etfhextractor_migrations:migration")`). The
   ms-markets schema, which `DemoBarsTS` references by foreign key, is migrated by the ms-markets
-  deployment, not by this package or its consumers. Because this package requires
-  `mainsequence-metatable` 0.1.20, the Environment's hosted MetaTables API must run 0.1.19 or
-  later before a consumer that locks it pushes: the 0.1.20 client rejects an older API's
-  runtime context, so that consumer's migration Job would fail before it migrates anything
+  deployment, not by this package or its consumers. A consumer that locks this package runs its
+  migration Job with `mainsequence-metatable` 0.1.34, so before it pushes:
+  - the Environment's hosted MetaTables API runs 0.1.32 or later (it runs 0.1.34 in Production
+    and development); older APIs reject the table metadata the client sends with finalization;
+  - the migration Job declares `access.branches: [{repository: MetaTables, level: view}]`;
+  - the Team that owns the `etfhextractor` namespace in that Environment has Writer on it, and its
+    members include the Job's workload User and every workload that reads or writes `DemoBarsTS`.
+    Otherwise registration fails with `403` `namespace_not_writable` or `table_not_editable`.
+
+  The 0.1.19 requirement of 0.4.3 no longer applies: since MetaTables 0.1.21 the client ignores
+  runtime-context fields it does not know
   ([MetaTables#33](https://github.com/mainsequence-projects/MetaTables/issues/33)).
 - **Local development** uses the laptop's local MetaTables runtime (local SQLite):
 

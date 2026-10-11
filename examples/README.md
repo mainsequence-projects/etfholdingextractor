@@ -47,13 +47,24 @@ The runtime is either:
   [ms-markets getting-started guide](https://mainsequence-projects.github.io/MainSequenceMarkets/getting-started/#first-market-setup)
   shows how.
 
+  With ms-markets 2.2.10 the full `--local` run does not finish on local SQLite yet. FIGI
+  registration fails on the first new Asset row: ms-markets creates
+  `ms_markets__interpolatedpricests` without registering it, and the local API refuses the
+  foreign-key check that reads it. With that table imported into the local catalog, the run gets
+  further: the `HOLDINGS__<ETF>` memberships are deleted right after they are written, and the
+  portfolio run writes its signal, value and weight rows but then fails updating the
+  `Portfolio` row's pointers. `prepare_demo_bars_schema.py --local` and demo bars are
+  unaffected. Implementation task
+  [0007](../docs/implementation_task/0007-deployment-job-migrations.md) ("Local end-to-end run
+  on 0.4.4") has the details.
+
 - **hosted** (no flag): your Environment's MetaTables runtime. Hosted runtimes are migrated
   only by a deployment workflow's migration Job, never by this example. etfholdingextractor has
   no deployment, so `DemoBarsTS` must already have been applied by the application that deploys
   code using it: that application lists `etfhextractor_migrations:migration` in its own
-  migration Job. The Environment's MetaTables API must run 0.1.19 or later, because the
-  `mainsequence-metatable` 0.1.20 client rejects an older API's runtime context
-  ([MetaTables#33](https://github.com/mainsequence-projects/MetaTables/issues/33)).
+  migration Job. The Environment's MetaTables API must run 0.1.32 or later, because the
+  `mainsequence-metatable` 0.1.34 client sends table metadata with finalization that older APIs
+  reject; it runs 0.1.34 in Production and development.
 
 Everything else is handled by the example itself on the default run:
 
