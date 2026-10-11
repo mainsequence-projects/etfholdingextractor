@@ -2,35 +2,41 @@
 
 ## Open
 
-### Publish 0.4.3 and refresh consumers
+### Publish 0.4.4 and refresh consumers
 
-- Merge the 0.4.3 branch, tag `v0.4.3`, and publish with a plain `git push`. Since SDK 9.0.5,
+- Publish with a plain `git push` of `main`, then tag the pushed commit with an annotated
+  `v0.4.4` (message `v0.4.4`, like earlier tags) and push that tag on its own. Since SDK 9.0.5,
   `mainsequence code-repository sync` only refreshes local dependencies; it does not bump, tag,
-  commit or push.
-- The tag already exists locally and is stale: an annotated `v0.4.3` from 2026-10-03 points at
-  `ceabfb9`, which still requires `mainsequence>=9.0.5`, `mainsequence-metatable>=0.1.18` and
-  `ms-markets>=2.2.2`. It is not on origin, whose latest tag is `v0.4.2`. After the merge, move
-  it with `git tag -f -a v0.4.3 -m v0.4.3 <merged commit>`, check that
-  `git show v0.4.3:pyproject.toml` requires `mainsequence>=9.0.6`,
-  `mainsequence-metatable>=0.1.20` and `ms-markets>=2.2.5`, and only then push it.
-- Update consumer locks (e.g. Alpaca Connectors: `uv lock --upgrade-package etfhextractor`).
-  Locking 0.4.3 also moves a consumer to `mainsequence>=9.0.6`,
-  `mainsequence-metatable>=0.1.20` and `ms-markets>=2.2.5`. An application that deploys code
-  reading or writing `DemoBarsTS` lists `etfhextractor_migrations:migration` in its own
-  migration Job. The consumer's Environment must run its hosted MetaTables API on 0.1.19 or
-  later before the consumer pushes, or its migration Job fails before migrating: the 0.1.20
-  client rejects an older API's runtime context
-  ([MetaTables#33](https://github.com/mainsequence-projects/MetaTables/issues/33)).
+  commit or push. Check that `git show v0.4.4:pyproject.toml` has version `0.4.4`.
+- 0.4.3 was never published: origin's latest tag is `v0.4.2`. A local annotated `v0.4.3` points
+  at `e925fa3` and must not be pushed.
+- Re-pin consumers. Alpaca Connectors names the Git source without a revision in
+  `[tool.uv.sources]`; pin it to the tag
+  (`etfhextractor = { git = "https://github.com/mainsequence-projects/etfholdingextractor", tag = "v0.4.4" }`),
+  run `uv lock --upgrade-package etfhextractor` and regenerate its `requirements.txt`. Locking
+  0.4.4 also requires `mainsequence>=9.0.22`, `mainsequence-metatable>=0.1.34` and exactly
+  ms-markets 2.2.10.
+- An application that deploys code reading or writing `DemoBarsTS` lists
+  `etfhextractor_migrations:migration` in its own migration Job. Before it pushes, its
+  Environment's hosted MetaTables API must run 0.1.32 or later, the Job needs MetaTables view
+  access, and the Team that owns the `etfhextractor` namespace needs Writer on it with the Job's
+  workload User as a member. Alpaca Connectors does not use `DemoBarsTS` today, so it does not
+  need the provider.
 - Install the platform-owned skills under `.agents/skills/mainsequence_platform/` with the
   authenticated `mainsequence code-repository update-platform-skills --path .` if the owner asks
-  for it.
+  for it. Refresh the managed AGENTS.md block
+  (`mainsequence code-repository update AGENTS.md --path .`) when asked; the 9.0.22 block differs
+  by one routing line.
 
-### Local example run against the real ms-markets schema
+### ms-markets defects on local SQLite
 
-- The provider is proven against the real ms-markets 2.2.2 schema on a MetaTables 0.1.18 local
-  runtime (implementation task 0007). Still open: run
-  `python examples/ivv_tracking_portfolio_full_workflow.py --local` against a local runtime that
-  holds the ms-markets tables. It needs live iShares and OpenFIGI calls.
+- Report to ms-markets, with the reproductions in implementation task 0007 ("Local end-to-end
+  run on 0.4.4"): `ms_markets__interpolatedpricests` is created by `0018` but never registered,
+  so Asset inserts are refused on local SQLite; `replace_memberships` binds the `NOT IN` asset
+  UIDs as dashed strings and deletes what it upserted; `PortfoliosDataNode` upserts `str` UUIDs
+  into `Uuid` columns when it updates the Portfolio pointers.
+- After a fix, run `python examples/ivv_tracking_portfolio_full_workflow.py --local` against a
+  local runtime that holds the ms-markets tables (it needs live iShares and OpenFIGI calls).
 
 ### Signal validity under ms-markets 2.x
 
@@ -44,6 +50,15 @@
 - Run `etfh portfolio-publish`, then verify signal, value, and weight rows plus the Portfolio row.
 
 ## Completed
+
+### Move to SDK 9.0.22, MetaTables 0.1.34 and ms-markets 2.2.10 (0.4.4)
+
+- Required `mainsequence` 9.0.22 and `mainsequence-metatable` 0.1.34, pinned ms-markets 2.2.10
+  exactly, relocked, refreshed the SDK, `metatables` and ms-markets skills, and pinned the
+  provider identity with `tests/test_provider_identity.py`. Replaced the 0.1.19 hosted
+  prerequisite with the 0.1.32 API floor, MetaTables view access and the namespace Team. The
+  local migration proof passed on 0.1.34 and ms-markets 2.2.10 on 2026-10-11, and a local
+  end-to-end run found three ms-markets SQLite defects (implementation task 0007).
 
 ### Move to SDK 9.0.6, MetaTables 0.1.20 and ms-markets 2.2.5 (0.4.3)
 

@@ -3,7 +3,70 @@
 All notable changes to `etfhextractor` are recorded here. Earlier releases are described by
 their Git tags and by the implementation tasks in `docs/implementation_task/`.
 
-## [0.4.3] - 2026-10-04
+## [0.4.4] - 2026-10-11
+
+The first release after 0.4.2. It also ships everything listed under 0.4.3, which was never
+published.
+
+### Changed
+
+- Require `mainsequence>=9.0.22,<10` and `mainsequence-metatable>=0.1.34,<0.2`, and pin
+  `ms-markets==2.2.10`, the release the deployed MainSequence Markets runs. A consumer that locks
+  this package resolves exactly ms-markets 2.2.10; moving Markets needs a new release.
+  `requires-python` stays `>=3.13,<3.14`. `uv.lock` resolves 9.0.22, 0.1.34 and 2.2.10, and
+  `requirements.txt` was regenerated from it. The MetaTables client now requires
+  `mainsequence[mcp]` and `fastembed`, so `mcp`, `onnxruntime`, `tokenizers` and
+  `huggingface-hub` are new transitive dependencies.
+- Hosted prerequisites for a consumer's migration Job, which now runs the 0.1.34 client:
+  - the Environment's MetaTables API must run 0.1.32 or later, because the client sends changed
+    table and column metadata with finalization and older APIs reject it. MetaTables runs 0.1.34
+    in Production and development;
+  - the Job declares view access to the MetaTables repository;
+  - the Team that owns the `etfhextractor` namespace in that Environment (MetaTables 0.1.27) has
+    Writer on it, with the Job's workload User and every workload that reads or writes
+    `DemoBarsTS` as members.
+
+  The 0.1.19 prerequisite of 0.4.3 is gone: MetaTables 0.1.21 made the client ignore
+  runtime-context fields it does not know
+  ([MetaTables#33](https://github.com/mainsequence-projects/MetaTables/issues/33)).
+- ms-markets 2.2.6 to 2.2.10 add revisions `0019` and `0020` to the ms-markets history, which
+  the ms-markets deployment applies; this package's provider and models are unchanged. All 63
+  imports from `msm`, `msm_portfolios`, `metatables` and `mainsequence` resolve on the new
+  stack, and `python -m metatables.sdk_compat` passes on SDK 9.0.22.
+- Refreshed the vendored skills: SDK 9.0.22 (`.agents/skills/mainsequence/`), `metatables`
+  0.1.34, which adds `metatables-table-discovery`, and ms-markets 2.2.10. The managed AGENTS.md
+  block was not regenerated; 9.0.22 changes one routing line in it, and that update is explicit.
+
+### Added
+
+- `tests/test_provider_identity.py`, which pins the provider's package, namespace, provider key,
+  locations, model, version table and single revision `0001`, `DemoBarsTS`'s identifier,
+  physical table, foreign key and unique index, and checks that the models still produce exactly
+  revision `0001` on SQLite and PostgreSQL.
+- The local migration proof re-run on MetaTables 0.1.34 with ms-markets 2.2.10 and SDK 9.0.22,
+  and a local end-to-end run of the library, both recorded in implementation task
+  [0007](docs/implementation_task/0007-deployment-job-migrations.md).
+
+### Known issues
+
+On a local SQLite runtime, three ms-markets 2.2.10 defects stop the asset-writing workflows:
+Asset inserts are refused, `HOLDINGS__<ETF>` memberships are deleted right after they are
+written, and a portfolio run fails on its final `Portfolio` pointer update after writing its
+rows. They are in ms-markets (present in 2.2.5 too) and are described in implementation task
+0007, "Local end-to-end run on 0.4.4".
+
+### Unchanged
+
+- The provider `etfhextractor_migrations:migration`: package and namespace `etfhextractor`,
+  provider key `etfhextractor:etfhextractor`, version table
+  `etfhextractor_markets__alembic_version`, revision `0001`.
+- `DemoBarsTS` (`etfhextractor.DemoBarsTS`, `etfhextractor_markets__demobarsts`) and its
+  `ON DELETE RESTRICT` foreign key to the ms-markets Asset table.
+- Every public name of the library, the `etfh` CLI and the agent card's skills.
+
+## [0.4.3] - 2026-10-04 (not published)
+
+Never tagged on origin; these changes were first released in 0.4.4.
 
 ### Changed
 

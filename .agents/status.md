@@ -2,10 +2,11 @@
 
 ## Verified
 
-- Release version is `0.4.3`; runtime is Python `3.13`. `pyproject.toml` declares
-  `mainsequence>=9.0.6,<10`, `mainsequence-metatable>=0.1.20,<0.2` and `ms-markets>=2.2.5,<3`;
-  `uv.lock` resolves 9.0.6, 0.1.20 and 2.2.5, and `requirements.txt` was regenerated from it
-  (implementation task 0007).
+- Release version is `0.4.4`, the first release after 0.4.2; 0.4.3 was never published. Runtime
+  is Python `3.13`. `pyproject.toml` declares `mainsequence>=9.0.22,<10`,
+  `mainsequence-metatable>=0.1.34,<0.2` and `ms-markets==2.2.10` (the release the deployed
+  MainSequence Markets runs); `uv.lock` resolves 9.0.22, 0.1.34 and 2.2.10, and
+  `requirements.txt` was regenerated from it (implementation task 0007).
 - Migrations follow the MetaTables deployment-Job rule, introduced in 0.1.14. This repository
   has no deployment and no workflow file; the application that deploys code using `DemoBarsTS`
   applies `etfhextractor_migrations:migration` in its own migration Job, and local development
@@ -16,44 +17,48 @@
   The full workflow example has `--local` and no longer cites the generic top-level
   `migrations` provider.
 - The migration provider owns only `etfhextractor_markets__demobarsts`, with the version table
-  `etfhextractor_markets__alembic_version`, revision `0001`, and explicit package-local
-  `script_location` and `version_location_prefix`. `AssetTable` remains in the metadata solely
-  to close the foreign-key graph and is excluded from provider DDL.
+  `etfhextractor_markets__alembic_version`, revision `0001`, provider key
+  `etfhextractor:etfhextractor`, and explicit package-local `script_location` and
+  `version_location_prefix`. `AssetTable` remains in the metadata solely to close the
+  foreign-key graph and is excluded from provider DDL. `tests/test_provider_identity.py` pins
+  this identity and checks, on SQLite and PostgreSQL, that the models still produce exactly
+  revision `0001` on the installed stack.
 - `DemoBarsTS` keeps `ON DELETE RESTRICT` on its asset key, the action it was authored with and
   the one ms-markets' own asset-keyed time-series tables use. MetaTables 0.1.17 and later allow
   cascading foreign keys, and 0.1.18 makes write on a table depend only on its own grants.
-- On 2026-10-03, on an isolated local SQLite runtime with MetaTables 0.1.18 (system revision
-  `0010_cascade_targets`), the ms-markets 2.2.2 schema was applied first as a local-only
-  prerequisite (62 tables active). Then `0001` applied and both provider tables finalized
-  active; `migrations current` reported `0001 (head)` and a repeated upgrade was a no-op. The
-  catalog rows were active, and `get_impact(action="delete_rows")` on `ms_markets__asset`
-  reported the `DemoBarsTS` foreign key as a `restrict` edge and no blockers. The schema-prep
-  example passed with `--local` and `--local --check-only`, and
-  `upgrade_application("etfhextractor_migrations:migration")` through `configure_local_client()`
-  was a no-op.
-- On 2026-10-04 the same proof passed on MetaTables 0.1.20 with ms-markets 2.2.5 and SDK 9.0.6,
-  against the development backend, on a fresh isolated local SQLite runtime with its own local
-  API (stopped afterwards). System revision `0010_cascade_targets`; ms-markets `0018 (head)` with
-  62 tables active; `0001` applied with 2 tables finalized and active (0 reserved, 0 failed),
-  `migrations current` reported `0001 (head)` and a repeated upgrade was a no-op. All 64 catalog
-  rows were active. `get_impact(action="delete_rows")` on `ms_markets__asset` reported no
-  blockers and 34 edges (6 `cascade_delete`, 28 `restrict`), with the `DemoBarsTS` foreign key a
-  `restrict` edge. Both schema-prep runs passed, and
+- The local migration proof passed on 2026-10-03 (MetaTables 0.1.18, ms-markets 2.2.2) and
+  2026-10-04 (0.1.20, 2.2.5), each on a fresh isolated local SQLite runtime.
+- On 2026-10-11 it passed on MetaTables 0.1.34 with ms-markets 2.2.10 and SDK 9.0.22, against the
+  development backend, on a fresh isolated runtime with its own local API on a free port
+  (scratch storage directory and configuration; stopped afterwards; the laptop's shared local
+  API and runtime file untouched). System revision `0012_table_creator`; ms-markets
+  `0020 (head) (mergepoint)` with 62 tables active; `0001` applied with 2 tables finalized and
+  active (0 reserved, 0 failed), `migrations current` reported `0001 (head)` and a repeated
+  upgrade was a no-op. All 64 catalog rows were active. `get_impact(action="delete_rows")` on
+  `ms_markets__asset` reported no blockers and 34 edges (6 `cascade_delete`, 28 `restrict`), with
+  the `DemoBarsTS` foreign key a `restrict` edge. Both schema-prep runs passed, and
   `upgrade_application("etfhextractor_migrations:migration")` through `configure_local_client()`
   reported `0001`, `migrated: False` and 2 active tables (implementation task 0007, "Re-run on
-  MetaTables 0.1.20").
-- The SDK 9.0.6, `metatables` 0.1.20 and ms-markets 2.2.5 skill bundles are copied and the
-  managed AGENTS.md block was regenerated (already current), all offline. Platform-owned skills
-  (`.agents/skills/mainsequence_platform/`) are not installed, because that update needs a
-  signed-in session.
-- Read in the MetaTables source: the 0.1.20 client validates `/runtime-context/` against a
-  `RuntimeContext` that forbids extra fields, and an API on 0.1.18 or older still sends
-  `runtime_switch_available`, `runtime_switch_error` and `hosted_environment_target`. A consumer
-  that locks 0.4.3 therefore needs its Environment's hosted MetaTables API on 0.1.19 or later
-  before it pushes, or its migration Job fails before migrating
-  ([MetaTables#33](https://github.com/mainsequence-projects/MetaTables/issues/33)). README,
-  `docs/library.md`, `examples/README.md`, the CHANGELOG, implementation task 0007 and the
-  publish task say so.
+  MetaTables 0.1.34").
+- On the same runtime the library ran end to end with fixtures replacing only the provider
+  extraction and OpenFIGI: one shared runtime for the portfolio and category paths (36 models,
+  `DemoBarsStorage` attached), FIGI registration and ticker resolution, category planning, the
+  NYSE calendar, 375 demo bars, and a portfolio update that wrote 3 signal-weight rows on the
+  backtest-bootstrap close, 42 value rows and 3 weight rows, with no new rows on re-runs. Three
+  ms-markets 2.2.10 defects on local SQLite stopped the rest: Asset inserts are refused (an
+  unbound `ms_markets__interpolatedpricests`; worked around in the scratch catalog only),
+  `replace_memberships` deletes what it upserted, and the portfolio pointer upsert fails after
+  the rows are written (implementation task 0007, "Local end-to-end run on 0.4.4").
+- The SDK 9.0.22, `metatables` 0.1.34 and ms-markets 2.2.10 skill bundles are copied, offline.
+  The managed AGENTS.md block was not regenerated: the 9.0.22 block differs by one routing line,
+  and that update is explicit. Platform-owned skills (`.agents/skills/mainsequence_platform/`)
+  are not installed, because that update needs a signed-in session.
+- Read in the MetaTables source: since 0.1.21 the runtime-context models ignore unknown fields
+  (MetaTables#33), so the 0.1.19 prerequisite of 0.4.3 is gone; since 0.1.32 the client sends
+  `authored_metadata` with finalization, which an API before 0.1.32 rejects. A consumer that
+  locks 0.4.4 therefore needs its Environment's hosted MetaTables API on 0.1.32 or later (it runs
+  0.1.34 in Production and development), MetaTables view access on its migration Job, and the
+  Team that owns the `etfhextractor` namespace with that Job's workload User as a member.
 - Product code passes no `data_source_uid`, so msm SQL takes the DataSource and dialect from the
   MetaTables runtime of the caller's Organization Environment (implementation task 0006,
   "Runtime DataSource").
@@ -66,19 +71,20 @@
 
 ## Validation
 
-- Full pytest suite: 96 passed, offline.
+- Full pytest suite: 101 passed, offline.
 - `ruff check --no-fix .` passed. Vendored `.agents/` skills are excluded from ruff.
-- `python -m metatables.sdk_compat` passed (distribution 9.0.6).
-- All 51 distinct `msm` and `msm_portfolios` imports resolve on ms-markets 2.2.5.
+- `python -m metatables.sdk_compat` passed (distribution 9.0.22).
+- All 63 distinct `msm`, `msm_portfolios`, `metatables` and `mainsequence` imports resolve on the
+  new stack.
 
 ## Pending
 
-- Publishing: the local annotated tag `v0.4.3` still points at `ceabfb9`, the commit with the
-  SDK 9.0.5, MetaTables 0.1.18 and ms-markets 2.2.2 floors, and is not on origin. Move it to the
-  merged commit before pushing it (`.agents/tasks.md`, "Publish 0.4.3 and refresh consumers").
+- Publishing 0.4.4: push, then tag the pushed commit `v0.4.4` and push that tag on its own
+  (`.agents/tasks.md`, "Publish 0.4.4 and refresh consumers"). The local annotated tag `v0.4.3`
+  points at `e925fa3`, is not on origin and must not be pushed.
 - No hosted state was read or migrated in this pass.
-- The full example has not run against a local runtime (`--local`); it needs live iShares and
-  OpenFIGI calls.
-- Exercise live msm SQL (category sync, ticker resolution, FIGI registration checks) under SDK 9.
+- The three ms-markets defects above block the full example with `--local` on local SQLite.
+- Live provider extraction and OpenFIGI were not exercised, and live msm SQL (category sync,
+  ticker resolution, FIGI registration) is still unverified on a hosted runtime under SDK 9.
 - A live portfolio `node.run()` still requires a caller-owned registered price source and a fully
   registered component universe.

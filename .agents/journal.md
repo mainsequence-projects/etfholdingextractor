@@ -1,5 +1,34 @@
 # Journal
 
+## 2026-10-11
+
+- Prepared 0.4.4 on top of the unpublished 0.4.3 commits: `mainsequence` 9.0.22,
+  `mainsequence-metatable` 0.1.34 and exactly ms-markets 2.2.10, the release the deployed
+  MainSequence Markets runs. Relocked with `uv lock --upgrade-package` for the three packages
+  (nothing else moved) and regenerated `requirements.txt`. 96 tests passed on the old lock and on
+  the new one before any other change.
+- Refreshed the SDK 9.0.22, `metatables` 0.1.34 and ms-markets 2.2.10 skills offline and kept
+  the package-relative `skills_path`. Did not regenerate the managed AGENTS.md block, which
+  9.0.22 changes by one routing line, because that update is explicit.
+- Added `tests/test_provider_identity.py`: the provider identity consumers depend on, and a check
+  that the models still produce exactly revision `0001` on SQLite and PostgreSQL (101 tests).
+- Re-ran the local migration proof on MetaTables 0.1.34 with ms-markets 2.2.10, on a scratch
+  runtime with its own local API on a free port; it passed like the earlier ones (ms-markets now
+  reports `0020 (head) (mergepoint)`, system revision `0012_table_creator`). The laptop's shared
+  local API and runtime file were not touched.
+- Ran the library end to end on that runtime with fixtures for the provider extraction and
+  OpenFIGI. Runtime composition, registration and resolution, category planning, the calendar,
+  demo bars and the portfolio's signal, value and weight rows worked. Three ms-markets 2.2.10
+  defects on local SQLite stopped the rest: an unregistered `ms_markets__interpolatedpricests`
+  blocks Asset inserts, `replace_memberships` deletes the memberships it wrote, and the
+  Portfolio pointer upsert fails after the rows are written. Each reproduces without this
+  package, and the code is the same in 2.2.5.
+- Replaced the hosted MetaTables 0.1.19 prerequisite in the docs: MetaTables 0.1.21 fixed
+  MetaTables#33, and the 0.1.34 client needs an API on 0.1.32 or later, MetaTables view access
+  on the consumer's migration Job and the Team that owns the `etfhextractor` namespace.
+- Chose 0.4.4 because a local `v0.4.3` tag exists (at `e925fa3`, not on origin, whose latest tag
+  is `v0.4.2`). No tag was created, moved or pushed, and nothing was pushed.
+
 ## 2026-10-04
 
 - Ran the pending local migration proof on MetaTables 0.1.20 and ms-markets 2.2.5, signed in to
