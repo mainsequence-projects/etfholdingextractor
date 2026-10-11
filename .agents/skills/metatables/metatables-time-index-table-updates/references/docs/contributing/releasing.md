@@ -39,12 +39,26 @@ distribution.
 
 CI installs dependencies from `uv.lock` and PyPI. An editable SDK checkout cannot
 substitute for the published SDK in a release. The selected SDK artifact must
-provide ordinary `Secret.get_by_uid`, independent Git source context, and
-`CallerAssertionVerifier.from_environment`.
+provide ordinary `Secret.get_by_uid`, independent Git source context,
+`CallerAssertionVerifier.from_environment`, and the FastAPI request identity:
+`mainsequence.server.fastapi.install_request_identity` and `User.get_logged_user`.
 
-The next MetaTables stable release is `0.1.20`; its supported SDK range is
-`mainsequence>=9.0.6,<10`. Development builds use `0.1.20.devN`.
-The minimum and lockfile now select published SDK `9.0.6`. SDK 9.0.4 is the first
+The next MetaTables stable release is `0.1.24`; its supported SDK range is
+`mainsequence>=9.0.19,<10`. Development builds use `0.1.24.devN`.
+0.1.21 is the first release whose hosted API installs the SDK request identity.
+Since 2026-09-28 the platform's FastAPI launcher refuses an app without it, so a new
+hosted API revision needs 0.1.21
+([#34](https://github.com/mainsequence-projects/MetaTables/issues/34),
+[ADR 0017](../adr/api/0017-hosted-request-identity.md)).
+The minimum and lockfile now select published SDK `9.0.19`. SDK 9.0.14 is the first with
+`reads_as_caller()`, the User `search` filter, `managed_by_caller`,
+`workload_name` and Team members that may be workload Users. The hosted API needs them to read the platform directory as its
+caller and to name workloads
+([ADR 0002](../adr/api/0002-application-administration-and-table-ownership.md)).
+SDK 9.0.10 is the first whose `User` reads workload User rows.
+SDK 9.0.9 is the first whose request identity exposes the caller's signed Team UIDs
+and admin flag; hosted admission needs them to admit workload Users
+([#37](https://github.com/mainsequence-projects/MetaTables/issues/37)). SDK 9.0.4 is the first
 whose caller-assertion verifier accepts the platform's EdDSA (Ed25519) caller
 assertions; earlier SDKs verify only RS256, so a hosted API built with them cannot
 authenticate platform callers. SDK 9.0.6 ships the verifier's dependencies in the

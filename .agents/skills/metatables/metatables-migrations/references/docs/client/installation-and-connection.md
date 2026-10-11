@@ -11,7 +11,7 @@ require running another service locally.
 Install in your application's Python environment on macOS or Linux:
 
 ```bash
-python -m pip install "mainsequence-metatable==0.1.20" "mainsequence==9.0.6"
+python -m pip install "mainsequence-metatable==0.1.24" "mainsequence==9.0.19"
 mainsequence login
 metatables init --local
 metatables serve --local --admin
@@ -19,11 +19,11 @@ metatables serve --local --admin
 
 Run from an application Git checkout with a commit and an `origin` remote. Python
 3.13+ is required. Admin also needs Node.js 22.12+ (or 20.19+) and npm. The package
-requires published `mainsequence>=9.0.6,<10`; no SDK checkout is needed.
-The next stable release is MetaTables 0.1.20, paired with published SDK 9.0.6.
+requires published `mainsequence>=9.0.19,<10`; no SDK checkout is needed.
+The next stable release is MetaTables 0.1.24, paired with published SDK 9.0.19.
 The pinned command above applies after that stable release is published; before
-then, install the exact `0.1.20.devN` artifact produced by the development publishing
-workflow alongside `mainsequence==9.0.6`. SDK 8 is outside this release's
+then, install the exact `0.1.24.devN` artifact produced by the development publishing
+workflow alongside `mainsequence==9.0.19`. SDK 8 is outside this release's
 dependency range.
 `python -m metatables.sdk_compat` checks the required SDK interfaces without network
 requests. Local SQLite uses the standard library driver.
@@ -74,7 +74,7 @@ application migrations, persistence and credentials.
 
 ## Copy client skills into an application
 
-After installing MetaTables, explicitly copy its five client usage skills into a
+After installing MetaTables, explicitly copy its client usage skills into a
 consuming project:
 
 ```bash
@@ -88,11 +88,16 @@ metatables --json copy-metatables-skills --path /path/to/application
 `metatables` does not copy skills.
 
 The destination is `<application>/.agents/skills/metatables/`. It contains the
-local development, table, application migration, time-index updater and legacy
+local development, table, application migration, table discovery, time-index updater and legacy
 application upgrade skills, with matching
 guide/example snapshots in each skill's `references/` folder. The installed client
 version is recorded in `PINNED_FROM.txt`. Skills for API implementation or
 MetaTables project development are outside this bundle.
+
+After upgrading the installed package, run the copy command again to refresh the
+matching guidance. The migration skill includes the public `upgrade_application`
+import, repeated-run behavior and migration timing diagnostics. Python imports
+use the installed library independently of these copied agent instructions.
 
 Running the command again replaces the whole `metatables` namespace: folders the
 installed client does not ship, including any added there, are removed. Keep the
