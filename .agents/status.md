@@ -4,8 +4,8 @@
 
 - Release version is `0.4.4`, the first release after 0.4.2; 0.4.3 was never published. Runtime
   is Python `3.13`. `pyproject.toml` declares `mainsequence>=9.0.22,<10`,
-  `mainsequence-metatable>=0.1.34,<0.2` and `ms-markets==2.2.10` (the release the deployed
-  MainSequence Markets runs); `uv.lock` resolves 9.0.22, 0.1.34 and 2.2.10, and
+  `mainsequence-metatable>=0.1.35,<0.2` and `ms-markets==2.2.10` (the release the deployed
+  MainSequence Markets runs); `uv.lock` resolves 9.0.22, 0.1.35 and 2.2.10, and
   `requirements.txt` was regenerated from it (implementation task 0007).
 - Migrations follow the MetaTables deployment-Job rule, introduced in 0.1.14. This repository
   has no deployment and no workflow file; the application that deploys code using `DemoBarsTS`
@@ -49,7 +49,7 @@
   unbound `ms_markets__interpolatedpricests`; worked around in the scratch catalog only),
   `replace_memberships` deletes what it upserted, and the portfolio pointer upsert fails after
   the rows are written (implementation task 0007, "Local end-to-end run on 0.4.4").
-- The SDK 9.0.22, `metatables` 0.1.34 and ms-markets 2.2.10 skill bundles are copied, offline.
+- The SDK 9.0.22, `metatables` 0.1.35 and ms-markets 2.2.10 skill bundles are copied, offline.
   The managed AGENTS.md block was not regenerated: the 9.0.22 block differs by one routing line,
   and that update is explicit. Platform-owned skills (`.agents/skills/mainsequence_platform/`)
   are not installed, because that update needs a signed-in session.

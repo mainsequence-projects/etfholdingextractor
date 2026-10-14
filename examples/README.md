@@ -63,7 +63,7 @@ The runtime is either:
   no deployment, so `DemoBarsTS` must already have been applied by the application that deploys
   code using it: that application lists `etfhextractor_migrations:migration` in its own
   migration Job. The Environment's MetaTables API must run 0.1.32 or later, because the
-  `mainsequence-metatable` 0.1.34 client sends table metadata with finalization that older APIs
+  `mainsequence-metatable` 0.1.35 client sends table metadata with finalization that older APIs
   reject; it runs 0.1.34 in Production and development.
 
 Everything else is handled by the example itself on the default run:

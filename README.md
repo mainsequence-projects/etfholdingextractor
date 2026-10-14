@@ -38,7 +38,7 @@ kept out of `__init__` so pure extraction never loads the msm_portfolios stack).
 - Current package version: `0.4.4`
 - Python: `>=3.13,<3.14`
 - Key dependencies: `mainsequence >=9.0.22,<10` (identity, secrets, logging),
-  `mainsequence-metatable >=0.1.34,<0.2` (the MetaTables client, imported as `metatables`),
+  `mainsequence-metatable >=0.1.35,<0.2` (the MetaTables client, imported as `metatables`),
   `ms-markets ==2.2.10` (typed MetaTable rows; obligatory-calendar portfolio architecture;
   pinned to the release the deployed MainSequence Markets runs),
   `pandas-market-calendars` (trading sessions)
@@ -137,7 +137,7 @@ its single table `DemoBarsTS` (the example's demo price source; version table
   migration Job (`metatables.upgrade_application("etfhextractor_migrations:migration")`). The
   ms-markets schema, which `DemoBarsTS` references by foreign key, is migrated by the ms-markets
   deployment, not by this package or its consumers. A consumer that locks this package runs its
-  migration Job with `mainsequence-metatable` 0.1.34, so before it pushes:
+  migration Job with `mainsequence-metatable` 0.1.35, so before it pushes:
   - the Environment's hosted MetaTables API runs 0.1.32 or later (it runs 0.1.34 in Production
     and development); older APIs reject the table metadata the client sends with finalization;
   - the migration Job declares `access.branches: [{repository: MetaTables, level: view}]`;

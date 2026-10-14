@@ -21,8 +21,8 @@
 - Release: `0.4.4` (tag `v0.4.4`); 0.4.3 was never published
 - Main Sequence SDK: `>=9.0.22,<10` (locked with `9.0.22`; local migration proof passed
   2026-10-11)
-- MetaTables client: `mainsequence-metatable>=0.1.34,<0.2` (import and CLI `metatables`; locked
-  with `0.1.34`; local migration proof on isolated SQLite passed 2026-10-11)
+- MetaTables client: `mainsequence-metatable>=0.1.35,<0.2` (import and CLI `metatables`; locked
+  with `0.1.35`; local migration proof on isolated SQLite passed 2026-10-11 on 0.1.34)
 - ms-markets: `==2.2.10`, the release the deployed MainSequence Markets runs (applied as a local
   prerequisite in the 2026-10-11 proof: `0020`, 62 tables active)
 - Deployment: none. No `.mainsequence/workflows/` file and no migration Job.

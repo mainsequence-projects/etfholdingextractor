@@ -416,7 +416,7 @@ Since MetaTables 0.1.14 a hosted runtime is migrated only from a deployment work
   deployment migrates the ms-markets schema, which `DemoBarsTS` references by foreign key.
   Nobody runs a hosted upgrade or downgrade by hand.
 
-  Since 0.4.4 this package requires `mainsequence-metatable` 0.1.34, the client a consumer's
+  This package requires `mainsequence-metatable` 0.1.35 (0.1.34 in 0.4.4), the client a consumer's
   migration Job then runs. Before that consumer pushes:
   - the Environment's hosted MetaTables API must run 0.1.32 or later. Since 0.1.32 the client
     sends changed table and column descriptions and labels with finalization
