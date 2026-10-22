@@ -24,7 +24,7 @@ classifiers = [
   "Typing :: Typed",
 ]
 dependencies = [
-    "certifi>=2024.2.2",
+    "certifi>=2026.10.19",
     "mainsequence>=9.0.22,<10",
     "mainsequence-metatable>=0.1.35,<0.2",
     "ms-markets==2.2.10",

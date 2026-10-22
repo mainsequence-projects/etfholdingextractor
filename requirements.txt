@@ -26,7 +26,7 @@ cachetools==7.1.4
     #   mainsequence
     #   mainsequence-metatable
     #   ms-markets
-certifi==2026.5.20
+certifi==2026.10.19
     # via
     #   etfhextractor
     #   httpcore
@@ -204,7 +204,7 @@ pandas-market-calendars==5.4.0
     # via etfhextractor
 pillow==12.3.0
     # via fastembed
-pip==26.1.2
+pip==26.2.2
     # via ms-markets
 platformdirs==4.12.2
     # via mainsequence-metatable
