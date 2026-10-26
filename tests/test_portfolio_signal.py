@@ -6,7 +6,7 @@ from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 import pandas as pd
-from msm_portfolios.data_nodes.constants import ASSET_IDENTIFIER
+from msm_portfolios.time_index.constants import ASSET_IDENTIFIER
 
 from etfhextractor.models import FundHoldings, Holding
 from etfhextractor.portfolio_signal import (
@@ -279,7 +279,7 @@ class ETFHoldingsSignalTests(unittest.TestCase):
         # asset_list is updater scope, never series identity: an ETF rebalance
         # must not rotate the signal_uid (no orphaned series, no guard resets,
         # no portfolio-config churn).
-        from msm_portfolios.data_nodes import compute_signal_uid
+        from msm_portfolios.time_index import compute_signal_uid
 
         def make(asset_list: list[str] | None, ticker: str = "IVV") -> ETFHoldingsSignal:
             signal = ETFHoldingsSignal.__new__(ETFHoldingsSignal)

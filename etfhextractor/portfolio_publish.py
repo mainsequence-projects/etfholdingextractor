@@ -1,7 +1,7 @@
 """Publish an ETF-tracking ms-markets portfolio.
 
 Wires `ETFHoldingsSignal` into the msm_portfolios pipeline
-(`signal -> PortfoliosDataNode` with an explicit valuation source) and resolves the
+(`signal -> PortfoliosUpdater` with an explicit valuation source) and resolves the
 portfolio identity through the typed `Index` / `Portfolio` rows
 (implementation task 0002, W-3).
 
@@ -214,7 +214,6 @@ def start_portfolio_engine(extra_models: list[Any] | None = None) -> Any:
     """
     import msm_portfolios
     from msm.bootstrap import resolve_runtime
-    from msm.data_nodes.assets.storage import AssetSnapshotsStorage
     from msm.models import (
         AssetCategoryMembershipTable,
         AssetCategoryTable,
@@ -222,6 +221,7 @@ def start_portfolio_engine(extra_models: list[Any] | None = None) -> Any:
         CalendarSessionTable,
         OpenFigiAssetDetailsTable,
     )
+    from msm.time_index.assets.storage import AssetSnapshotsStorage
     from msm_portfolios.bootstrap import resolve_portfolio_models
 
     models = [
@@ -377,8 +377,8 @@ def build_etf_tracking_portfolio(
         PortfolioExecutionConfiguration,
         PortfolioMarketsConfig,
     )
-    from msm_portfolios.data_nodes import PortfoliosDataNode
     from msm_portfolios.rebalance_strategy.immediate_signal import ImmediateSignal
+    from msm_portfolios.time_index import PortfoliosUpdater
 
     normalized_ticker = normalize_ticker(etf_ticker)
     if not asset_identifiers:
@@ -443,7 +443,7 @@ def build_etf_tracking_portfolio(
     )
 
     # Portfolio identity is the Portfolio row alone (ms-markets >= 0.0.54):
-    # PortfoliosDataNode uses the provided target_portfolio and keys all storage
+    # PortfoliosUpdater uses the provided target_portfolio and keys all storage
     # by portfolio.unique_identifier. PortfolioIndex is now just an optional
     # published-index reference (Portfolio.published_index_uid) — never identity —
     # so this workflow does not create or rely on any Index row. The calendar is
@@ -459,7 +459,7 @@ def build_etf_tracking_portfolio(
         calendar_uid=calendar_row.uid,
     )
 
-    node = PortfoliosDataNode(portfolio_configuration=portfolio_configuration)
+    node = PortfoliosUpdater(portfolio_configuration=portfolio_configuration)
     node.set_portfolio_configuration(
         portfolio_configuration,
         portfolio_description=resolved_description,
@@ -555,14 +555,14 @@ def publish_etf_tracking_portfolio(
 
 
 def _summarize_run_result(run_result: Any) -> Any:
-    """Flatten DataNode run results to JSON-friendly summaries, raising on the
+    """Flatten updater run results to JSON-friendly summaries, raising on the
     (error_on_last_update, frame) failure contract."""
     if isinstance(run_result, dict):
         return {key: _summarize_run_result(value) for key, value in run_result.items()}
     if isinstance(run_result, tuple) and len(run_result) == 2:
         error_on_last_update, frame = run_result
         if error_on_last_update:
-            raise RuntimeError("Portfolio pipeline update failed; see DataNode logs.")
+            raise RuntimeError("Portfolio pipeline update failed; see the updater logs.")
         row_count = getattr(frame, "shape", (0,))[0] if frame is not None else 0
         return {"error": False, "rows": int(row_count)}
     if run_result is None:

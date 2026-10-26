@@ -26,7 +26,7 @@ etfhextractor/
   mainsequence_categories.py  # snapshot-layer resolution + category sync (msm)
   markets_models.py           # project-owned ms-markets tables (extension convention)
   models.py                   # FundHoldings / Holding
-  portfolio_publish.py        # calendar + Portfolio row + PortfoliosDataNode wiring
+  portfolio_publish.py        # calendar + Portfolio row + PortfoliosUpdater wiring
   portfolio_signal.py         # ETFHoldingsSignal (custom SignalWeights) + session-grid stamps
   providers/                  # provider-specific extraction code
   reader.py                   # ETFHoldingsReader
@@ -317,7 +317,7 @@ ADR 0003):
   `min_update_interval_days` (default daily), and only when the weights actually changed.
 - `build_etf_tracking_portfolio(...)` (reusable convenience wiring around ms-markets) connects the
   signal plus the CALLER's valuation source (`TimeIndexTableRef.from_uid`; pass the uid or set
-  `ETFH_PORTFOLIO_PRICE_SOURCE_TABLE_UID`) into msm's `PortfoliosDataNode` as
+  `ETFH_PORTFOLIO_PRICE_SOURCE_TABLE_UID`) into msm's `PortfoliosUpdater` as
   `PortfolioBuildConfiguration.valuation_source_instance`, resolving portfolio
   identity through the `Portfolio` row alone. It returns `EtfTrackingPortfolioBuild`, exposing the
   calendar, signal, portfolio row, configuration, node, valuation source, and run result to project
@@ -388,7 +388,7 @@ This project owns exactly **one** ms-markets MetaTable, defined in
   `etfhextractor_markets__demobarsts`. Demo `close`/`volume` bars keyed by
   `(time_index, asset_identifier)` with the canonical FK to `AssetTable.unique_identifier`,
   published by the example's default self-sufficient mode (no external price table given)
-  through the thin `DemoBars` (`AssetTimestampedDataNode`/`TimeIndexTableUpdater`) node — bars land on the NYSE session
+  through the thin `DemoBars` (`AssetTimestampedUpdater`/`TimeIndexTableUpdater`) updater — bars land on the NYSE session
   closes — so the ETF-tracking portfolio can run end-to-end without an external market-data feed. It must be migrated/registered by the project's MetaTables migration provider before
   writes, like any other table.
 

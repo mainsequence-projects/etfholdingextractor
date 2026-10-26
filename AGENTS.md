@@ -24,7 +24,7 @@ those boundaries:
 3. An ETF-holdings tracking SIGNAL for the `msm_portfolios` pipeline (`ETFHoldingsSignal`;
    weights insert at most daily, only on change, stamped on session closes — see
    `docs/implementation_task/0002-ms-markets-portfolio-weights.md`). Portfolio assembly itself
-   (Portfolio rows, calendars, prices, `PortfoliosDataNode`) is ms-markets functionality;
+   (Portfolio rows, calendars, prices, `PortfoliosUpdater`) is ms-markets functionality;
    `etfh portfolio-publish` and the example are convenience wiring that demonstrate it, with
    prices always supplied by the caller.
 4. FIGI registration of missing ETF components (opt-in `--register-missing`): no asset is

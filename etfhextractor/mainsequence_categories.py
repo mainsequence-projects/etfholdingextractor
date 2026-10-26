@@ -36,13 +36,13 @@ def _ensure_msm_started() -> Any:
     if _MSM_RUNTIME is None:
         from msm import start_engine
         from msm.bootstrap import resolve_runtime
-        from msm.data_nodes.assets.storage import AssetSnapshotsStorage
         from msm.models import (
             AssetCategoryMembershipTable,
             AssetCategoryTable,
             AssetTable,
             OpenFigiAssetDetailsTable,
         )
+        from msm.time_index.assets.storage import AssetSnapshotsStorage
 
         models = [
             AssetTable,
@@ -218,8 +218,8 @@ def _search_snapshot_rows(
 ) -> list[dict[str, Any]]:
     """Page through the asset-snapshot MetaTable for the given `in_filters`."""
     from msm.api.base import operation_result_rows
-    from msm.data_nodes.assets.storage import AssetSnapshotsStorage
     from msm.repositories.crud import search_model
+    from msm.time_index.assets.storage import AssetSnapshotsStorage
 
     rows: list[dict[str, Any]] = []
     offset = 0

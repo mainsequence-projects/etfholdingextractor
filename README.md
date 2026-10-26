@@ -20,7 +20,7 @@ state. It has three capabilities, layered so each builds on the previous one:
    `msm_portfolios` `SignalWeights` that re-extracts the holdings (at most daily, only on
    change, observations stamped on trading-session closes) under one definition-scoped
    `signal_uid` (ADRs 0003, 0005, 0006). Portfolio assembly — `Portfolio` rows, calendars,
-   prices, `PortfoliosDataNode` — is **ms-markets functionality**; the repository demonstrates
+   prices, `PortfoliosUpdater` — is **ms-markets functionality**; the repository demonstrates
    it end-to-end in the example, and `etfh portfolio-publish` is convenience wiring for that
    assembly (prices always supplied by the caller).
 
@@ -113,7 +113,7 @@ result = publish_etf_tracking_portfolio(
 ```
 
 Project integrations that need the assembled calendar, signal, Portfolio row, configuration,
-valuation source, and `PortfoliosDataNode` can call `build_etf_tracking_portfolio(...)`; the
+valuation source, and `PortfoliosUpdater` can call `build_etf_tracking_portfolio(...)`; the
 publisher above wraps that same builder and returns its JSON-friendly summary.
 
 ## Environment

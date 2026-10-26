@@ -1,10 +1,10 @@
 """ETF-tracking signal for the msm_portfolios pipeline.
 
-`ETFHoldingsSignal` is a custom `SignalWeights` DataNode whose update pulls the
+`ETFHoldingsSignal` is a custom `SignalWeights` updater whose update pulls the
 ETF's holdings weights from the extraction layer (the same machinery used by
 the category-sync workflow) and emits them as the canonical signal frame
 `(time_index, asset_identifier) -> signal_weight`. Consumed by
-`PortfoliosDataNode`, this produces a portfolio that tracks the ETF
+`PortfoliosUpdater`, this produces a portfolio that tracks the ETF
 (implementation task 0002).
 
 This module is intentionally not imported from `etfhextractor.__init__`, so
@@ -18,8 +18,8 @@ from typing import Any
 
 import pandas as pd
 from msm_portfolios.configuration import PortfolioConfigBaseModel
-from msm_portfolios.data_nodes import SignalWeights
-from msm_portfolios.data_nodes.constants import ASSET_IDENTIFIER, SIGNAL_UID
+from msm_portfolios.time_index import SignalWeights
+from msm_portfolios.time_index.constants import ASSET_IDENTIFIER, SIGNAL_UID
 from pydantic import model_validator
 
 from .mainsequence_categories import (
@@ -387,7 +387,7 @@ class ETFHoldingsSignal(SignalWeights):
         return pd.DataFrame(columns=["time_index", ASSET_IDENTIFIER, "signal_weight"])
 
     def _log_info(self, message: str) -> None:
-        # The DataNode logger property requires initialized node state; guard so
+        # The updater logger property requires initialized node state; guard so
         # the guards also work on partially-constructed instances (tests).
         try:
             logger = self.logger

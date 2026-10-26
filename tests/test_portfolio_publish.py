@@ -200,7 +200,7 @@ class PortfolioValuationSourceTests(unittest.TestCase):
             ),
             patch("msm.api.portfolios.Portfolio.upsert", return_value=portfolio),
             patch(
-                "msm_portfolios.data_nodes.PortfoliosDataNode",
+                "msm_portfolios.time_index.PortfoliosUpdater",
                 return_value=portfolio_node,
             ) as node_cls,
             patch("metatables.TimeIndexTableRef.from_uid") as from_uid,

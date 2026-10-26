@@ -8,7 +8,7 @@ never table names, UID maps, or row ``create_schemas()``.
 
 Tables must be migrated/registered through the project's MetaTables migration
 provider (``etfhextractor_migrations:migration``) before a process writes through
-their DataNodes: locally with ``metatables --local migrations upgrade``; on hosted
+their updaters: locally with ``metatables --local migrations upgrade``; on hosted
 runtimes only by the migration Job of the application that deploys these tables
 (this package has no deployment). Runtime code never migrates; it only attaches
 via ``msm.start_engine(models=[...])``. For isolated tests/examples, set
@@ -25,13 +25,13 @@ import datetime
 
 import pandas as pd
 from msm.base import MarketsBase, MarketsTimeIndexMetaTableMixin
-from msm.data_nodes.assets import (
-    AssetDataNodeConfiguration,
-    AssetSnapshot,
-    AssetTimestampedDataNode,
-)
 from msm.models.assets.core import AssetTable
 from msm.settings import ASSET_IDENTIFIER_DIMENSION
+from msm.time_index.assets import (
+    AssetSnapshot,
+    AssetTimestampedUpdater,
+    AssetUpdaterConfiguration,
+)
 from sqlalchemy import DateTime, Float, ForeignKey, String
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -151,12 +151,12 @@ class BatchVerifiedAssetSnapshot(AssetSnapshot):
         return sorted(existing_keys & candidate_keys)
 
 
-class DemoBarsConfiguration(AssetDataNodeConfiguration):
-    """Update-scoped configuration for the demo bars DataNode."""
+class DemoBarsConfiguration(AssetUpdaterConfiguration):
+    """Update-scoped configuration for the demo bars updater."""
 
 
-class DemoBars(AssetTimestampedDataNode):
-    """Thin storage-bound DataNode publishing demo bars rows."""
+class DemoBars(AssetTimestampedUpdater):
+    """Thin storage-bound updater publishing demo bars rows."""
 
     configuration_class = DemoBarsConfiguration
 

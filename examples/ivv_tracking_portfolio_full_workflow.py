@@ -4,7 +4,7 @@ Pipeline (implementation task 0002 / ADR 0003 — the msm_portfolios signal path
 
     extraction (FundHoldings) ──> ETFHoldingsSignal (custom SignalWeights)
                                           │ (time_index, asset_identifier) → signal_weight
-    registered bars table ── TimeIndexTableRef ─┴──> PortfoliosDataNode ──> ETF-tracking portfolio
+    registered bars table ── TimeIndexTableRef ─┴──> PortfoliosUpdater ──> ETF-tracking portfolio
 
 **Self-sufficient by default** — the prerequisites are an authenticated Main
 Sequence session and a MetaTables runtime that already holds the ms-markets
@@ -44,7 +44,7 @@ flag-free run does everything else itself:
    **NYSE session closes** (pandas_market_calendars), aligned with the
    portfolio's valuation index.
 6. Publish the tracking portfolio: the `ETFHoldingsSignal` (insert at most once per day,
-   only on weight changes) wired into `PortfoliosDataNode` with the price source —
+   only on weight changes) wired into `PortfoliosUpdater` with the price source —
    demo bars by default, or a registered table when `--price-source-table-uid` /
    `ETFH_PORTFOLIO_PRICE_SOURCE_TABLE_UID` is given; or run the signal node alone
    with `--signal-only`. A US ETF follows the US trading calendar: the NYSE
@@ -251,11 +251,11 @@ def _verify_platform_rows(
     from msm.api.portfolios import Portfolio
     from msm.bootstrap import get_runtime
     from msm.repositories.crud import search_model
-    from msm_portfolios.data_nodes.portfolios.storage import (
+    from msm_portfolios.time_index.portfolios.storage import (
         PortfoliosStorage,
         PortfolioWeightsStorage,
     )
-    from msm_portfolios.data_nodes.signals.storage import SignalWeightsStorage
+    from msm_portfolios.time_index.signals.storage import SignalWeightsStorage
 
     context = get_runtime().context
     verification: dict[str, Any] = {}
