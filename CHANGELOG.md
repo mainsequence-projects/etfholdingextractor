@@ -3,6 +3,95 @@
 All notable changes to `etfhextractor` are recorded here. Earlier releases are described by
 their Git tags and by the implementation tasks in `docs/implementation_task/`.
 
+## [0.4.5] - Unreleased
+
+Moves the library to ms-markets 3.0.0 and its Markets API boundary (ms-markets ADR 0047). Not
+tagged yet: `uv.lock` and `requirements.txt` still resolve ms-markets 2.2.10 and are regenerated
+once 3.0.0 is on PyPI.
+
+### Changed
+
+- Markets registries are reached only through `msm.api` row calls, and set-based ones where a
+  call touches many rows. The library never selects the ms-markets row backend: the importing
+  application does (`use_remote_backend(LazyRemoteBackend())` or `MSM_API_BACKEND=remote`), and
+  on that backend every registry read and write runs on the Markets API and the library attaches
+  no Markets registry table. On the default runtime backend it attaches the same tables as
+  before.
+  - Asset uids by identifier: one `Asset.get_many_by_unique_identifier` instead of
+    `search_model` on `AssetTable`.
+  - FIGI registration: one `Asset.upsert_many` and one `OpenFigiDetails.upsert_many` instead of
+    one `Asset.upsert` and one `OpenFigiDetails.upsert` per new asset, and
+    `AssetSnapshots.publish` instead of running `BatchVerifiedAssetSnapshot`. The snapshot rows
+    are now written by ms-markets' own `AssetSnapshot` updater, which since 3.0 verifies
+    duplicate keys in one read.
+  - Always-open calendars: `CalendarDate.upsert_many` and `CalendarSession.upsert_many` (the
+    conflict keys of ms-markets' materialization) instead of `materialize_calendar_rows` on a
+    runtime context.
+  - The example verifies its run through the updaters that wrote the rows and
+    `Portfolio.get_by_unique_identifier` instead of `search_model` on the core tables.
+- `start_portfolio_engine` attaches `portfolio_runtime_models(...)`: today's set on the runtime
+  backend; on the remote backend only the portfolio time series, the asset snapshots and
+  `extra_models`.
+- Imports use the ms-markets 3.0 names (`msm.time_index`, `msm_portfolios.time_index`,
+  `PortfoliosUpdater`, `AssetTimestampedUpdater`, `AssetUpdaterConfiguration`);
+  `msm rename-preflight scan` is clean.
+- The calendar helpers (`ensure_trading_calendar`, `required_calendar_window` and the calendar
+  constants) moved to the light `etfhextractor.calendars` module, which imports neither ms-markets
+  at import time nor the msm_portfolios stack. `etfhextractor.portfolio_publish` re-exports them
+  and `etfhextractor.portfolio_signal` still exports `ALWAYS_OPEN_CALENDAR_KEYS`.
+
+### Added
+
+- Injection seams on `build_etf_tracking_portfolio` and `publish_etf_tracking_portfolio`, each
+  defaulting to the earlier behaviour: `signal_output_table`, `portfolio_output_table`,
+  `weights_output_table` and `rebalance_output_table` bind the signal and `PortfoliosUpdater`
+  (and its weights and rebalance updaters) to an application's own contract instances;
+  `register_datasets` records them in the Markets catalog with `PortfolioDatasets.register`
+  after the run (by default when `portfolio_output_table` is given); `update_pointers=False`
+  leaves the Portfolio pointers alone; `resolve_asset_identifiers_fn` replaces the
+  asset-snapshot ticker resolver.
+- `ETFHoldingsSignal.set_asset_identifier_resolver`, `portfolio_runtime_models`,
+  `register_portfolio_datasets`, `EtfTrackingPortfolioBuild.portfolio_datasets` (in the summary
+  only when registered), and `etfhextractor.markets_runtime`.
+- `tests/test_markets_api_boundary.py` runs the library against a recording remote backend. It
+  checks the resource and operation of every Markets call, that nothing is attached for
+  registries, and that the library never selects the backend. It also guards that the
+  asset-snapshot read is the only compiled SQL left on a Markets table. Another test pins the
+  default IVV/ishares `signal_uid`.
+
+### Upgrade notes for applications
+
+- Run 0.4.5 only in an Environment whose Markets deployment runs ms-markets 3.0.0 and has
+  applied its revisions.
+- On the remote backend, every workflow resource that calls the library needs
+  `access.branches: [{repository: MainSequenceMarkets, policy: reader}]`. Its workload User uid
+  must also be listed in the Environment's `MARKETS_REGISTRY_WRITERS` constant under the
+  write-policy resources of the calls it makes: `asset-category`, `asset-type`, `asset`,
+  `open-figi-details`, `asset-snapshots`, `calendar`, `calendar-date`, `calendar-session`,
+  `portfolio`, `signal-metadata`, `portfolio-datasets` (`docs/library.md`, "Markets Access").
+- Still direct MetaTables access: the asset-snapshot read (ticker resolution and the
+  registration snapshot check), which needs read access to `AssetSnapshotsStorage`, because no
+  Markets API route serves it yet; and, unless instances are injected, the writes to the core
+  signal-weights, portfolio-weights, rebalance-state and portfolio-values tables.
+- A fresh signal instance keeps the `signal_uid` but has no history: copy the existing rows into
+  the instances before the first bound run, never recompute (runbook in `docs/library.md`).
+- On their first ms-markets 3.0 run, `ETFHoldingsSignal` and `PortfoliosUpdater` get a new
+  `TimeIndexTableUpdate` (ms-markets 3.0 moved the modules their hashes name) and continue from
+  their output table's last observation. `signal_uid` does not change: the default IVV/ishares
+  uid still computes offline to `495a8b180d0a216e563cd3f83316da7f`.
+
+### Unchanged
+
+- The provider `etfhextractor_migrations:migration`, revision `0001`, `DemoBarsTS` and its
+  identity; `BatchVerifiedAssetSnapshot` (no longer used by the library, kept for importers);
+  every public name of the library and the `etfh` CLI.
+
+### Not verified
+
+- Everything was verified offline only (tests with outbound network blocked, against ms-markets
+  3.0.0 installed from its development source): no run against a deployed Markets API or a local
+  runtime, and the ms-markets 2.2.10 local SQLite defects listed under 0.4.4 were not re-checked.
+
 ## [0.4.4] - 2026-10-11
 
 The first release after 0.4.2. It also ships everything listed under 0.4.3, which was never
