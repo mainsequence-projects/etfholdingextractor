@@ -37,24 +37,23 @@ capabilities to claim.
   `now - backtest_start_days`, assuming the current composition over that window.
 - **Preflight scope**: `get_asset_list()` exposes the resolved component identifiers (required
   by msm_portfolios on first runs to derive the price window).
-- **Where it writes** (ms-markets ADR 0047): the core `SignalWeightsTS` by default; an
-  application binds its own instance with
-  `ETFHoldingsSignal.from_signal_configuration(config, output_table=...)` (or the
-  `*_output_table` arguments of `build_etf_tracking_portfolio`) and may replace the
-  asset-snapshot ticker resolver (`AssetSnapshots.latest`) with `set_asset_identifier_resolver`. Neither changes the
-  `signal_uid`, but a fresh instance has no history: its rows must be copied in before the first
-  bound run (`docs/library.md`, "Moving the series to your own instances").
+- **Where it writes** (ms-markets ADR 0047): only the application's own `SignalWeightsTS`
+  instance, which is required: `ETFHoldingsSignal.from_signal_configuration(config,
+  output_table=...)`, or the `instances` of `build_etf_tracking_portfolio`. It may replace the
+  asset-snapshot ticker resolver (`AssetSnapshots.latest`) with `set_asset_identifier_resolver`.
+  Neither changes the `signal_uid`, but a fresh instance has no history: rows already in another
+  table must be copied in before its first run (`docs/library.md`, "Markets Access").
 
 ## Preferred Surfaces
 
 - Python (deliberately NOT in `etfhextractor.__init__`):
   `from etfhextractor.portfolio_signal import ETFHoldingsSignal, ETFHoldingsSignalConfig,
   previous_session_close`
-- Signal-only run (writes canonical `SignalWeightsTS` rows, no portfolio):
+- Signal-only run (writes the example application's `SignalWeightsTS` instance, no portfolio):
   `python examples/ivv_tracking_portfolio_full_workflow.py --signal-only`
 - Full assembly demonstration (ms-markets objects assembled around the signal):
   `python examples/ivv_tracking_portfolio_full_workflow.py` and the convenience wiring
-  `etfh portfolio-publish ...`
+  `etfh portfolio-publish --instances <module:attribute> ...`
 
 ## This Skill Must Not Claim
 
@@ -66,7 +65,7 @@ capabilities to claim.
 - that the tracker reproduces historical baskets — the bootstrap assumes the CURRENT
   composition over the backtest window
 - that components without a unique FIGI mapping were registered or tracked
-- that signal rows were written without reading them back (`SignalWeightsTS` by `signal_uid`)
+- that signal rows were written without reading them back (the signal instance by `signal_uid`)
 
 ## Working Rules
 

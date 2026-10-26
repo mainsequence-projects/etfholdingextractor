@@ -2,10 +2,11 @@
 
 ## Verified
 
-- Branch `adr-0047/markets-api-boundary` prepares `0.4.5` (unreleased, untagged): it moves the
-  library to ms-markets 3.0.0 and its Markets API boundary (ms-markets ADR 0047): `pyproject.toml` pins `ms-markets==3.0.0`,
+- Branch `adr-0047/markets-api-boundary` prepares `0.5.0` (unreleased, untagged; breaking): it
+  moves the library to ms-markets 3.0.0 and its Markets API boundary, requires applications' own
+  portfolio instances and removes every compatibility layer (ms-markets ADR 0047): `pyproject.toml` pins `ms-markets==3.0.0`,
   while `uv.lock` and `requirements.txt` still resolve 2.2.10 until 3.0.0 is on PyPI. Verified
-  offline only (CHANGELOG 0.4.5).
+  offline only (CHANGELOG 0.5.0).
 - Release version is `0.4.4`, the first release after 0.4.2; 0.4.3 was never published. Runtime
   is Python `3.13`. `pyproject.toml` declares `mainsequence>=9.0.22,<10`,
   `mainsequence-metatable>=0.1.35,<0.2` and `ms-markets==2.2.10` (the release the deployed

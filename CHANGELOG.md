@@ -3,24 +3,39 @@
 All notable changes to `etfhextractor` are recorded here. Earlier releases are described by
 their Git tags and by the implementation tasks in `docs/implementation_task/`.
 
-## [0.4.5] - Unreleased
+## [0.5.0] - Unreleased
 
-Moves the library to ms-markets 3.0.0 and its Markets API boundary (ms-markets ADR 0047). Not
-tagged yet: `uv.lock` and `requirements.txt` still resolve ms-markets 2.2.10 and are regenerated
-once 3.0.0 is on PyPI.
+Moves the library to ms-markets 3.0.0 and its Markets API boundary (ms-markets ADR 0047), and
+drops every compatibility layer. **Breaking for importers and `etfh` users** (see "Removed" and
+"Upgrade notes"); hence a minor release rather than the 0.4.5 first prepared: the repository has
+no written versioning policy, but its last breaking migration went from 0.3.x to 0.4.1, and
+semantic versioning puts breaking changes of a 0.x package in the minor version. Not tagged yet:
+`uv.lock` and `requirements.txt` still resolve ms-markets 2.2.10 and are regenerated once 3.0.0
+is on PyPI.
 
 ### Changed
 
 - Pin `ms-markets==3.0.0`, the release the Markets deployment runs once it moves to the Markets
   API boundary (the exact-pin policy of 0.4.4). ms-markets 3.0.0 requires `mainsequence>=9.0.29`
-  and `mainsequence-metatable>=0.1.57`, which the ranges here already admit. `uv.lock` and
-  `requirements.txt` are not regenerated: they resolve 2.2.10 until 3.0.0 is on PyPI.
+  and `mainsequence-metatable>=0.1.57`, which the ranges here already admit.
+- **Portfolio series go only to the application's own instances.** `build_etf_tracking_portfolio`
+  and `publish_etf_tracking_portfolio` require `instances`, an
+  `msm_portfolios.services.series_moves.PortfolioSeriesTables` with the application's
+  `signal_weights`, `weights`, `rebalance_state` and `values` instances (ms-markets
+  `contract_instances` factories); `require_portfolio_instances` refuses a missing slot or a
+  Markets table. The build records them in the Markets catalog with `PortfolioDatasets.register`
+  after the (optional) run, reconciling when it ran (`EtfTrackingPortfolioBuild.instances`,
+  `.portfolio_datasets`, and `portfolio_datasets` in the summary). `ETFHoldingsSignal` requires
+  `output_table=` (its update hash is unchanged: `signalweights_6c7728d4635eb499f1d517ecfc840275`
+  computed offline before and after). `portfolio_runtime_models(instances, extra_models)` and
+  `start_portfolio_engine(instances, extra_models)` attach the instances, plus on the runtime
+  backend the Markets registry tables the row calls need and never a Markets portfolio series.
+  `etfh portfolio-publish` requires `--instances MODULE:ATTRIBUTE`.
 - Markets registries are reached only through `msm.api` row calls, and set-based ones where a
   call touches many rows. The library never selects the ms-markets row backend: the importing
   application does (`use_remote_backend(LazyRemoteBackend())` or `MSM_API_BACKEND=remote`), and
   on that backend every registry read and write runs on the Markets API and the library attaches
-  no Markets registry table. On the default runtime backend it attaches the same tables as
-  before.
+  no Markets table except the application's own.
   - Asset uids by identifier: one `Asset.get_many_by_unique_identifier` instead of
     `search_model` on `AssetTable`.
   - Ticker resolution (`resolve_asset_identifiers_by_ticker`, `resolve_existing_assets_by_ticker`,
@@ -30,78 +45,83 @@ once 3.0.0 is on PyPI.
     snapshot check is one `AssetSnapshots.latest(asset_identifiers=...)`.
   - FIGI registration: one `Asset.upsert_many` and one `OpenFigiDetails.upsert_many` instead of
     one `Asset.upsert` and one `OpenFigiDetails.upsert` per new asset, and
-    `AssetSnapshots.publish` instead of running `BatchVerifiedAssetSnapshot`. The snapshot rows
-    are now written by ms-markets' own `AssetSnapshot` updater, which since 3.0 verifies
-    duplicate keys in one read.
+    `AssetSnapshots.publish`, whose ms-markets 3.0 updater verifies duplicate keys in one read.
   - Always-open calendars: `CalendarDate.upsert_many` and `CalendarSession.upsert_many` (the
     conflict keys of ms-markets' materialization) instead of `materialize_calendar_rows` on a
     runtime context.
-  - The example verifies its run through the updaters that wrote the rows and
-    `Portfolio.get_by_unique_identifier` instead of `search_model` on the core tables.
-- `start_portfolio_engine` attaches `portfolio_runtime_models(...)`: today's set on the runtime
-  backend; on the remote backend only the portfolio time series, the asset snapshots and
-  `extra_models`.
+- The calendar helpers (`ensure_trading_calendar`, `required_calendar_window` and the calendar
+  constants) live in the light `etfhextractor.calendars` module, which imports neither ms-markets
+  at import time nor the msm_portfolios stack.
 - Imports use the ms-markets 3.0 names (`msm.time_index`, `msm_portfolios.time_index`,
   `PortfoliosUpdater`, `AssetTimestampedUpdater`, `AssetUpdaterConfiguration`);
   `msm rename-preflight scan` is clean.
-- The calendar helpers (`ensure_trading_calendar`, `required_calendar_window` and the calendar
-  constants) moved to the light `etfhextractor.calendars` module, which imports neither ms-markets
-  at import time nor the msm_portfolios stack. `etfhextractor.portfolio_publish` re-exports them
-  and `etfhextractor.portfolio_signal` still exports `ALWAYS_OPEN_CALENDAR_KEYS`.
+- The example is an application with its own instances: `examples/example_instances.py`
+  (namespace `etfhextractor-example`), their migration provider `examples/etfh_example_migrations`
+  (revision `0001`) and `examples/prepare_example_instances_schema.py`. It verifies its run
+  through the updaters that wrote the rows and `Portfolio.get_by_unique_identifier`.
 
 ### Added
 
-- Injection seams on `build_etf_tracking_portfolio` and `publish_etf_tracking_portfolio`, each
-  defaulting to the earlier behaviour: `signal_output_table`, `portfolio_output_table`,
-  `weights_output_table` and `rebalance_output_table` bind the signal and `PortfoliosUpdater`
-  (and its weights and rebalance updaters) to an application's own contract instances;
-  `register_datasets` records them in the Markets catalog after the run, with
-  `PortfolioDatasets.register` for a portfolio values instance or
-  `PortfolioDatasets.register_signal` for a signal instance alone (by default whenever one of
-  those tables is given); `update_pointers=False`
-  leaves the Portfolio pointers alone; `resolve_asset_identifiers_fn` replaces the
-  asset-snapshot ticker resolver.
-- `ETFHoldingsSignal.set_asset_identifier_resolver`, `portfolio_runtime_models`,
-  `register_portfolio_datasets`, `register_signal_dataset`,
-  `EtfTrackingPortfolioBuild.portfolio_datasets` and `.signal_dataset` (in the summary only when
-  registered), and `etfhextractor.markets_runtime`.
-- `tests/test_markets_api_boundary.py` runs the library against a recording remote backend. It
-  checks the resource and operation of every Markets call, that nothing is attached for
-  registries, and that the library never selects the backend. It also guards that no module
-  compiles SQL on a Markets table. Another test pins the default IVV/ishares `signal_uid`.
+- `require_portfolio_instances`, `register_portfolio_datasets`, `register_signal_dataset` (a
+  signal run without a portfolio: `PortfolioDatasets.register_signal` after its run),
+  `ETFHoldingsSignal.set_asset_identifier_resolver`, the build's `update_pointers` and
+  `resolve_asset_identifiers_fn` options, and `etfhextractor.markets_runtime`.
+- `tests/test_markets_api_boundary.py` runs the library against a recording remote backend: the
+  resource and operation of every Markets call, nothing attached but the application's tables,
+  the library never selecting the backend, no compiled SQL on a Markets table and no removed
+  name re-exported. `tests/test_example_instances.py` pins the example instances, provider and
+  revision. Another test pins the default IVV/ishares `signal_uid`.
+
+### Removed (breaking)
+
+- Writing the Markets core `SignalWeightsTS`, `PortfolioWeightsTS`, `PortfolioRebalanceStateTS`
+  and `PortfoliosTS`: there is no default output table anywhere.
+- `etfhextractor.markets_models.BatchVerifiedAssetSnapshot`.
+- The re-exports of `ensure_trading_calendar`, `required_calendar_window`,
+  `US_EQUITY_CALENDAR_KEY`, `ALWAYS_OPEN_CALENDAR_KEYS`, `CALENDAR_PAST_BUFFER_DAYS` and
+  `CALENDAR_FUTURE_HORIZON_DAYS` from `etfhextractor.portfolio_publish`, and of
+  `ALWAYS_OPEN_CALENDAR_KEYS` from `etfhextractor.portfolio_signal`: import them from
+  `etfhextractor.calendars`.
+- The `etfh-read` console script and the subcommand-less `etfh <url>` /
+  `etfh --provider P --ticker T`: use `etfh extract-url` / `etfh extract-ticker`
+  (`python -m etfhextractor` is `etfh`).
+- The duplicate `price_source` key of the portfolio summary: use `valuation_source`.
+- The ms-markets 0.0.54 workaround that set the private
+  `PortfoliosUpdater._explicit_portfolio_identifier`; 3.0 resolves the identity from
+  `target_portfolio`.
 
 ### Upgrade notes for applications
 
-- Run 0.4.5 only in an Environment whose Markets deployment runs ms-markets 3.0.0 and has
+- Run 0.5.0 only in an Environment whose Markets deployment runs ms-markets 3.0.0 and has
   applied its revisions.
+- Declare your own four portfolio instances, migrate them with your migration provider, grant
+  the Markets workload `data_viewer` on them, and pass them as `instances` (or
+  `--instances`). A portfolio with history in the core tables keeps it there until it is copied:
+  pause its runs and move it with ms-markets' `PortfolioSeriesMove` (`msm series move`) before
+  its first run on the instances; never recompute, ETF holdings cannot be re-extracted for past
+  dates (`docs/library.md`, "Markets Access").
 - On the remote backend, every workflow resource that calls the library needs
   `access.branches: [{repository: MainSequenceMarkets, policy: reader}]`. Its workload User uid
   must also be listed in the Environment's `MARKETS_REGISTRY_WRITERS` constant under the
   write-policy resources of the calls it makes: `asset-category`, `asset-type`, `asset`,
   `open-figi-details`, `asset-snapshots`, `calendar`, `calendar-date`, `calendar-session`,
-  `portfolio`, `signal-metadata`, `portfolio-datasets` (`docs/library.md`, "Markets Access").
-- Still direct MetaTables access on Markets tables: only, unless instances are injected, the
-  writes to the core signal-weights, portfolio-weights, rebalance-state and portfolio-values
-  tables. Asset snapshots are read through the Markets API (`AssetSnapshots.latest`, a read with
-  no write-policy entry).
-- A fresh signal instance keeps the `signal_uid` but has no history: copy the existing rows into
-  the instances before the first bound run, never recompute (runbook in `docs/library.md`).
+  `portfolio`, `signal-metadata`, `portfolio-datasets`.
 - On their first ms-markets 3.0 run, `ETFHoldingsSignal` and `PortfoliosUpdater` get a new
-  `TimeIndexTableUpdate` (ms-markets 3.0 moved the modules their hashes name) and continue from
-  their output table's last observation. `signal_uid` does not change: the default IVV/ishares
-  uid still computes offline to `495a8b180d0a216e563cd3f83316da7f`.
+  `TimeIndexTableUpdate` (ms-markets 3.0 moved the modules their hashes name; bound to a new
+  output table they get their own record anyway). `signal_uid` does not change: the default
+  IVV/ishares uid still computes offline to `495a8b180d0a216e563cd3f83316da7f`.
 
 ### Unchanged
 
 - The provider `etfhextractor_migrations:migration`, revision `0001`, `DemoBarsTS` and its
-  identity; `BatchVerifiedAssetSnapshot` (no longer used by the library, kept for importers);
-  every public name of the library and the `etfh` CLI.
+  identity.
 
 ### Not verified
 
 - Everything was verified offline only (tests with outbound network blocked, against ms-markets
   3.0.0 installed from its development source): no run against a deployed Markets API or a local
-  runtime, and the ms-markets 2.2.10 local SQLite defects listed under 0.4.4 were not re-checked.
+  runtime, the example instances provider was never applied to a runtime, and the ms-markets
+  2.2.10 local SQLite defects listed under 0.4.4 were not re-checked.
 
 ## [0.4.4] - 2026-10-11
 

@@ -66,10 +66,12 @@ When serving those capabilities:
   snapshots, categories, calendars, portfolios, signal metadata, the portfolio catalog) are
   reached only through set-based `msm.api` row calls (asset snapshots are read with
   `AssetSnapshots.latest`), never compiled SQL, `search_model` or repository helpers on a Markets
-  table; `tests/test_markets_api_boundary.py` guards both rules. Portfolio and signal time series go to
-  an application's own instances through the seams of `build_etf_tracking_portfolio`
-  (`*_output_table`, `register_datasets`, `update_pointers`, `resolve_asset_identifiers_fn`);
-  the defaults write the core ms-markets tables as before.
+  table; `tests/test_markets_api_boundary.py` guards both rules. The library never writes a
+  Markets portfolio series: `ETFHoldingsSignal` requires `output_table=`, and
+  `build_etf_tracking_portfolio` / `etfh portfolio-publish` require the application's own
+  `instances` (a `PortfolioSeriesTables`) and register them in the Markets catalog.
+- No backward compatibility: no aliases, re-exports, legacy entry points or defaults kept for
+  earlier callers. A removal is a breaking change recorded in the CHANGELOG.
 - `ms-markets` is pinned exactly to the release the Markets deployment runs (CHANGELOG 0.4.4), so
   moving Markets needs a new release of this package.
 - Since SDK 9.0.5, `mainsequence code-repository sync` only refreshes local dependencies

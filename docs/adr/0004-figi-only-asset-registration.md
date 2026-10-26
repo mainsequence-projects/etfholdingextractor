@@ -102,7 +102,7 @@ Markets API the boundary for registries: the registry check is one
 `Asset.upsert_many` and one `OpenFigiDetails.upsert_many`, and snapshots are published with one
 `AssetSnapshots.publish`. Under ms-markets' remote backend, which the importing application
 selects, these run on the Markets API. ms-markets 3.0's own `AssetSnapshot` verifies duplicate
-keys in one read, so registration no longer uses `BatchVerifiedAssetSnapshot` (kept for callers
-that import it). The snapshot check is one `AssetSnapshots.latest(asset_identifiers=...)` read,
+keys in one read, so registration no longer uses `BatchVerifiedAssetSnapshot`, which 0.5.0
+deletes. The snapshot check is one `AssetSnapshots.latest(asset_identifiers=...)` read,
 and the ticker resolver one `AssetSnapshots.latest(tickers=...)`, both on the Markets API under
 the remote backend.

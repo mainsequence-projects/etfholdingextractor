@@ -1,6 +1,6 @@
 # ADR 0003: Holdings Weights Live in ms-markets Portfolios, Not Category Metadata
 
-- Status: Accepted
+- Status: Accepted; amended 2026-10-26 for ms-markets 3.0 (see Amendment)
 - Date: 2026-06-09
 
 ## Context
@@ -58,3 +58,12 @@ Holdings **weights are not persisted through the category-sync path.**
   the membership category.
 - If a future requirement genuinely needs lightweight provenance on the category, it can be revisited
   in a new ADR; this ADR only rules out weights/provenance on the category for now.
+
+## Amendment (2026-10-26): the application's own instances
+
+The weights still live in ms-markets portfolios, now in the application's own instances of the
+ms-markets portfolio contracts (ms-markets ADR 0047): `ETFHoldingsSignal` requires its
+`SignalWeightsTS` instance (`output_table=`), and `build_etf_tracking_portfolio` requires the
+application's `PortfolioSeriesTables` (signal weights, portfolio weights, rebalance state,
+portfolio values) and records them in the Markets portfolio catalog, so Markets reads them by
+table uid. This library never writes the Markets core portfolio tables.

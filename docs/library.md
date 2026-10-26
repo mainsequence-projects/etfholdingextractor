@@ -66,20 +66,18 @@ imports the msm_portfolios stack); import it explicitly:
 ```python
 from etfhextractor.portfolio_publish import (
     EtfTrackingPortfolioBuild, build_etf_tracking_portfolio,
-    publish_etf_tracking_portfolio, ensure_trading_calendar,
-    build_etf_tracker_unique_identifier, start_portfolio_engine, portfolio_runtime_models,
-    register_portfolio_datasets, register_signal_dataset,
-    US_EQUITY_CALENDAR_KEY, PRICE_SOURCE_TABLE_UID_ENV,
+    publish_etf_tracking_portfolio, build_etf_tracker_unique_identifier,
+    require_portfolio_instances, start_portfolio_engine, portfolio_runtime_models,
+    register_portfolio_datasets, register_signal_dataset, PRICE_SOURCE_TABLE_UID_ENV,
 )
 from etfhextractor.portfolio_signal import (
     ETFHoldingsSignal, ETFHoldingsSignalConfig, previous_session_close,
-    ALWAYS_OPEN_CALENDAR_KEYS, VALIDITY_HEADROOM_DAYS,
+    VALIDITY_HEADROOM_DAYS,
 )
 ```
 
-The calendar helpers also live in the light `etfhextractor.calendars` module, which imports
-neither the msm_portfolios stack nor ms-markets at import time; `portfolio_publish` re-exports
-them:
+The calendar helpers live only in the light `etfhextractor.calendars` module, which imports
+neither the msm_portfolios stack nor ms-markets at import time:
 
 ```python
 from etfhextractor.calendars import (
@@ -104,8 +102,11 @@ JSON, `--timeout` sets the HTTP timeout on every command):
   holdings, no re-extraction); repeatable `--figi-filter` narrows OpenFIGI per ticker or aliases
   a provider ticker (`'{"ticker": "BRKB", "figi_ticker": "BRK/B"}'`).
 - **Portfolio publish** —
-  `etfh portfolio-publish --ticker <etf> (--fund-url <url> | --provider <provider>)`
+  `etfh portfolio-publish --ticker <etf> --instances <module:attribute> (--fund-url <url> | --provider <provider>)`
   with:
+  - `--instances <module:attribute>` (required) — the application's own portfolio series tables:
+    an importable `PortfolioSeriesTables`, or a callable returning one (see "Markets Access");
+    the example's is `example_instances:example_instances` with `examples/` on `PYTHONPATH`
   - `--price-source-table-uid <uid>` — registered bars table with `close`+`volume`
     (default: `ETFH_PORTFOLIO_PRICE_SOURCE_TABLE_UID`)
   - `--portfolio-name <name>` — display name (default `ETF Tracker <TICKER>`)
@@ -329,8 +330,9 @@ ADR 0003):
   ticker resolution as category sync) and emits `(time_index, asset_identifier) → signal_weight`.
   Two guards protect the canonical signal table: insertions happen at most once per
   `min_update_interval_days` (default daily), and only when the weights actually changed.
-- `build_etf_tracking_portfolio(...)` (reusable convenience wiring around ms-markets) connects the
-  signal plus the CALLER's valuation source (`TimeIndexTableRef.from_uid`; pass the uid or set
+- `build_etf_tracking_portfolio(...)` (reusable convenience wiring around ms-markets) writes
+  every series into the CALLER's own instances (`instances=`, see "Markets Access") and connects
+  the signal plus the CALLER's valuation source (`TimeIndexTableRef.from_uid`; pass the uid or set
   `ETFH_PORTFOLIO_PRICE_SOURCE_TABLE_UID`) into msm's `PortfoliosUpdater` as
   `PortfolioBuildConfiguration.valuation_source_instance`, resolving portfolio
   identity through the `Portfolio` row alone. It returns `EtfTrackingPortfolioBuild`, exposing the
@@ -414,8 +416,8 @@ use_remote_backend(LazyRemoteBackend())   # or MSM_API_BACKEND=remote, which als
 ```
 
 - **Runtime backend** (the ms-markets default): row calls compile SQL against Markets tables
-  attached in the process, as in earlier releases. The library attaches the same tables as before
-  (`_ensure_msm_started`, `start_portfolio_engine`).
+  attached in the process (`_ensure_msm_started`, `start_portfolio_engine`), for the Markets
+  deployment itself or local development.
 - **Remote backend**: every registry read and write below is one call to the Markets API, and the
   library attaches no registry table. The application needs no grant on `mainsequence.markets`
   for these calls.
@@ -426,7 +428,8 @@ use_remote_backend(LazyRemoteBackend())   # or MSM_API_BACKEND=remote, which als
 | `sync_holdings_asset_category` | `AssetCategory.upsert`, `AssetCategory.replace_memberships` | `asset-category` |
 | `register_equity_assets_from_tickers` | `Asset.get_many_by_unique_identifier`, `AssetType.upsert`, `Asset.upsert_many`, `OpenFigiDetails.upsert_many`, `AssetSnapshots.latest(asset_identifiers=...)`, `AssetSnapshots.publish` | `asset-type`, `asset`, `open-figi-details`, `asset-snapshots` |
 | `ensure_trading_calendar` | `Calendar.filter`; `Calendar.create_from_pandas_calendar`, or for always-open keys `Calendar.upsert`, `CalendarDate.upsert_many`, `CalendarSession.upsert_many` | `calendar`, `calendar-date`, `calendar-session` |
-| `build_etf_tracking_portfolio`, `publish_etf_tracking_portfolio` | the calendar and (with `register_missing`) registration calls, `Portfolio.upsert` (the row and, after a run, its pointers), `SignalMetadata.upsert` (by the signal updater), `PortfolioDatasets.register` or, for a signal-only instance, `PortfolioDatasets.register_signal` when registering | `portfolio`, `signal-metadata`, `portfolio-datasets`, plus those of the calls it makes |
+| `register_signal_dataset` | `PortfolioDatasets.register_signal` | `portfolio-datasets` |
+| `build_etf_tracking_portfolio`, `publish_etf_tracking_portfolio` | the calendar and (with `register_missing`) registration calls, `Portfolio.upsert` (the row and, after a run, its pointers), `SignalMetadata.upsert` (by the signal updater), `PortfolioDatasets.register` after the run | `portfolio`, `signal-metadata`, `portfolio-datasets`, plus those of the calls it makes |
 
 An application that runs these calls on the remote backend needs:
 
@@ -438,66 +441,72 @@ An application that runs these calls on the remote backend needs:
    `msm.api.remote.MarketsAccessError` (a `PermissionError`, HTTP 403);
 3. an Environment whose Markets deployment runs ms-markets 3.0.0 and has applied its revisions.
 
-### Direct Markets access that remains
+### What still touches a Markets table
 
-No module compiles SQL on a Markets table; `tests/test_markets_api_boundary.py` guards it.
-What still uses MetaTables on a Markets table:
+No module compiles SQL on a Markets table and no portfolio series is written to a Markets
+table; `tests/test_markets_api_boundary.py` guards both. On the remote backend the library
+reads and writes Markets tables only through the Markets API row calls above. On the runtime
+backend those same row calls run in the process against attached Markets tables, which is what
+that backend is.
 
-- **Portfolio time series by default.** Unless the seams below bind them elsewhere, the signal
-  weights, portfolio weights, rebalance state and portfolio values are written to the core
-  ms-markets tables with MetaTables, which needs write access to those tables.
-- `BatchVerifiedAssetSnapshot` (`markets_models.py`) writes the Markets snapshot table directly.
-  The library no longer uses it; it is kept unchanged for callers that import it.
+### Every series goes to the application's own instances
 
-### Moving the series to your own instances
+The library owns no portfolio tables and never writes the Markets core ones (ms-markets ADR
+0047): `build_etf_tracking_portfolio` and `publish_etf_tracking_portfolio` require
+`instances`, an `msm_portfolios.services.series_moves.PortfolioSeriesTables` (the type the
+ms-markets series moves use) holding the application's own instances:
 
-`build_etf_tracking_portfolio` (and `publish_etf_tracking_portfolio`) take injection seams;
-every default keeps the earlier behaviour:
+| Slot | Contract | Written by |
+|---|---|---|
+| `signal_weights` | `SignalWeightsTS` | `ETFHoldingsSignal` (which itself requires `output_table=`) |
+| `weights` | `PortfolioWeightsTS` | the `PortfolioWeights` updater `PortfoliosUpdater` builds |
+| `rebalance_state` | `PortfolioRebalanceStateTS` | the `PortfolioRebalance` updater it builds |
+| `values` | `PortfoliosTS` | `PortfoliosUpdater` |
 
-| Argument | Effect |
-|---|---|
-| `signal_output_table` | `ETFHoldingsSignal` writes and reads its history in this `SignalWeightsTS` instance |
-| `portfolio_output_table`, `weights_output_table`, `rebalance_output_table` | `PortfoliosUpdater(output_table=, weights_output_table=, rebalance_output_table=)` |
-| `register_datasets` | after the run: `PortfolioDatasets.register` with `portfolio_output_table` (reconciling when it ran; it binds the signal instance too), else `PortfolioDatasets.register_signal` for a `signal_output_table` alone (only after a run, which writes the signal's `SignalMetadata` row); default: whenever one of those tables is given |
-| `update_pointers` | `False` leaves the Portfolio row's table-update pointers alone |
-| `resolve_asset_identifiers_fn` | replaces the snapshot ticker resolver in the preflight and in the signal (`ETFHoldingsSignal.set_asset_identifier_resolver`) |
+`require_portfolio_instances` refuses a missing slot or a table in the Markets namespace before
+any write. After the (optional) run the build records the values, weights and signal instances
+in the Markets catalog with `PortfolioDatasets.register`, reconciling when it ran;
+`build.portfolio_datasets` (and the summary's `portfolio_datasets`) shows the state, which should
+be `populated` after a run. A signal run without a portfolio binds its instance with
+`register_signal_dataset(signal_uid=..., signal_output_table=...)` (`PortfolioDatasets.register_signal`)
+after its run, which writes the `SignalMetadata` row the binding needs. Other options:
+`update_pointers=False` leaves the Portfolio row's table-update pointers alone, and
+`resolve_asset_identifiers_fn` replaces the snapshot ticker resolver in the preflight and in the
+signal (`ETFHoldingsSignal.set_asset_identifier_resolver`).
 
-`portfolio_runtime_models(...)` and `start_portfolio_engine(...)` take the same output tables:
-on the remote backend an instance replaces the core table it stands for, on the runtime backend
-the instances join the usual set. Output tables never enter `update_hash` or `signal_uid`; MetaTables keys each update
-record by update hash and output table, so a bound updater gets its own record.
+`portfolio_runtime_models(instances, extra_models)` and `start_portfolio_engine(instances,
+extra_models)` attach the instances (and, on the runtime backend, the Markets registry tables the
+row calls need; never a Markets portfolio series). A process gets one `start_engine`
+configuration: an application that attaches its own tables at its composition root includes
+`portfolio_runtime_models(...)` there and passes `start_engine=False`. `etfh portfolio-publish`
+takes `--instances MODULE:ATTRIBUTE` (a `PortfolioSeriesTables` or a callable returning one).
+Output tables never enter `update_hash` or `signal_uid`.
 
-The library owns no instances (it has no deployment), so the application moves a portfolio:
+The application declares and migrates its instances:
 
-1. Declare the instances in its own namespace with the ms-markets factories in
-   `msm_portfolios.time_index.contract_instances` (`configured_signal_weights_storage`,
-   `configured_portfolios_storage`, `configured_portfolio_weights_storage`,
-   `configured_portfolio_rebalance_state_storage`; `instance_key`, `namespace`, `storage_app`,
-   `base`), add them to its own migration provider in a new revision, and let its deployment's
-   migration Job create them.
-2. Grant the Markets workload `data_viewer` on the four instance tables: catalog registration
-   verifies them and Markets reads values and weights from them.
-3. Pause the portfolio's scheduled runs.
-4. **Backfill by copying, before the first bound run.** Copy the signal's rows (its
-   `signal_uid`) from the core `SignalWeightsTS`, and the portfolio's rows (its
-   `portfolio_identifier`) from the core `PortfoliosTS`, `PortfolioWeightsTS` and
-   `PortfolioRebalanceStateTS`, into the instances. Never recompute: ETF holdings are extracted
-   as of today and cannot be re-extracted for past dates. A fresh signal instance keeps the
-   `signal_uid` but has no rows, so `ETFHoldingsSignal` would treat its first bound run as a
-   first run (a backdated bootstrap observation with today's composition) and the portfolio
-   history would be lost. Check that the copied row counts and time bounds match the source.
-5. Attach the instances (include `portfolio_runtime_models(...)` with the output tables in the
-   application's one `start_engine` call) and publish with the four output tables and
-   `start_engine=False`. With `portfolio_output_table` the build registers the instances in the
-   Markets catalog after the run; `build.portfolio_datasets` (and the summary's
-   `portfolio_datasets`) shows the reconciled state, which should be `populated`. A signal moved
-   on its own (core portfolio tables, or no portfolio) is bound with
-   `PortfolioDatasets.register_signal` after its first bound run (`build.signal_dataset`, or
-   `register_signal_dataset(signal_uid=..., signal_output_table=...)` after a signal-only run).
-6. Resume the scheduled runs. Readers get values and weights through the Markets API
-   (`msm.client.MarketsClient.portfolio_values` / `portfolio_weights`). Markets never deletes
-   rows in a table another application owns; leave the core rows in place until the move is
-   verified.
+1. Build them with the ms-markets factories in `msm_portfolios.time_index.contract_instances`
+   (`configured_signal_weights_storage`, `configured_portfolio_weights_storage`,
+   `configured_portfolio_rebalance_state_storage`, `configured_portfolios_storage`;
+   `instance_key`, `namespace`, `storage_app`, `base`) in its own namespace, add them to its own
+   migration provider in a revision, and let its deployment's migration Job create them.
+   `examples/example_instances.py` and `examples/etfh_example_migrations/` do this for the
+   example application (`etfhextractor-example` namespace). The provider's migration metadata
+   references the Markets tables by physical name and key column only: the factories copy each
+   referenced Markets table whole, with foreign keys to tables they do not copy, which Alembic
+   cannot sort.
+2. Grant the Markets workload `data_viewer` on the instance tables: catalog registration verifies
+   them and Markets reads values and weights from them.
+3. **A portfolio that already has history in the core tables** keeps it there until it is copied.
+   Pause its runs and copy before its first run on the instances, never recompute: ETF holdings
+   are extracted as of today and cannot be re-extracted for past dates. A fresh signal instance
+   keeps the `signal_uid` but has no rows, so `ETFHoldingsSignal` would treat its first run as a
+   first run (a backdated bootstrap observation with today's composition). ms-markets'
+   `msm_portfolios.services.series_moves.PortfolioSeriesMove` (`msm series move
+   module:callable [--execute]`, `msm series rollback ...`) copies the signal weights, rebalance
+   state, weights and values of the keys the instances lack, checks the counts, binds signals and
+   writes the catalog row, and rolls back the same way.
+4. Readers get values and weights through the Markets API
+   (`msm.client.MarketsClient.portfolio_values` / `portfolio_weights`).
 
 ### ms-markets 3.0 identities
 

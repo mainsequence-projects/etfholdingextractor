@@ -1,7 +1,7 @@
 # etfhextractor
 
 [![Package](https://img.shields.io/badge/package-etfhextractor-black.svg)](pyproject.toml)
-[![Version](https://img.shields.io/badge/version-0.4.5-blue.svg)](pyproject.toml)
+[![Version](https://img.shields.io/badge/version-0.5.0-blue.svg)](pyproject.toml)
 [![Python](https://img.shields.io/badge/python-3.13-blue.svg)](pyproject.toml)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![ms-markets](https://img.shields.io/badge/ms--markets-%3D%3D2.2.10-black.svg)](pyproject.toml)
@@ -35,7 +35,7 @@ kept out of `__init__` so pure extraction never loads the msm_portfolios stack).
 
 ## Project Status
 
-- Current package version: `0.4.5` (unreleased)
+- Current package version: `0.5.0` (unreleased)
 - Python: `>=3.13,<3.14`
 - Key dependencies: `mainsequence >=9.0.22,<10` (identity, secrets, logging),
   `mainsequence-metatable >=0.1.35,<0.2` (the MetaTables client, imported as `metatables`),
@@ -77,6 +77,7 @@ etfh category-sync --ticker IVV --provider ishares \
 
 # 3. Tracking signal + ms-markets assembly wiring (caller-supplied bars table)
 etfh portfolio-publish --ticker IVV --provider ishares \
+    --instances my_app.instances:portfolio_instances \
     --price-source-table-uid <TimeIndexMetaTable-uid> \
     --register-missing
 ```
@@ -104,6 +105,7 @@ from etfhextractor.portfolio_publish import publish_etf_tracking_portfolio
 
 result = publish_etf_tracking_portfolio(
     etf_ticker="IVV",
+    instances=my_portfolio_instances,  # your PortfolioSeriesTables (see below)
     provider="ishares",
     price_source_table_uid="<uid>",   # or price_source_instance=<TimeIndexTableUpdater>
     register_missing=True,
@@ -123,10 +125,16 @@ does. With ms-markets' remote row backend selected
 publication, categories, calendars, portfolios, the portfolio catalog) runs on the Markets API,
 and the application needs `reader` on the `MainSequenceMarkets` branch plus entries in the
 Environment's `MARKETS_REGISTRY_WRITERS` constant instead of grants on `mainsequence.markets`.
-Ticker resolution reads the latest asset snapshots the same way. `build_etf_tracking_portfolio` takes
-output tables, catalog registration, pointer and ticker-resolver seams, so an application can
-keep every portfolio series in its own namespace. Details, the write-policy resources and the
-move runbook: [docs/library.md](docs/library.md) ("Markets Access").
+Ticker resolution reads the latest asset snapshots the same way.
+
+The library never writes the Markets core portfolio tables: `build_etf_tracking_portfolio`,
+`publish_etf_tracking_portfolio` and `etfh portfolio-publish` require `instances`, an
+`msm_portfolios.services.series_moves.PortfolioSeriesTables` with the application's own
+signal-weights, portfolio-weights, rebalance-state and portfolio-values instances (ms-markets
+`contract_instances` factories, migrated by the application), and register them in the Markets
+portfolio catalog after each build. `examples/example_instances.py` shows one. Details, the
+write-policy resources and moving existing history:
+[docs/library.md](docs/library.md) ("Markets Access").
 
 ## Environment
 

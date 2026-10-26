@@ -131,7 +131,7 @@ ms-markets 1.0.2.
 ## Amendment (2026-10-26): ms-markets 3.0 and the Markets API
 
 The decisions are unchanged. `ensure_trading_calendar` moved to the light
-`etfhextractor.calendars` module (re-exported by `portfolio_publish`) and uses registry row calls
+`etfhextractor.calendars` module (callers import it from there) and uses registry row calls
 only, so under ms-markets' remote backend (ms-markets ADR 0047) it runs on the Markets API:
 always-open calendars write their dates and sessions with `CalendarDate.upsert_many` and
 `CalendarSession.upsert_many` on the same conflict keys as `materialize_calendar_rows`, which is

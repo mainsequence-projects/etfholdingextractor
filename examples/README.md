@@ -19,8 +19,18 @@ registered bars table ── TimeIndexTableRef ─┴──> PortfoliosUpdater �
 The script is stepwise and honest about platform state: extract → resolve component
 tickers through the asset-snapshot layer (blockers stop the run) → optional category
 sync → signal/portfolio publication → read-back verification of the rows actually
-written (`SignalWeightsTS`, `PortfoliosTS`, `PortfolioWeightsTS` through the updaters that
-wrote them, and the `Portfolio` row through the row API).
+written (signal weights, portfolio values and weights through the updaters that wrote them,
+and the `Portfolio` row through the row API).
+
+The example is an application in its own right, so it keeps every portfolio series in its own
+namespace, as etfhextractor requires (ms-markets ADR 0047): `example_instances.py` declares the
+signal-weights, portfolio-weights, rebalance-state and portfolio-values instances in the
+`etfhextractor-example` namespace (tables `etfh_example__<contract>__main`),
+`etfh_example_migrations/` is their migration provider (`etfh_example_migrations:migration`,
+revision `0001`), and `prepare_example_instances_schema.py` applies it with `--local` or verifies
+a hosted runtime. The build registers the instances in the Markets portfolio catalog; the same
+object serves `etfh portfolio-publish --instances example_instances:example_instances` with
+`examples/` on `PYTHONPATH`.
 
 Markets registries (assets, calendars, categories, portfolios) are written with `msm.api` row
 calls. On a hosted runtime, `MSM_API_BACKEND=remote` runs them on the Markets API instead of
@@ -117,6 +127,10 @@ python examples/ivv_tracking_portfolio_full_workflow.py
 # Only the DemoBarsTS schema step: apply locally, or verify a hosted runtime.
 python examples/prepare_demo_bars_schema.py --local
 python examples/prepare_demo_bars_schema.py
+
+# Only the example instances: apply locally, or verify a hosted runtime.
+python examples/prepare_example_instances_schema.py --local
+python examples/prepare_example_instances_schema.py
 
 # No writes: extract IVV, resolve components, report blockers.
 python examples/ivv_tracking_portfolio_full_workflow.py --plan-only
