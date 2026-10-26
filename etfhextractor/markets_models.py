@@ -28,7 +28,6 @@ from msm.base import MarketsBase, MarketsTimeIndexMetaTableMixin
 from msm.models.assets.core import AssetTable
 from msm.settings import ASSET_IDENTIFIER_DIMENSION
 from msm.time_index.assets import (
-    AssetSnapshot,
     AssetTimestampedUpdater,
     AssetUpdaterConfiguration,
 )
@@ -110,54 +109,6 @@ def _migration_metadata():
 ETFHEXTRACTOR_MIGRATION_METADATA = _migration_metadata()
 
 
-class BatchVerifiedAssetSnapshot(AssetSnapshot):
-    """AssetSnapshot whose duplicate-key verification is ONE batched read.
-
-    The ms-markets 2.x base class verified `(time_index, asset_identifier)`
-    collisions with one `get_df_between_dates` call **per row** — for an
-    ETF-sized universe that is hundreds of sequential backend reads. This
-    override keeps the exact same verification semantics with a single read over
-    the frame's time range and identifier set (smart resolution rule: batch
-    lookups, never per-row).
-
-    No longer used by the library: FIGI registration publishes snapshots with
-    `msm.api.assets.AssetSnapshots.publish` (ms-markets ADR 0047), which runs on
-    the Markets API under the remote backend and whose ms-markets 3.0 updater
-    verifies collisions in one read. Kept, unchanged, for callers that import it;
-    it writes the Markets `AssetSnapshotsStorage` table directly.
-    """
-
-    def existing_backend_index_keys(self, frame: pd.DataFrame) -> list[tuple[str, str]]:
-        validated = self.validate_frame(frame, output_table=self.output_table)
-        flat = validated.reset_index()
-        identifiers = sorted({str(value) for value in flat[ASSET_IDENTIFIER_DIMENSION]})
-        times = pd.to_datetime(flat["time_index"], utc=True)
-        candidate_keys = {
-            (pd.Timestamp(time_index).isoformat(), str(identifier))
-            for time_index, identifier in zip(times, flat[ASSET_IDENTIFIER_DIMENSION])
-        }
-
-        existing = self.get_df_between_dates(
-            start_date=times.min().to_pydatetime(),
-            end_date=times.max().to_pydatetime(),
-            great_or_equal=True,
-            less_or_equal=True,
-            dimension_filters={ASSET_IDENTIFIER_DIMENSION: identifiers},
-        )
-        if existing is None or len(existing) == 0:
-            return []
-
-        existing_flat = existing.reset_index()
-        existing_keys = {
-            (pd.Timestamp(time_index).isoformat(), str(identifier))
-            for time_index, identifier in zip(
-                pd.to_datetime(existing_flat["time_index"], utc=True),
-                existing_flat[ASSET_IDENTIFIER_DIMENSION],
-            )
-        }
-        return sorted(existing_keys & candidate_keys)
-
-
 class DemoBarsConfiguration(AssetUpdaterConfiguration):
     """Update-scoped configuration for the demo bars updater."""
 
@@ -180,7 +131,6 @@ class DemoBars(AssetTimestampedUpdater):
 
 
 __all__ = [
-    "BatchVerifiedAssetSnapshot",
     "ETFHEXTRACTOR_MARKETS_STORAGE_APP",
     "ETFHEXTRACTOR_METATABLE_NAMESPACE",
     "DemoBars",

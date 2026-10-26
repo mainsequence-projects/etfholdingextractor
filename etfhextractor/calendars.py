@@ -7,8 +7,7 @@ application selected the ms-markets remote backend (ADR 0047; write-policy resou
 `calendar`, `calendar-date` and `calendar-session`) and on the attached runtime otherwise.
 
 This module imports ms-markets lazily and never the `msm_portfolios` stack, so applications that
-only need calendars can import it without the portfolio layer. `etfhextractor.portfolio_publish`
-re-exports every name.
+only need calendars can import it without the portfolio layer.
 """
 
 from __future__ import annotations

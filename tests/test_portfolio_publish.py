@@ -9,16 +9,18 @@ from unittest.mock import MagicMock, patch
 from metatables import TimeIndexTableRef, TimeIndexTableUpdater
 from msm_portfolios.rebalance_strategy.immediate_signal import ImmediateSignal
 
-from etfhextractor.portfolio_publish import (
+from etfhextractor.calendars import (
     CALENDAR_FUTURE_HORIZON_DAYS,
     CALENDAR_PAST_BUFFER_DAYS,
     US_EQUITY_CALENDAR_KEY,
+    ensure_trading_calendar,
+    required_calendar_window,
+)
+from etfhextractor.portfolio_publish import (
     EtfTrackingPortfolioBuild,
     build_etf_tracker_unique_identifier,
     build_etf_tracking_portfolio,
-    ensure_trading_calendar,
     publish_etf_tracking_portfolio,
-    required_calendar_window,
 )
 from etfhextractor.portfolio_signal import ETFHoldingsSignal
 
@@ -222,7 +224,7 @@ class PortfolioValuationSourceTests(unittest.TestCase):
         with (
             patch("etfhextractor.portfolio_publish.start_portfolio_engine"),
             patch(
-                "etfhextractor.portfolio_publish.ensure_trading_calendar",
+                "etfhextractor.calendars.ensure_trading_calendar",
                 return_value=calendar,
             ),
             patch(
@@ -351,7 +353,7 @@ class InstanceTests(unittest.TestCase):
         with (
             patch("etfhextractor.portfolio_publish.start_portfolio_engine") as engine,
             patch(
-                "etfhextractor.portfolio_publish.ensure_trading_calendar",
+                "etfhextractor.calendars.ensure_trading_calendar",
                 return_value=calendar,
             ),
             patch(
@@ -407,7 +409,7 @@ class InstanceTests(unittest.TestCase):
     def test_every_series_needs_an_instance_before_any_write(self) -> None:
         with (
             patch("etfhextractor.portfolio_publish.start_portfolio_engine") as engine,
-            patch("etfhextractor.portfolio_publish.ensure_trading_calendar") as calendar,
+            patch("etfhextractor.calendars.ensure_trading_calendar") as calendar,
         ):
             with self.assertRaisesRegex(ValueError, "rebalance_state"):
                 build_etf_tracking_portfolio(

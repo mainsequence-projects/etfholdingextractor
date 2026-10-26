@@ -23,7 +23,7 @@ from msm_portfolios.time_index import SignalWeights
 from msm_portfolios.time_index.constants import ASSET_IDENTIFIER, SIGNAL_UID
 from pydantic import model_validator
 
-from .calendars import ALWAYS_OPEN_CALENDAR_KEYS
+from . import calendars
 from .mainsequence_categories import (
     derive_component_weights_from_holdings,
     resolve_asset_identifiers_by_ticker,
@@ -55,7 +55,7 @@ def previous_session_close(
     if moment.tzinfo is None:
         raise ValueError("previous_session_close requires a timezone-aware moment.")
     moment = moment.astimezone(dt.timezone.utc)
-    if calendar_key in ALWAYS_OPEN_CALENDAR_KEYS:
+    if calendar_key in calendars.ALWAYS_OPEN_CALENDAR_KEYS:
         return moment.replace(hour=0, minute=0, second=0, microsecond=0)
 
     import pandas_market_calendars as mcal
@@ -431,7 +431,6 @@ class ETFHoldingsSignal(SignalWeights):
 
 
 __all__ = [
-    "ALWAYS_OPEN_CALENDAR_KEYS",
     "ETFHoldingsSignal",
     "ETFHoldingsSignalConfig",
     "VALIDITY_HEADROOM_DAYS",

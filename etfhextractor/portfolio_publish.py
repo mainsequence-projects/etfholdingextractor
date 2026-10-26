@@ -16,16 +16,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
-# Calendar helpers live in the light `etfhextractor.calendars` module (registry row calls only,
-# no msm_portfolios import); they are re-exported here for existing imports.
-from .calendars import (
-    ALWAYS_OPEN_CALENDAR_KEYS,
-    CALENDAR_FUTURE_HORIZON_DAYS,
-    CALENDAR_PAST_BUFFER_DAYS,
-    US_EQUITY_CALENDAR_KEY,
-    ensure_trading_calendar,
-    required_calendar_window,
-)
+from . import calendars
 from .portfolio_signal import (
     ETFHoldingsSignal,
     ETFHoldingsSignalConfig,
@@ -218,7 +209,7 @@ def build_etf_tracking_portfolio(
     min_update_interval_days: float = 1.0,
     renormalize_weights: bool = True,
     commission_fee: float = 0.00018,
-    calendar_key: str = US_EQUITY_CALENDAR_KEY,
+    calendar_key: str = calendars.US_EQUITY_CALENDAR_KEY,
     backtest_start_days: int = 60,
     timeout: float = 30.0,
     run: bool = True,
@@ -295,7 +286,7 @@ def build_etf_tracking_portfolio(
 
     # Persist (or reuse) the trading calendar BEFORE any portfolio wiring: the
     # rebalance schedule and the Portfolio row both hang off it.
-    calendar_row = ensure_trading_calendar(
+    calendar_row = calendars.ensure_trading_calendar(
         calendar_key, backtest_start_days=backtest_start_days
     )
 
@@ -568,7 +559,7 @@ def publish_etf_tracking_portfolio(
     min_update_interval_days: float = 1.0,
     renormalize_weights: bool = True,
     commission_fee: float = 0.00018,
-    calendar_key: str = US_EQUITY_CALENDAR_KEY,
+    calendar_key: str = calendars.US_EQUITY_CALENDAR_KEY,
     backtest_start_days: int = 60,
     timeout: float = 30.0,
     run: bool = True,
@@ -638,21 +629,15 @@ def _summarize_run_result(run_result: Any) -> Any:
 
 
 __all__ = [
-    "ALWAYS_OPEN_CALENDAR_KEYS",
-    "CALENDAR_FUTURE_HORIZON_DAYS",
-    "CALENDAR_PAST_BUFFER_DAYS",
     "ETF_TRACKER_IDENTIFIER_PREFIX",
     "EtfTrackingPortfolioBuild",
     "PRICE_SOURCE_TABLE_UID_ENV",
-    "US_EQUITY_CALENDAR_KEY",
     "build_etf_tracker_unique_identifier",
     "build_etf_tracking_portfolio",
-    "ensure_trading_calendar",
     "portfolio_runtime_models",
     "publish_etf_tracking_portfolio",
     "register_portfolio_datasets",
     "register_signal_dataset",
     "require_portfolio_instances",
-    "required_calendar_window",
     "start_portfolio_engine",
 ]

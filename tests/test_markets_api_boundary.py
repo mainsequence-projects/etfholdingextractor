@@ -442,3 +442,20 @@ def test_a_signal_only_instance_is_one_catalog_call(markets_api) -> None:
         )
     ]
     assert registration.signal_meta_table_uid == "signal-instance-uid"
+
+
+def test_moved_names_are_not_re_exported() -> None:
+    """Calendar names live only in `etfhextractor.calendars`; no compatibility aliases remain."""
+    from etfhextractor import markets_models, portfolio_publish, portfolio_signal
+
+    for name in (
+        "ensure_trading_calendar",
+        "required_calendar_window",
+        "US_EQUITY_CALENDAR_KEY",
+        "ALWAYS_OPEN_CALENDAR_KEYS",
+        "CALENDAR_PAST_BUFFER_DAYS",
+        "CALENDAR_FUTURE_HORIZON_DAYS",
+    ):
+        assert not hasattr(portfolio_publish, name), name
+        assert not hasattr(portfolio_signal, name), name
+    assert not hasattr(markets_models, "BatchVerifiedAssetSnapshot")
