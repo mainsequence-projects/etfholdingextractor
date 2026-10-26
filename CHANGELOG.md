@@ -11,6 +11,10 @@ once 3.0.0 is on PyPI.
 
 ### Changed
 
+- Pin `ms-markets==3.0.0`, the release the Markets deployment runs once it moves to the Markets
+  API boundary (the exact-pin policy of 0.4.4). ms-markets 3.0.0 requires `mainsequence>=9.0.29`
+  and `mainsequence-metatable>=0.1.57`, which the ranges here already admit. `uv.lock` and
+  `requirements.txt` are not regenerated: they resolve 2.2.10 until 3.0.0 is on PyPI.
 - Markets registries are reached only through `msm.api` row calls, and set-based ones where a
   call touches many rows. The library never selects the ms-markets row backend: the importing
   application does (`use_remote_backend(LazyRemoteBackend())` or `MSM_API_BACKEND=remote`), and
