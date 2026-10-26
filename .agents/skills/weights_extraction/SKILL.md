@@ -22,8 +22,6 @@ Prefer these repository interfaces:
   `etfh extract-url <fund-url> [<fund-url> ...] [--format weights|full]`
 - CLI:
   `etfh extract-ticker --provider <provider> --ticker <ticker> [--ticker <ticker> ...] [--format weights|full]`
-- CLI (legacy):
-  `etfh-read <fund-url>`
 - Python:
   `ETFHoldingsReader`
 - Python:

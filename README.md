@@ -63,7 +63,7 @@ operating-system credential store after `mainsequence login`; renew it with
 
 ## CLI
 
-One command path per capability (plus a legacy reader entry point):
+One command path per capability:
 
 ```bash
 # 1. Extraction — JSON ticker→weight (add --format full for fund metadata + rows)
@@ -79,9 +79,6 @@ etfh category-sync --ticker IVV --provider ishares \
 etfh portfolio-publish --ticker IVV --provider ishares \
     --price-source-table-uid <TimeIndexMetaTable-uid> \
     --register-missing
-
-# Legacy reader (URL → weights JSON)
-etfh-read https://www.ishares.com/us/products/239726/ishares-core-sp-500-etf
 ```
 
 `portfolio-publish` defaults: NYSE calendar (`--calendar-key`), 60-day backtest window

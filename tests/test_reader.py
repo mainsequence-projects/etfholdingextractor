@@ -4,16 +4,16 @@ import io
 import json
 import unittest
 import uuid
-from contextlib import redirect_stdout
+from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 from etfhextractor import ETFHoldingsReader, extract_ticker_weights
-from etfhextractor.__main__ import main
 from etfhextractor._version import DEFAULT_USER_AGENT
 from etfhextractor.artifacts import ArtifactPayload, persist_extraction_artifacts
+from etfhextractor.cli import main
 from etfhextractor.exceptions import UnsupportedProviderError
 from etfhextractor.mainsequence_categories import (
     build_holdings_asset_category_plan,
@@ -87,19 +87,6 @@ class ETFHoldingsReaderTests(unittest.TestCase):
             },
         )
 
-    def test_cli_prints_json_weights_for_url(self) -> None:
-        buffer = io.StringIO()
-        reader = Mock()
-        reader.read.return_value = build_sample_fund_holdings()
-
-        with redirect_stdout(buffer):
-            exit_code = main([IVV_URL], reader=reader)
-
-        payload = json.loads(buffer.getvalue())
-        self.assertEqual(exit_code, 0)
-        self.assertEqual(payload["AAPL"], 7.0)
-        self.assertEqual(payload["MSFT"], 6.5)
-
     def test_read_ticker_requires_provider(self) -> None:
         with self.assertRaisesRegex(
             UnsupportedProviderError,
@@ -129,17 +116,10 @@ class ETFHoldingsReaderTests(unittest.TestCase):
         )
         provider.read_ticker.assert_called_once_with("IVV")
 
-    def test_cli_supports_ticker_input(self) -> None:
-        buffer = io.StringIO()
-        reader = Mock()
-        reader.read_ticker.return_value = build_sample_fund_holdings()
-
-        with redirect_stdout(buffer):
-            exit_code = main(["--provider", "ishares", "--ticker", "IVV"], reader=reader)
-
-        payload = json.loads(buffer.getvalue())
-        self.assertEqual(exit_code, 0)
-        self.assertEqual(payload["AAPL"], 7.0)
+    def test_cli_requires_a_subcommand(self) -> None:
+        # The pre-subcommand form (`etfh <url>`, `etfh --provider ... --ticker ...`) is gone.
+        with self.assertRaises(SystemExit), redirect_stderr(io.StringIO()):
+            main([IVV_URL], reader=Mock())
 
     def test_cli_extract_url_subcommand_prints_weights(self) -> None:
         buffer = io.StringIO()

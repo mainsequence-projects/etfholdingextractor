@@ -33,7 +33,6 @@ dependencies = [
 
 [project.scripts]
 etfh = "etfhextractor.cli:main"
-etfh-read = "etfhextractor.__main__:main"
 
 [tool.setuptools.packages.find]
 where = ["."]

@@ -13,13 +13,6 @@ from ..mainsequence_categories import (
 )
 from ..reader import ETFHoldingsReader
 
-SUBCOMMAND_NAMES = {
-    "extract-url",
-    "extract-ticker",
-    "category-sync",
-    "portfolio-publish",
-}
-
 
 def _add_compact_arg(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
@@ -241,30 +234,6 @@ def build_subcommand_parser() -> argparse.ArgumentParser:
     _add_timeout_arg(portfolio_publish_parser)
     _add_compact_arg(portfolio_publish_parser)
 
-    return parser
-
-
-def build_legacy_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
-        description=(
-            "Extract ETF holdings weights from supported fund URLs or from provider+ticker inputs."
-        )
-    )
-    parser.add_argument("urls", nargs="*", help="One or more supported ETF fund page URLs.")
-    parser.add_argument(
-        "--ticker",
-        dest="tickers",
-        action="append",
-        default=[],
-        help="ETF ticker to resolve through the provider layer. Repeat for multiple tickers.",
-    )
-    parser.add_argument(
-        "--provider",
-        help="Explicit provider for --ticker workflows. Required when using --ticker.",
-    )
-    _add_output_format_arg(parser)
-    _add_timeout_arg(parser)
-    _add_compact_arg(parser)
     return parser
 
 
@@ -491,45 +460,12 @@ def _run_subcommand(
     return 0
 
 
-def _run_legacy_cli(
-    argv: Sequence[str],
-    *,
-    reader: ETFHoldingsReader | None = None,
-) -> int:
-    args = build_legacy_parser().parse_args(argv)
-    if not args.urls and not args.tickers:
-        raise SystemExit("Pass one or more fund URLs or one or more --ticker values.")
-    if args.urls and args.tickers:
-        raise SystemExit("Pass either fund URLs or --ticker values, not both.")
-    if args.provider and not args.tickers:
-        raise SystemExit("--provider can only be used with --ticker.")
-    if args.tickers and not args.provider:
-        raise SystemExit(
-            "--ticker requires --provider. Provider inference is supported from URLs only."
-        )
-
-    active_reader = reader or ETFHoldingsReader(timeout=args.timeout)
-    if args.tickers:
-        payload = _serialize_ticker_results(
-            active_reader,
-            args.tickers,
-            provider=args.provider,
-            output_format=args.format,
-        )
-    else:
-        payload = _serialize_url_results(active_reader, args.urls, args.format)
-    _print_json(payload, compact=args.compact)
-    return 0
-
-
 def main(
     argv: Sequence[str] | None = None,
     reader: ETFHoldingsReader | None = None,
 ) -> int:
     effective_argv = list(sys.argv[1:] if argv is None else argv)
-    if effective_argv and effective_argv[0] in SUBCOMMAND_NAMES:
-        return _run_subcommand(effective_argv, reader=reader)
-    return _run_legacy_cli(effective_argv, reader=reader)
+    return _run_subcommand(effective_argv, reader=reader)
 
 
 if __name__ == "__main__":

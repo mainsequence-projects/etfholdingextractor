@@ -17,12 +17,12 @@ Everything else in the package exists only to support those responsibilities.
 ```text
 etfhextractor/
   __init__.py                 # public exports (extraction + categories + FIGI registration)
-  __main__.py                 # python -m etfhextractor -> CLI
+  __main__.py                 # python -m etfhextractor -> etfh
   _version.py
   artifacts.py                # debug evidence persistence (data/temp/)
   asset_registration.py       # FIGI-only smart asset registration (ADR 0004)
   calendars.py                # persisted trading calendars (registry row calls only)
-  cli/                        # etfh subcommands + legacy etfh-read parser
+  cli/                        # etfh subcommands
   exceptions.py
   mainsequence_categories.py  # snapshot-layer resolution + category sync (msm)
   markets_models.py           # project-owned ms-markets tables (extension convention)
@@ -118,8 +118,7 @@ JSON, `--timeout` sets the HTTP timeout on every command):
   - `--register-missing` / `--figi-filter '<json>'` — as in category-sync
   - `--no-run` — wire and register without running the data nodes
 
-`etfh-read <url>` still works as the legacy extraction entrypoint
-(`python -m etfhextractor --provider <p> --ticker <t>` is its module form).
+`python -m etfhextractor` is the module form of `etfh`.
 
 ### CLI Response Examples
 
@@ -678,7 +677,7 @@ Maintenance rules (enforced by `tests/test_agent_capabilities.py`):
 - bumping the `pyproject.toml` version requires the same bump in `.agents/agent_card.json`
   and in the README version badge;
 - adding or renaming a CLI command requires a matching project skill and agent-card entry, and
-  skills may only reference real `etfh` subcommands (or `etfh-read`);
+  skills may only reference real `etfh` subcommands;
 - skill tags stay empty until explicitly confirmed;
 - `.agents/skills/mainsequence/**`, `.agents/skills/mainsequence_platform/**` (present only
   after the authenticated `mainsequence code-repository update-platform-skills`),

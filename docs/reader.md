@@ -122,13 +122,6 @@ etfh extract-ticker --provider ishares --ticker IVV --format full
 }
 ```
 
-### Legacy extraction entrypoint
-
-```bash
-etfh-read https://www.ishares.com/us/products/251614/ishares-msci-usa-momentum-factor-etf
-python -m etfhextractor --provider ishares --ticker IVV
-```
-
 ## Output Contract
 
 `ETFHoldingsReader.read(...)` and `ETFHoldingsReader.read_ticker(...)` always return

@@ -445,12 +445,9 @@ def build_etf_tracking_portfolio(
         portfolio_configuration,
         portfolio_description=resolved_description,
     )
+    # run() and update() both resolve the portfolio identity from target_portfolio, so no
+    # portfolio_resolver is needed.
     node.target_portfolio = portfolio_row
-    # ms-markets 0.0.54: run() resolves identity from target_portfolio, but
-    # update()'s values normalizer reads _explicit_portfolio_identifier and
-    # otherwise demands an external portfolio_resolver. Pin both to the same
-    # Portfolio row identity so no resolver is needed.
-    node._explicit_portfolio_identifier = portfolio_identifier
 
     run_result = None
     if run:

@@ -29,9 +29,6 @@ AGENT_CARD_PATH = REPO_ROOT / ".agents" / "agent_card.json"
 # `mainsequence code-repository update-platform-skills` (SDK >= 9.0.2).
 VENDORED_SKILL_TREES = {"mainsequence", "mainsequence_platform", "metatables", "ms_markets"}
 
-LEGACY_CLI_ENTRYPOINT = "etfh-read"
-
-
 def project_skill_directories() -> list[Path]:
     return sorted(
         path
@@ -97,12 +94,10 @@ class ProjectSkillTests(unittest.TestCase):
             referenced = {
                 command for command in subcommands if f"etfh {command}" in content
             }
-            if LEGACY_CLI_ENTRYPOINT in content:
-                referenced.add(LEGACY_CLI_ENTRYPOINT)
             self.assertTrue(
                 referenced,
                 f"{directory.name}/SKILL.md references no real CLI entry point "
-                f"(known subcommands: {sorted(subcommands)} or {LEGACY_CLI_ENTRYPOINT}).",
+                f"(known subcommands: {sorted(subcommands)}).",
             )
 
     def test_skill_cli_references_are_not_stale(self) -> None:
