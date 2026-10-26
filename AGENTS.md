@@ -60,6 +60,19 @@ When serving those capabilities:
   application that deploys code using `DemoBarsTS` applies `etfhextractor_migrations:migration`
   in its own migration Job. The ms-markets schema belongs to the ms-markets deployment; this
   repository never applies the ms-markets provider. Nothing migrates at import or start-up.
+- Markets access follows ms-markets ADR 0047 (`docs/library.md`, "Markets Access"). The library
+  never selects the ms-markets row backend; the importing application does (`LazyRemoteBackend`
+  or `MSM_API_BACKEND=remote`). Markets registries (assets, OpenFIGI details, asset types and
+  snapshots, categories, calendars, portfolios, signal metadata, the portfolio catalog) are
+  reached only through set-based `msm.api` row calls, never compiled SQL, `search_model` or
+  repository helpers on a Markets table. The one exception is the asset-snapshot read in
+  `mainsequence_categories._search_snapshot_rows`, which has no Markets API route yet;
+  `tests/test_markets_api_boundary.py` guards both rules. Portfolio and signal time series go to
+  an application's own instances through the seams of `build_etf_tracking_portfolio`
+  (`*_output_table`, `register_datasets`, `update_pointers`, `resolve_asset_identifiers_fn`);
+  the defaults write the core ms-markets tables as before.
+- `ms-markets` is pinned exactly to the release the Markets deployment runs (CHANGELOG 0.4.4), so
+  moving Markets needs a new release of this package.
 - Since SDK 9.0.5, `mainsequence code-repository sync` only refreshes local dependencies
   (`uv lock`, `uv sync`, `uv export --locked --no-dev --no-hashes`); it never bumps, tags,
   commits or pushes. Publishing is a plain `git push` plus the version tag, and this repository

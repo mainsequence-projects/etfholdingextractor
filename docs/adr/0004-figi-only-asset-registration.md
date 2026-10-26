@@ -1,6 +1,6 @@
 # ADR 0004: FIGI-Only Registration of ETF Component Assets
 
-- Status: Accepted
+- Status: Accepted; amended 2026-10-26 for ms-markets 3.0 (see Amendment)
 - Date: 2026-06-10
 - Partially supersedes the "no asset registration" non-goal of ADR 0002
 
@@ -93,3 +93,15 @@ Main Sequence secret.
   identical semantics in ONE batched read. Registration reports progress through the platform
   logger (mapping counts, registry-check split, per-chunk creation percentages, snapshot markers).
 - The runtime model lists now include `OpenFigiAssetDetailsTable`.
+
+## Amendment (2026-10-26): ms-markets 3.0 and the Markets API
+
+The identity rules are unchanged. The mechanics follow ms-markets ADR 0047, which makes the
+Markets API the boundary for registries: the registry check is one
+`Asset.get_many_by_unique_identifier` row call, the deltas are written with one
+`Asset.upsert_many` and one `OpenFigiDetails.upsert_many`, and snapshots are published with one
+`AssetSnapshots.publish`. Under ms-markets' remote backend, which the importing application
+selects, these run on the Markets API. ms-markets 3.0's own `AssetSnapshot` verifies duplicate
+keys in one read, so registration no longer uses `BatchVerifiedAssetSnapshot` (kept for callers
+that import it). The snapshot check still reads `AssetSnapshotsStorage` directly, because no
+Markets API route serves snapshots by asset identifier yet.

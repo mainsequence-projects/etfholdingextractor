@@ -1,6 +1,6 @@
 # ADR 0006: Tracking Portfolios Follow a Persisted Trading Calendar and Backtest a Bootstrap Window
 
-- Status: Accepted; amended 2026-10-01 for ms-markets 2.x (see Amendment)
+- Status: Accepted; amended 2026-10-01 for ms-markets 2.x and 2026-10-26 for ms-markets 3.0 (see Amendments)
 - Date: 2026-06-10
 
 ## Context
@@ -127,3 +127,13 @@ The default IVV/ishares signal uid computes offline to `495a8b180d0a216e563cd3f8
 the ms-markets 1.0.2 / SDK 8.0.7 stack and the ms-markets 2.0.0 / SDK 9 stack, so the move to
 ms-markets 2.x does not create a new signal series. The `9305b547…` value recorded above predates
 ms-markets 1.0.2.
+
+## Amendment (2026-10-26): ms-markets 3.0 and the Markets API
+
+The decisions are unchanged. `ensure_trading_calendar` moved to the light
+`etfhextractor.calendars` module (re-exported by `portfolio_publish`) and uses registry row calls
+only, so under ms-markets' remote backend (ms-markets ADR 0047) it runs on the Markets API:
+always-open calendars write their dates and sessions with `CalendarDate.upsert_many` and
+`CalendarSession.upsert_many` on the same conflict keys as `materialize_calendar_rows`, which is
+no longer called. The default IVV/ishares signal uid still computes offline to
+`495a8b180d0a216e563cd3f83316da7f` on ms-markets 3.0.0.

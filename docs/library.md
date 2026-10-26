@@ -21,12 +21,14 @@ etfhextractor/
   _version.py
   artifacts.py                # debug evidence persistence (data/temp/)
   asset_registration.py       # FIGI-only smart asset registration (ADR 0004)
+  calendars.py                # persisted trading calendars (registry row calls only)
   cli/                        # etfh subcommands + legacy etfh-read parser
   exceptions.py
   mainsequence_categories.py  # snapshot-layer resolution + category sync (msm)
   markets_models.py           # project-owned ms-markets tables (extension convention)
+  markets_runtime.py          # reads the application's ms-markets row backend (ADR 0047)
   models.py                   # FundHoldings / Holding
-  portfolio_publish.py        # calendar + Portfolio row + PortfoliosUpdater wiring
+  portfolio_publish.py        # Portfolio row + PortfoliosUpdater wiring + instance seams
   portfolio_signal.py         # ETFHoldingsSignal (custom SignalWeights) + session-grid stamps
   providers/                  # provider-specific extraction code
   reader.py                   # ETFHoldingsReader
@@ -65,12 +67,24 @@ imports the msm_portfolios stack); import it explicitly:
 from etfhextractor.portfolio_publish import (
     EtfTrackingPortfolioBuild, build_etf_tracking_portfolio,
     publish_etf_tracking_portfolio, ensure_trading_calendar,
-    build_etf_tracker_unique_identifier, start_portfolio_engine,
-    US_EQUITY_CALENDAR_KEY, PRICE_SOURCE_TABLE_UID_ENV,
+    build_etf_tracker_unique_identifier, start_portfolio_engine, portfolio_runtime_models,
+    register_portfolio_datasets, US_EQUITY_CALENDAR_KEY, PRICE_SOURCE_TABLE_UID_ENV,
 )
 from etfhextractor.portfolio_signal import (
     ETFHoldingsSignal, ETFHoldingsSignalConfig, previous_session_close,
     ALWAYS_OPEN_CALENDAR_KEYS, VALIDITY_HEADROOM_DAYS,
+)
+```
+
+The calendar helpers also live in the light `etfhextractor.calendars` module, which imports
+neither the msm_portfolios stack nor ms-markets at import time; `portfolio_publish` re-exports
+them:
+
+```python
+from etfhextractor.calendars import (
+    ensure_trading_calendar, required_calendar_window,
+    US_EQUITY_CALENDAR_KEY, ALWAYS_OPEN_CALENDAR_KEYS,
+    CALENDAR_PAST_BUFFER_DAYS, CALENDAR_FUTURE_HORIZON_DAYS,
 )
 ```
 
@@ -341,10 +355,12 @@ ADR 0003):
   ([ADR 0006](adr/0006-trading-calendar-and-backtest-bootstrap.md)):
   ms-markets 1.x and 2.x require every Portfolio row to reference a persisted Calendar
   (`calendar_uid` NOT NULL FK, `ondelete=RESTRICT`; the legacy `calendar_name` field is gone).
-  `calendar_key` defaults to `NYSE` for US ETFs. `ensure_trading_calendar()` persists it through
-  the msm util `Calendar.create_from_pandas_calendar` (Calendar + CalendarDate/CalendarSession
-  rows generated from pandas_market_calendars) and reuses a covering row with zero writes;
-  always-open keys ("24/7") persist an always-open Calendar row for the FK. Since ms-markets
+  `calendar_key` defaults to `NYSE` for US ETFs. `ensure_trading_calendar()`
+  (`etfhextractor.calendars`) persists it through the msm util
+  `Calendar.create_from_pandas_calendar` (Calendar + CalendarDate/CalendarSession rows generated
+  from pandas_market_calendars) and reuses a covering row with zero writes; always-open keys
+  ("24/7") persist an always-open Calendar row for the FK, with its dates and sessions written by
+  one `CalendarDate.upsert_many` and one `CalendarSession.upsert_many`. Since ms-markets
   1.0.6 the portfolio executes on the signal's observations and values on the valuation source's
   observations, so with a session-close price source (the example's demo bars) valuations land
   on real session closes — never weekends/holidays.
@@ -368,16 +384,133 @@ hard identity rules: **no FIGI → no registration** (`Asset.unique_identifier` 
 ticker-keyed assets are forbidden), and **a ticker must map to exactly one FIGI** — multiple
 candidates stay unregistered blockers so same-ticker assets are never mixed.
 `register_equity_assets_from_tickers(...)` resolves smartly — always: batched `query_figi`
-(ticker→FIGI), then **one batch search** of all mapped FIGIs against the asset registry and one
-against the snapshot table, then writes **only the deltas** (`Asset.upsert(unique_identifier=figi)`
-+ `OpenFigiDetails.upsert` for missing FIGIs; one `AssetSnapshot` run for FIGIs lacking a
-snapshot). A fully-registered universe re-runs with zero writes. Registered identity is the US
+(ticker→FIGI), then **one batch lookup** of all mapped FIGIs in the asset registry
+(`Asset.get_many_by_unique_identifier`) and one search of the snapshot table, then writes **only
+the deltas**, set-based (one `Asset.upsert_many` of `unique_identifier=figi` and one
+`OpenFigiDetails.upsert_many` for the missing FIGIs; one `AssetSnapshots.publish` for the FIGIs
+lacking a snapshot). A fully-registered universe re-runs with zero writes. Registered identity is the US
 composite FIGI (e.g. MSFT → `BBG000BPH459`); ticker/share-class/venue live on `OpenFigiDetails`. Failures name the blocked tickers with their FIGI candidates
 (`format_failures()` / `FigiRegistrationError`), and ambiguity is resolved explicitly with
 per-ticker disambiguation filters, e.g.
 `disambiguation_filters=[{"ticker": "USO", "market_sector": "Equity", "exch_code": "US"}]`
 (CLI: repeatable `--figi-filter '<json>'`). Opt-in via `etfh category-sync --register-missing` /
 `etfh portfolio-publish --register-missing`; requires the `OPEN_FIGI_API_KEY` secret.
+
+## Markets Access (ms-markets ADR 0047)
+
+ms-markets 3.0 makes the Markets API the boundary between applications and the Markets
+registries ([ms-markets ADR 0047](https://github.com/mainsequence-projects/MainSequenceMarkets)).
+This package is a library, so it **never chooses** how it reaches Markets: the application that
+imports it selects the ms-markets row backend once, at its composition root, and every
+`msm.api` row call the library makes follows that choice (`etfhextractor.markets_runtime` only
+reads it):
+
+```python
+from msm.api.remote import use_remote_backend
+from msm.client import LazyRemoteBackend
+
+use_remote_backend(LazyRemoteBackend())   # or MSM_API_BACKEND=remote, which also covers `etfh`
+```
+
+- **Runtime backend** (the ms-markets default): row calls compile SQL against Markets tables
+  attached in the process, as in earlier releases. The library attaches the same tables as before
+  (`_ensure_msm_started`, `start_portfolio_engine`).
+- **Remote backend**: every registry read and write below is one call to the Markets API, and the
+  library attaches no registry table. The application needs no grant on `mainsequence.markets`
+  for these calls.
+
+| Library call | Markets row calls | Write-policy resources |
+|---|---|---|
+| `resolve_existing_assets_by_ticker`, `build_holdings_asset_category_plan` | snapshot read (direct, below), `Asset.get_many_by_unique_identifier` | none (reads) |
+| `resolve_asset_identifiers_by_ticker` | snapshot read (direct, below) | none |
+| `sync_holdings_asset_category` | `AssetCategory.upsert`, `AssetCategory.replace_memberships` | `asset-category` |
+| `register_equity_assets_from_tickers` | `Asset.get_many_by_unique_identifier`, `AssetType.upsert`, `Asset.upsert_many`, `OpenFigiDetails.upsert_many`, `AssetSnapshots.publish`, snapshot read | `asset-type`, `asset`, `open-figi-details`, `asset-snapshots` |
+| `ensure_trading_calendar` | `Calendar.filter`; `Calendar.create_from_pandas_calendar`, or for always-open keys `Calendar.upsert`, `CalendarDate.upsert_many`, `CalendarSession.upsert_many` | `calendar`, `calendar-date`, `calendar-session` |
+| `build_etf_tracking_portfolio`, `publish_etf_tracking_portfolio` | the calendar and (with `register_missing`) registration calls, `Portfolio.upsert` (the row and, after a run, its pointers), `SignalMetadata.upsert` (by the signal updater), `PortfolioDatasets.register` when registering | `portfolio`, `signal-metadata`, `portfolio-datasets`, plus those of the calls it makes |
+
+An application that runs these calls on the remote backend needs:
+
+1. `access.branches: [{repository: MainSequenceMarkets, policy: reader}]` on every workflow
+   resource that makes them, so `LazyRemoteBackend` can discover the Markets API (`api` release)
+   in its Environment (`MARKETS_API_URL` points a local run at a local API);
+2. its workload User uid listed in the Environment's `MARKETS_REGISTRY_WRITERS` constant under
+   each write-policy resource of the calls it makes; otherwise the write raises
+   `msm.api.remote.MarketsAccessError` (a `PermissionError`, HTTP 403);
+3. an Environment whose Markets deployment runs ms-markets 3.0.0 and has applied its revisions.
+
+### Direct Markets access that remains
+
+- **Asset-snapshot read.** Ticker resolution (`resolve_asset_identifiers_by_ticker`, the
+  signal's update, category planning) and the registration snapshot check read
+  `AssetSnapshotsStorage` by ticker and by asset identifier with compiled SQL
+  (`mainsequence_categories._search_snapshot_rows`). No Markets API route serves that yet. On the
+  remote backend the library reuses the application's runtime when it attached the table, or
+  attaches the table alone with `msm.bootstrap.attach_schemas`, so the workload needs read access
+  to it (and to the Asset table it references). The portfolio path avoids it with
+  `resolve_asset_identifiers_fn`, and `build_holdings_asset_category_plan` with
+  `resolve_existing_assets_by_ticker_fn`; FIGI registration always reads it.
+- **Portfolio time series by default.** Unless the seams below bind them elsewhere, the signal
+  weights, portfolio weights, rebalance state and portfolio values are written to the core
+  ms-markets tables with MetaTables, which needs write access to those tables.
+- `BatchVerifiedAssetSnapshot` (`markets_models.py`) writes the Markets snapshot table directly.
+  The library no longer uses it; it is kept unchanged for callers that import it.
+
+### Moving the series to your own instances
+
+`build_etf_tracking_portfolio` (and `publish_etf_tracking_portfolio`) take injection seams;
+every default keeps the earlier behaviour:
+
+| Argument | Effect |
+|---|---|
+| `signal_output_table` | `ETFHoldingsSignal` writes and reads its history in this `SignalWeightsTS` instance |
+| `portfolio_output_table`, `weights_output_table`, `rebalance_output_table` | `PortfoliosUpdater(output_table=, weights_output_table=, rebalance_output_table=)` |
+| `register_datasets` | `PortfolioDatasets.register` after the run (reconciling when it ran); default: when `portfolio_output_table` is given |
+| `update_pointers` | `False` leaves the Portfolio row's table-update pointers alone |
+| `resolve_asset_identifiers_fn` | replaces the snapshot ticker resolver in the preflight and in the signal (`ETFHoldingsSignal.set_asset_identifier_resolver`) |
+
+`portfolio_runtime_models(...)` and `start_portfolio_engine(...)` take the same output tables:
+on the remote backend an instance replaces the core table it stands for (and
+`asset_snapshots=False` drops the snapshot table), on the runtime backend the instances join the
+usual set. Output tables never enter `update_hash` or `signal_uid`; MetaTables keys each update
+record by update hash and output table, so a bound updater gets its own record.
+
+The library owns no instances (it has no deployment), so the application moves a portfolio:
+
+1. Declare the instances in its own namespace with the ms-markets factories in
+   `msm_portfolios.time_index.contract_instances` (`configured_signal_weights_storage`,
+   `configured_portfolios_storage`, `configured_portfolio_weights_storage`,
+   `configured_portfolio_rebalance_state_storage`; `instance_key`, `namespace`, `storage_app`,
+   `base`), add them to its own migration provider in a new revision, and let its deployment's
+   migration Job create them.
+2. Grant the Markets workload `data_viewer` on the four instance tables: catalog registration
+   verifies them and Markets reads values and weights from them.
+3. Pause the portfolio's scheduled runs.
+4. **Backfill by copying, before the first bound run.** Copy the signal's rows (its
+   `signal_uid`) from the core `SignalWeightsTS`, and the portfolio's rows (its
+   `portfolio_identifier`) from the core `PortfoliosTS`, `PortfolioWeightsTS` and
+   `PortfolioRebalanceStateTS`, into the instances. Never recompute: ETF holdings are extracted
+   as of today and cannot be re-extracted for past dates. A fresh signal instance keeps the
+   `signal_uid` but has no rows, so `ETFHoldingsSignal` would treat its first bound run as a
+   first run (a backdated bootstrap observation with today's composition) and the portfolio
+   history would be lost. Check that the copied row counts and time bounds match the source.
+5. Attach the instances (include `portfolio_runtime_models(...)` with the output tables in the
+   application's one `start_engine` call) and publish with the four output tables and
+   `start_engine=False`. With `portfolio_output_table` the build registers the instances in the
+   Markets catalog after the run; `build.portfolio_datasets` (and the summary's
+   `portfolio_datasets`) shows the reconciled state, which should be `populated`.
+6. Resume the scheduled runs. Readers get values and weights through the Markets API
+   (`msm.client.MarketsClient.portfolio_values` / `portfolio_weights`). Markets never deletes
+   rows in a table another application owns; leave the core rows in place until the move is
+   verified.
+
+### ms-markets 3.0 identities
+
+- `ETFHoldingsSignal` and `PortfoliosUpdater` hash through ms-markets classes whose modules moved
+  in 3.0 (`msm_portfolios.time_index`), so, per the ms-markets upgrade guide, their first run on
+  3.0 creates a new `TimeIndexTableUpdate` that continues from the output table's last
+  observation. `DemoBars` keeps its hash (it has its own configuration class; same guide).
+- `signal_uid` does not change: the default IVV/ishares uid still computes offline to
+  `495a8b180d0a216e563cd3f83316da7f` (`tests/test_portfolio_signal.py` pins it).
 
 ## Project-Owned ms-markets Tables (Extension Rules)
 
@@ -460,14 +593,15 @@ Since MetaTables 0.1.14 a hosted runtime is migrated only from a deployment work
   [ms-markets getting-started guide](https://mainsequence-projects.github.io/MainSequenceMarkets/getting-started/#first-market-setup)
   shows how. This package never applies the ms-markets provider.
 
-  With ms-markets 2.2.10 a local SQLite runtime cannot yet run the asset-writing workflows end to
-  end: inserting Asset rows, keeping `HOLDINGS__<ETF>` memberships and the final portfolio
+  With ms-markets 2.2.10 (not re-checked on 3.0.0) a local SQLite runtime cannot yet run the
+  asset-writing workflows end to end: inserting Asset rows, keeping `HOLDINGS__<ETF>` memberships and the final portfolio
   pointer update fail there, because of ms-markets defects in its SQLite path. Migrations, demo
   bars, the signal, portfolio values and weights work. Implementation task
   [0007](implementation_task/0007-deployment-job-migrations.md) ("Local end-to-end run on
   0.4.4") has the details.
 - **Never at start-up.** The library, the `etfh` CLI and the examples never migrate on import or
-  start-up; runtime code only attaches with `msm.start_engine(models=[...])`.
+  start-up; runtime code only attaches with `msm.start_engine(models=[...])`, and on the
+  ms-markets remote backend it attaches no Markets registry (see "Markets Access").
 - **Backward-compatible revisions.** Applied revisions are immutable: never edit a revision ID or
   `down_revision`, and add a new revision for every change. The previous release keeps serving
   while a deploying application's Job migrates, so add tables and nullable or defaulted columns

@@ -315,6 +315,16 @@ class ETFHoldingsSignalTests(unittest.TestCase):
         # ...while real identity inputs still differentiate signals.
         self.assertNotEqual(uid_without_scope, compute_signal_uid(make(None, ticker="SPY")))
 
+    def test_default_signal_uid_survives_ms_markets_3(self) -> None:
+        # The IVV/ishares defaults computed to this uid on ms-markets 1.0.2 and 2.x
+        # (ADR 0006 amendment); ms-markets 3.0's module moves must not rotate it.
+        from msm_portfolios.time_index import compute_signal_uid
+
+        signal = ETFHoldingsSignal.__new__(ETFHoldingsSignal)
+        signal.signal_configuration = ETFHoldingsSignalConfig(etf_ticker="IVV", provider="ishares")
+
+        self.assertEqual(compute_signal_uid(signal), "495a8b180d0a216e563cd3f83316da7f")
+
     def test_get_asset_list_returns_configured_scope(self) -> None:
         signal = build_signal(build_config(asset_list=[MSFT_ID, AAPL_ID]), stored=None)
         self.assertEqual(signal.get_asset_list(), sorted([AAPL_ID, MSFT_ID]))

@@ -19,7 +19,13 @@ registered bars table ── TimeIndexTableRef ─┴──> PortfoliosUpdater �
 The script is stepwise and honest about platform state: extract → resolve component
 tickers through the asset-snapshot layer (blockers stop the run) → optional category
 sync → signal/portfolio publication → read-back verification of the rows actually
-written (`SignalWeightsTS`, `PortfoliosTS`, `PortfolioWeightsTS`, and the `Portfolio` row).
+written (`SignalWeightsTS`, `PortfoliosTS`, `PortfolioWeightsTS` through the updaters that
+wrote them, and the `Portfolio` row through the row API).
+
+Markets registries (assets, calendars, categories, portfolios) are written with `msm.api` row
+calls. On a hosted runtime, `MSM_API_BACKEND=remote` runs them on the Markets API instead of
+MetaTables (ms-markets ADR 0047; see [docs/library.md](../docs/library.md), "Markets Access");
+`--local` runs keep the default runtime backend.
 
 ### Prerequisites
 
@@ -47,7 +53,8 @@ The runtime is either:
   [ms-markets getting-started guide](https://mainsequence-projects.github.io/MainSequenceMarkets/getting-started/#first-market-setup)
   shows how.
 
-  With ms-markets 2.2.10 the full `--local` run does not finish on local SQLite yet. FIGI
+  With ms-markets 2.2.10 (not re-checked on 3.0.0) the full `--local` run does not finish on
+  local SQLite yet. FIGI
   registration fails on the first new Asset row: ms-markets creates
   `ms_markets__interpolatedpricests` without registering it, and the local API refuses the
   foreign-key check that reads it. With that table imported into the local catalog, the run gets

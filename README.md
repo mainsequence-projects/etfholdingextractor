@@ -116,6 +116,20 @@ Project integrations that need the assembled calendar, signal, Portfolio row, co
 valuation source, and `PortfoliosUpdater` can call `build_etf_tracking_portfolio(...)`; the
 publisher above wraps that same builder and returns its JSON-friendly summary.
 
+### Markets access (ms-markets ADR 0047)
+
+The library never chooses how it reaches MainSequence Markets; the application that imports it
+does. With ms-markets' remote row backend selected
+(`use_remote_backend(LazyRemoteBackend())`, or `MSM_API_BACKEND=remote`, which also covers
+`etfh`), every Markets registry call the library makes (assets, OpenFIGI details, snapshots
+publication, categories, calendars, portfolios, the portfolio catalog) runs on the Markets API,
+and the application needs `reader` on the `MainSequenceMarkets` branch plus entries in the
+Environment's `MARKETS_REGISTRY_WRITERS` constant instead of grants on `mainsequence.markets`.
+The asset-snapshot ticker read still uses MetaTables. `build_etf_tracking_portfolio` takes
+output tables, catalog registration, pointer and ticker-resolver seams, so an application can
+keep every portfolio series in its own namespace. Details, the write-policy resources and the
+move runbook: [docs/library.md](docs/library.md) ("Markets Access").
+
 ## Environment
 
 | variable | purpose |
@@ -123,6 +137,8 @@ publisher above wraps that same builder and returns its JSON-friendly summary.
 | `MAINSEQUENCE_ACCESS_TOKEN` / `MAINSEQUENCE_REFRESH_TOKEN` | optional process-environment override of the saved SDK 9 session (categories, signal/portfolio runs); never stored in `.env` |
 | `OPEN_FIGI_API_KEY` (Main Sequence secret) | FIGI registration (`--register-missing`) |
 | `ETFH_PORTFOLIO_PRICE_SOURCE_TABLE_UID` | default price-source table for `portfolio-publish` |
+| `MSM_API_BACKEND=remote` | set by the application (or for `etfh`): run Markets registry calls on the Markets API (ms-markets ADR 0047) |
+| `MARKETS_API_URL` / `MARKETS_API_TOKEN` | local development: call this Markets API instead of discovering the Environment's |
 | `MSM_AUTO_REGISTER_NAMESPACE` | tests/sandboxes only: override the `etfhextractor` table namespace |
 
 ## Migrations
