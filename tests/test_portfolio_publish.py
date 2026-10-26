@@ -25,6 +25,31 @@ from etfhextractor.portfolio_signal import ETFHoldingsSignal
 TODAY = dt.date(2026, 6, 10)
 
 
+def instance_table(name: str, *, namespace: str = "etfh-test") -> type:
+    """A stand-in for an application's contract instance (namespace + MetaTable uid)."""
+    return type(
+        name,
+        (),
+        {
+            "__table__": SimpleNamespace(info={"namespace": namespace}),
+            "get_meta_table_uid": staticmethod(lambda: f"{name.lower()}-uid"),
+        },
+    )
+
+
+def build_instances(**overrides):
+    from msm_portfolios.services.series_moves import PortfolioSeriesTables
+
+    slots = {
+        "values": instance_table("Values"),
+        "weights": instance_table("Weights"),
+        "rebalance_state": instance_table("Rebalance"),
+        "signal_weights": instance_table("Signal"),
+    }
+    slots.update(overrides)
+    return PortfolioSeriesTables(**slots)
+
+
 def build_calendar_row(
     *,
     valid_from: dt.date,
@@ -210,6 +235,7 @@ class PortfolioValuationSourceTests(unittest.TestCase):
                 return_value=portfolio_node,
             ) as node_cls,
             patch("metatables.TimeIndexTableRef.from_uid") as from_uid,
+            patch("msm_portfolios.api.datasets.PortfolioDatasets.register"),
         ):
             from_uid.return_value = object.__new__(TimeIndexTableRef)
             builder = (
@@ -220,6 +246,7 @@ class PortfolioValuationSourceTests(unittest.TestCase):
             kwargs.setdefault("run", False)
             payload = builder(
                 etf_ticker="IVV",
+                instances=build_instances(),
                 provider="ishares",
                 asset_identifiers=["BBG000B9XRY4"],
                 **kwargs,
@@ -305,13 +332,10 @@ class PortfolioValuationSourceTests(unittest.TestCase):
         # the Portfolio pointers are updated by default.
         build.portfolio_node.run.assert_called_once_with(update_pointers=True)
         self.assertIs(build.run_result, build.portfolio_node.run.return_value)
-        self.assertIsNone(build.portfolio_datasets)
-        self.assertNotIn("portfolio_datasets", build.summary())
 
 
-class InjectionSeamTests(unittest.TestCase):
-    """ADR 0047 seams: every default keeps the earlier behaviour; injected instances, catalog
-    registration, pointer updates and ticker resolution reach the ms-markets objects."""
+class InstanceTests(unittest.TestCase):
+    """ADR 0047: every series goes to the application's own instances, which are catalogued."""
 
     def _build(self, **kwargs):
         calendar = build_calendar_row(
@@ -322,6 +346,8 @@ class InjectionSeamTests(unittest.TestCase):
         signal = MagicMock(spec=ETFHoldingsSignal)
         signal.signal_uid = "ivv-signal"
         mocks = SimpleNamespace(signal=signal, portfolio=portfolio)
+        kwargs.setdefault("instances", build_instances())
+        kwargs.setdefault("asset_identifiers", ["BBG000B9XRY4"])
         with (
             patch("etfhextractor.portfolio_publish.start_portfolio_engine") as engine,
             patch(
@@ -335,11 +361,7 @@ class InjectionSeamTests(unittest.TestCase):
             patch("msm.api.portfolios.Portfolio.upsert", return_value=portfolio),
             patch("msm_portfolios.time_index.PortfoliosUpdater") as node_cls,
             patch("msm_portfolios.api.datasets.PortfolioDatasets.register") as register,
-            patch(
-                "msm_portfolios.api.datasets.PortfolioDatasets.register_signal"
-            ) as register_signal,
         ):
-            kwargs.setdefault("asset_identifiers", ["BBG000B9XRY4"])
             build = build_etf_tracking_portfolio(
                 etf_ticker="IVV",
                 provider="ishares",
@@ -350,53 +372,19 @@ class InjectionSeamTests(unittest.TestCase):
         mocks.from_config = from_config
         mocks.node_cls = node_cls
         mocks.register = register
-        mocks.register_signal = register_signal
         return build, mocks
 
-    @staticmethod
-    def _table(uid: str) -> MagicMock:
-        table = MagicMock()
-        table.get_meta_table_uid.return_value = uid
-        return table
+    def test_instances_bind_every_updater_and_are_catalogued_after_the_run(self) -> None:
+        instances = build_instances()
 
-    def test_defaults_write_the_core_tables_and_register_nothing(self) -> None:
-        build, mocks = self._build(run=True)
+        build, mocks = self._build(run=True, instances=instances)
 
-        self.assertEqual(mocks.from_config.call_args.kwargs, {})
-        self.assertEqual(
-            set(mocks.node_cls.call_args.kwargs), {"portfolio_configuration"}
-        )
-        mocks.register.assert_not_called()
-        mocks.register_signal.assert_not_called()
-        self.assertNotIn("signal_dataset", build.summary())
-        mocks.signal.set_asset_identifier_resolver.assert_not_called()
-        engine_kwargs = mocks.engine.call_args.kwargs
-        self.assertIsNone(engine_kwargs["portfolio_output_table"])
-
-    def test_instances_bind_every_updater_and_register_the_catalog_after_the_run(self) -> None:
-        values, weights, rebalance, signal_table = (
-            self._table("values-uid"),
-            self._table("weights-uid"),
-            self._table("rebalance-uid"),
-            self._table("signal-uid"),
-        )
-
-        build, mocks = self._build(
-            run=True,
-            portfolio_output_table=values,
-            weights_output_table=weights,
-            rebalance_output_table=rebalance,
-            signal_output_table=signal_table,
-        )
-
-        self.assertIs(mocks.from_config.call_args.kwargs["output_table"], signal_table)
+        mocks.engine.assert_called_once_with(instances)
+        self.assertIs(mocks.from_config.call_args.kwargs["output_table"], instances.signal_weights)
         node_kwargs = mocks.node_cls.call_args.kwargs
-        self.assertIs(node_kwargs["output_table"], values)
-        self.assertIs(node_kwargs["weights_output_table"], weights)
-        self.assertIs(node_kwargs["rebalance_output_table"], rebalance)
-        engine_kwargs = mocks.engine.call_args.kwargs
-        self.assertIs(engine_kwargs["portfolio_output_table"], values)
-        self.assertIs(engine_kwargs["signal_output_table"], signal_table)
+        self.assertIs(node_kwargs["output_table"], instances.values)
+        self.assertIs(node_kwargs["weights_output_table"], instances.weights)
+        self.assertIs(node_kwargs["rebalance_output_table"], instances.rebalance_state)
         mocks.register.assert_called_once_with(
             {
                 "portfolio_uid": mocks.portfolio.uid,
@@ -406,77 +394,46 @@ class InjectionSeamTests(unittest.TestCase):
             },
             reconcile=True,
         )
+        self.assertIs(build.instances, instances)
         self.assertIs(build.portfolio_datasets, mocks.register.return_value)
-        # The portfolio registration binds the signal instance too.
-        mocks.register_signal.assert_not_called()
+        self.assertIn("portfolio_datasets", build.summary())
+        self.assertNotIn("price_source", build.summary())
 
-    def test_a_signal_only_instance_is_bound_after_the_run(self) -> None:
-        signal_table = self._table("signal-uid")
+    def test_a_build_without_a_run_registers_without_reconciling(self) -> None:
+        _build, mocks = self._build(run=False)
 
-        build, mocks = self._build(run=True, signal_output_table=signal_table)
-
-        mocks.register.assert_not_called()
-        mocks.register_signal.assert_called_once_with(
-            {"signal_uid": "ivv-signal", "signal_meta_table_uid": "signal-uid"}
-        )
-        self.assertIs(build.signal_dataset, mocks.register_signal.return_value)
-        self.assertIsNone(build.portfolio_datasets)
-
-    def test_a_signal_only_instance_waits_for_a_run(self) -> None:
-        build, mocks = self._build(run=False, signal_output_table=self._table("signal-uid"))
-
-        mocks.register_signal.assert_not_called()
-        self.assertIsNone(build.signal_dataset)
-
-    def test_explicit_signal_only_registration_without_a_run_fails_before_any_write(self) -> None:
-        with (
-            patch("etfhextractor.portfolio_publish.start_portfolio_engine") as engine,
-            patch("etfhextractor.portfolio_publish.ensure_trading_calendar") as calendar,
-        ):
-            with self.assertRaisesRegex(ValueError, "run=True"):
-                build_etf_tracking_portfolio(
-                    etf_ticker="IVV",
-                    provider="ishares",
-                    price_source_table_uid="table-uid-1",
-                    asset_identifiers=["BBG000B9XRY4"],
-                    signal_output_table=self._table("signal-uid"),
-                    register_datasets=True,
-                    run=False,
-                )
-        engine.assert_not_called()
-        calendar.assert_not_called()
-
-    def test_registration_without_a_run_does_not_reconcile(self) -> None:
-        _build, mocks = self._build(run=False, portfolio_output_table=self._table("values-uid"))
-
-        registration, = mocks.register.call_args.args
-        self.assertIsNone(registration["weights_meta_table_uid"])
         self.assertFalse(mocks.register.call_args.kwargs["reconcile"])
 
-    def test_registration_can_be_switched_off(self) -> None:
-        _build, mocks = self._build(
-            run=False,
-            portfolio_output_table=self._table("values-uid"),
-            register_datasets=False,
-        )
-
-        mocks.register.assert_not_called()
-
-    def test_registration_needs_an_instance_and_fails_before_any_write(self) -> None:
+    def test_every_series_needs_an_instance_before_any_write(self) -> None:
         with (
             patch("etfhextractor.portfolio_publish.start_portfolio_engine") as engine,
             patch("etfhextractor.portfolio_publish.ensure_trading_calendar") as calendar,
         ):
-            with self.assertRaisesRegex(ValueError, "portfolio_output_table or signal_output_table"):
+            with self.assertRaisesRegex(ValueError, "rebalance_state"):
                 build_etf_tracking_portfolio(
+                    etf_ticker="IVV",
+                    instances=build_instances(rebalance_state=None),
+                    provider="ishares",
+                    price_source_table_uid="table-uid-1",
+                    asset_identifiers=["BBG000B9XRY4"],
+                )
+            with self.assertRaises(TypeError):
+                build_etf_tracking_portfolio(  # type: ignore[call-arg]
                     etf_ticker="IVV",
                     provider="ishares",
                     price_source_table_uid="table-uid-1",
                     asset_identifiers=["BBG000B9XRY4"],
-                    register_datasets=True,
                 )
         engine.assert_not_called()
         calendar.assert_not_called()
+
+    def test_the_markets_core_tables_are_refused(self) -> None:
+        from msm_portfolios.services.series_moves import PortfolioSeriesTables
+
+        from etfhextractor.portfolio_publish import require_portfolio_instances
+
+        with self.assertRaisesRegex(ValueError, "Markets tables"):
+            require_portfolio_instances(PortfolioSeriesTables.core())
 
     def test_pointer_updates_can_be_left_to_the_caller(self) -> None:
         build, _mocks = self._build(run=True, update_pointers=False)
@@ -497,13 +454,46 @@ class InjectionSeamTests(unittest.TestCase):
             ) as snapshot_resolver,
         ):
             reader_cls.return_value.read_ticker.return_value = holdings
-            build, mocks = self._build(
+            _build, mocks = self._build(
                 run=False, asset_identifiers=None, resolve_asset_identifiers_fn=resolver
             )
 
         resolver.assert_called_once_with(component_symbols=["AAPL"])
         snapshot_resolver.assert_not_called()
         mocks.signal.set_asset_identifier_resolver.assert_called_once_with(resolver)
+
+
+class PortfolioPublishCliTests(unittest.TestCase):
+    def test_instances_are_required_and_loaded_from_module_attribute(self) -> None:
+        import sys
+        import types
+
+        from etfhextractor.cli import main
+
+        instances = build_instances()
+        module = types.ModuleType("etfh_test_instances")
+        module.factory = lambda: instances
+        with patch.dict(sys.modules, {"etfh_test_instances": module}):
+            with self.assertRaises(SystemExit):
+                main(["portfolio-publish", "--ticker", "IVV", "--provider", "ishares"])
+            with patch(
+                "etfhextractor.portfolio_publish.publish_etf_tracking_portfolio",
+                return_value={"ok": True},
+            ) as publish:
+                exit_code = main(
+                    [
+                        "portfolio-publish",
+                        "--ticker",
+                        "IVV",
+                        "--provider",
+                        "ishares",
+                        "--instances",
+                        "etfh_test_instances:factory",
+                        "--compact",
+                    ]
+                )
+        self.assertEqual(exit_code, 0)
+        self.assertIs(publish.call_args.kwargs["instances"], instances)
 
 
 if __name__ == "__main__":

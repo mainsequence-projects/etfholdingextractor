@@ -103,6 +103,11 @@ class ETFHoldingsSignalConfigTests(unittest.TestCase):
 
 
 class ETFHoldingsSignalTests(unittest.TestCase):
+    def test_the_signal_needs_the_applications_own_instance(self) -> None:
+        # ADR 0047: the library never writes the Markets core signal-weights table.
+        with self.assertRaisesRegex(TypeError, "output_table"):
+            ETFHoldingsSignal.from_signal_configuration(build_config())
+
     def test_injected_resolver_replaces_the_snapshot_layer(self) -> None:
         # ADR 0047 seam: an application on the Markets API resolves tickers itself,
         # so the signal never reads the Markets asset-snapshot table.

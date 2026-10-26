@@ -340,74 +340,73 @@ def test_market_calendars_are_materialized_by_markets(markets_api, no_engine) ->
     assert backend.operations() == [("calendar", "filter"), ("calendar", "create_from_pandas_calendar")]
 
 
-def test_portfolio_runtime_attaches_no_registry_under_the_markets_api(markets_api) -> None:
-    from msm_portfolios.time_index.portfolios.storage import (
-        PortfolioRebalanceStateStorage,
-        PortfoliosStorage,
-        PortfolioWeightsStorage,
-    )
-    from msm_portfolios.time_index.signals.storage import SignalWeightsStorage
+def _instances():
+    from types import SimpleNamespace
 
+    from msm_portfolios.services.series_moves import PortfolioSeriesTables
+
+    def table(name: str) -> type:
+        return type(name, (), {"__table__": SimpleNamespace(info={"namespace": "etfh-test"})})
+
+    return PortfolioSeriesTables(
+        values=table("Values"),
+        weights=table("Weights"),
+        rebalance_state=table("Rebalance"),
+        signal_weights=table("Signal"),
+    )
+
+
+def test_a_publish_on_the_markets_api_attaches_only_application_tables(markets_api) -> None:
     from etfhextractor.markets_models import DemoBarsStorage
     from etfhextractor.portfolio_publish import portfolio_runtime_models
 
+    instances = _instances()
     markets_api({})
 
-    assert portfolio_runtime_models([DemoBarsStorage]) == [
-        SignalWeightsStorage,
-        PortfolioWeightsStorage,
-        PortfolioRebalanceStateStorage,
-        PortfoliosStorage,
+    assert portfolio_runtime_models(instances, [DemoBarsStorage]) == [
+        instances.signal_weights,
+        instances.weights,
+        instances.rebalance_state,
+        instances.values,
         DemoBarsStorage,
     ]
 
 
-def test_portfolio_runtime_keeps_todays_tables_on_the_runtime_backend() -> None:
+def test_the_runtime_backend_attaches_registries_but_no_markets_series() -> None:
+    from msm.base import MarketsTimeIndexMetaTableMixin
+
     from etfhextractor.portfolio_publish import portfolio_runtime_models
 
-    names = {model.__name__ for model in portfolio_runtime_models()}
+    instances = _instances()
+    models = portfolio_runtime_models(instances)
+    names = {model.__name__ for model in models}
 
     assert {
         "AssetTable",
         "PortfolioTable",
+        "PortfolioDatasetAvailabilityTable",
+        "SignalMetadataTable",
         "CalendarTable",
         "CalendarDateTable",
         "CalendarSessionTable",
         "OpenFigiAssetDetailsTable",
         "AssetCategoryTable",
         "AssetCategoryMembershipTable",
-        "AssetSnapshotsStorage",
-        "SignalWeightsStorage",
-        "PortfoliosStorage",
     } <= names
-
-
-def test_injected_instances_leave_no_markets_table_attached(markets_api) -> None:
-    """With every series bound to the application's instances, a publish on the Markets API
-    attaches only the application's tables."""
-    from etfhextractor.portfolio_publish import portfolio_runtime_models
-
-    signal, weights, rebalance, values = (
-        type(name, (), {}) for name in ("Signal", "Weights", "Rebalance", "Values")
-    )
-    markets_api({})
-
-    assert portfolio_runtime_models(
-        signal_output_table=signal,
-        weights_output_table=weights,
-        rebalance_output_table=rebalance,
-        portfolio_output_table=values,
-    ) == [signal, weights, rebalance, values]
-
-
-def test_injected_instances_join_todays_tables_on_the_runtime_backend() -> None:
-    from etfhextractor.portfolio_publish import portfolio_runtime_models
-
-    values = type("Values", (), {})
-    models = portfolio_runtime_models(portfolio_output_table=values)
-
-    assert values in models
-    assert "PortfoliosStorage" in {model.__name__ for model in models}
+    assert models[-4:] == [
+        instances.signal_weights,
+        instances.weights,
+        instances.rebalance_state,
+        instances.values,
+    ]
+    # The asset snapshots are the only Markets time-index table, read and published by
+    # AssetSnapshots row calls on this backend; no portfolio series is attached.
+    series = {
+        model.__name__
+        for model in models
+        if isinstance(model, type) and issubclass(model, MarketsTimeIndexMetaTableMixin)
+    }
+    assert series == {"AssetSnapshotsStorage"}
 
 
 def test_a_signal_only_instance_is_one_catalog_call(markets_api) -> None:

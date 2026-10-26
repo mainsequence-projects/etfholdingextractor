@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import argparse
+import importlib
 import json
 import sys
 from collections.abc import Sequence
+from typing import Any
 
 from ..mainsequence_categories import (
     build_holdings_asset_category_plan,
@@ -158,6 +160,17 @@ def build_subcommand_parser() -> argparse.ArgumentParser:
         "--ticker",
         required=True,
         help="ETF ticker the tracking portfolio follows.",
+    )
+    portfolio_publish_parser.add_argument(
+        "--instances",
+        required=True,
+        metavar="MODULE:ATTRIBUTE",
+        help=(
+            "The application's own portfolio series tables: an importable "
+            "msm_portfolios.services.series_moves.PortfolioSeriesTables, or a callable returning "
+            "one, with signal_weights, weights, rebalance_state and values instances "
+            "(msm_portfolios.time_index.contract_instances factories)."
+        ),
     )
     portfolio_publish_parser.add_argument(
         "--fund-url",
@@ -347,6 +360,17 @@ def _build_category_read_holdings_fn(
     return lambda identifier, provider=None: reader.read_ticker(identifier, provider=provider)
 
 
+def _load_instances(spec: str) -> Any:
+    """Import `MODULE:ATTRIBUTE`; call it when it is a factory."""
+    module_name, separator, attribute = spec.partition(":")
+    if not separator or not module_name or not attribute:
+        raise SystemExit(f"--instances must be MODULE:ATTRIBUTE, got {spec!r}.")
+    target: Any = importlib.import_module(module_name)
+    for part in attribute.split("."):
+        target = getattr(target, part)
+    return target() if callable(target) else target
+
+
 def _run_subcommand(
     argv: Sequence[str],
     *,
@@ -381,6 +405,7 @@ def _run_subcommand(
 
         payload = publish_etf_tracking_portfolio(
             etf_ticker=args.ticker,
+            instances=_load_instances(args.instances),
             provider=args.provider,
             fund_url=args.fund_url,
             price_source_table_uid=args.price_source_table_uid,

@@ -138,6 +138,22 @@ class ETFHoldingsSignal(SignalWeights):
     ``min_update_interval_days`` and only when the weights actually changed.
     """
 
+    def __init__(self, config: Any = None, *args: Any, output_table: Any = None, **kwargs: Any):
+        """Bind the signal to the application's own `SignalWeightsTS` instance.
+
+        `output_table` is required: this library never writes the Markets core signal-weights
+        table (ms-markets ADR 0047). Build the instance with
+        `msm_portfolios.time_index.contract_instances.configured_signal_weights_storage` in the
+        application's namespace. It enters neither `update_hash` nor `signal_uid`.
+        """
+        if output_table is None:
+            raise TypeError(
+                "ETFHoldingsSignal needs output_table=<the application's SignalWeightsTS "
+                "instance> (msm_portfolios.time_index.contract_instances."
+                "configured_signal_weights_storage)."
+            )
+        super().__init__(config, *args, output_table=output_table, **kwargs)
+
     @property
     def etf_holdings_config(self) -> ETFHoldingsSignalConfig:
         if not isinstance(self.signal_configuration, ETFHoldingsSignalConfig):
