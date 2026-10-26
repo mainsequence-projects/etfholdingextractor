@@ -62,6 +62,8 @@ class EtfTrackingPortfolioBuild:
     run_result: Any | None
     portfolio_datasets: Any | None = None
     """The Markets catalog row (`PortfolioDatasetState`) when the build registered one."""
+    signal_dataset: Any | None = None
+    """The signal-only catalog binding (`SignalDatasetRegistration`) when the build made one."""
 
     def summary(self) -> dict[str, Any]:
         summary = {
@@ -82,6 +84,8 @@ class EtfTrackingPortfolioBuild:
         }
         if self.portfolio_datasets is not None:
             summary["portfolio_datasets"] = _summarize_datasets(self.portfolio_datasets)
+        if self.signal_dataset is not None:
+            summary["signal_dataset"] = _summarize_datasets(self.signal_dataset)
         return summary
 
 
@@ -267,23 +271,35 @@ def build_etf_tracking_portfolio(
       ms-markets tables. Output tables never change `update_hash` or `signal_uid`, but a
       fresh signal instance has no history: copy the signal's existing rows into it before the
       first bound run (see `docs/library.md`, "Moving the series to your own instances").
-    - `register_datasets` records the instances in the Markets portfolio catalog with
-      `PortfolioDatasets.register` after the run (reconciling when it ran). `None`, the
-      default, registers exactly when `portfolio_output_table` is given; `True` without it is
-      an error.
+    - `register_datasets` records the instances in the Markets portfolio catalog after the run.
+      With `portfolio_output_table` it calls `PortfolioDatasets.register` (reconciling when it
+      ran), which also binds the signal instance. With only `signal_output_table` it binds the
+      signal instance alone with `PortfolioDatasets.register_signal`, after a run, because the
+      run writes the signal's `SignalMetadata` row. `None`, the default, registers whenever one
+      of those tables is given (a signal-only binding is skipped when `run=False`); `True`
+      without either table, or with only a signal table and `run=False`, is an error.
     - `update_pointers=False` leaves the Portfolio row's table-update pointers untouched.
     - `resolve_asset_identifiers_fn` replaces the asset-snapshot ticker resolver
       (`resolve_asset_identifiers_by_ticker`, same signature and return value) in the
       preflight and in the signal, for an application that resolves tickers its own way.
     """
-    should_register_datasets = (
-        portfolio_output_table is not None if register_datasets is None else register_datasets
-    )
-    if should_register_datasets and portfolio_output_table is None:
-        raise ValueError(
-            "register_datasets needs portfolio_output_table: the Markets catalog records the "
-            "portfolio values instance."
-        )
+    catalog_scope = None
+    if register_datasets is not False:
+        if portfolio_output_table is not None:
+            catalog_scope = "portfolio"
+        elif signal_output_table is not None:
+            catalog_scope = "signal"
+    if register_datasets is True:
+        if catalog_scope is None:
+            raise ValueError(
+                "register_datasets needs portfolio_output_table or signal_output_table: the "
+                "Markets catalog records instance tables."
+            )
+        if catalog_scope == "signal" and not run:
+            raise ValueError(
+                "A signal-only instance is registered after a run, which writes the signal's "
+                "SignalMetadata row; pass run=True."
+            )
     resolved_price_table_uid = price_source_table_uid or os.environ.get(
         PRICE_SOURCE_TABLE_UID_ENV
     )
@@ -480,7 +496,8 @@ def build_etf_tracking_portfolio(
         # immediately; the removed debug_mode/force_update controls are not passed.
         run_result = node.run(update_pointers=update_pointers)
     portfolio_datasets = None
-    if should_register_datasets:
+    signal_dataset = None
+    if catalog_scope == "portfolio":
         # After the run, so the Portfolio row carries its signal_uid and registration binds
         # SignalMetadata to the signal instance; re-registering is idempotent.
         portfolio_datasets = register_portfolio_datasets(
@@ -489,6 +506,11 @@ def build_etf_tracking_portfolio(
             weights_output_table=weights_output_table,
             signal_output_table=signal_output_table,
             reconcile=run,
+        )
+    elif catalog_scope == "signal" and run:
+        signal_dataset = register_signal_dataset(
+            signal_uid=signal.signal_uid,
+            signal_output_table=signal_output_table,
         )
     return EtfTrackingPortfolioBuild(
         etf_ticker=normalized_ticker,
@@ -509,6 +531,26 @@ def build_etf_tracking_portfolio(
         ran=run,
         run_result=run_result,
         portfolio_datasets=portfolio_datasets,
+        signal_dataset=signal_dataset,
+    )
+
+
+def register_signal_dataset(*, signal_uid: str, signal_output_table: Any) -> Any:
+    """Record the `SignalWeightsTS` instance that holds one signal in the Markets catalog.
+
+    One `msm_portfolios.api.datasets.PortfolioDatasets.register_signal` row call (write-policy
+    resource `portfolio-datasets` under the remote backend) for a signal whose instance no
+    portfolio registration binds, e.g. a signal run alone or with core portfolio tables. Markets
+    verifies the table against the signal-weights contract (its workload needs `data_viewer` on
+    it) and needs the signal's `SignalMetadata` row, which the signal's run writes.
+    """
+    from msm_portfolios.api.datasets import PortfolioDatasets
+
+    return PortfolioDatasets.register_signal(
+        {
+            "signal_uid": str(signal_uid),
+            "signal_meta_table_uid": _meta_table_uid(signal_output_table),
+        }
     )
 
 
@@ -661,6 +703,7 @@ __all__ = [
     "portfolio_runtime_models",
     "publish_etf_tracking_portfolio",
     "register_portfolio_datasets",
+    "register_signal_dataset",
     "required_calendar_window",
     "start_portfolio_engine",
 ]

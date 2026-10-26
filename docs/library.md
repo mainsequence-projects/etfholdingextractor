@@ -68,7 +68,8 @@ from etfhextractor.portfolio_publish import (
     EtfTrackingPortfolioBuild, build_etf_tracking_portfolio,
     publish_etf_tracking_portfolio, ensure_trading_calendar,
     build_etf_tracker_unique_identifier, start_portfolio_engine, portfolio_runtime_models,
-    register_portfolio_datasets, US_EQUITY_CALENDAR_KEY, PRICE_SOURCE_TABLE_UID_ENV,
+    register_portfolio_datasets, register_signal_dataset,
+    US_EQUITY_CALENDAR_KEY, PRICE_SOURCE_TABLE_UID_ENV,
 )
 from etfhextractor.portfolio_signal import (
     ETFHoldingsSignal, ETFHoldingsSignalConfig, previous_session_close,
@@ -426,7 +427,7 @@ use_remote_backend(LazyRemoteBackend())   # or MSM_API_BACKEND=remote, which als
 | `sync_holdings_asset_category` | `AssetCategory.upsert`, `AssetCategory.replace_memberships` | `asset-category` |
 | `register_equity_assets_from_tickers` | `Asset.get_many_by_unique_identifier`, `AssetType.upsert`, `Asset.upsert_many`, `OpenFigiDetails.upsert_many`, `AssetSnapshots.latest(asset_identifiers=...)`, `AssetSnapshots.publish` | `asset-type`, `asset`, `open-figi-details`, `asset-snapshots` |
 | `ensure_trading_calendar` | `Calendar.filter`; `Calendar.create_from_pandas_calendar`, or for always-open keys `Calendar.upsert`, `CalendarDate.upsert_many`, `CalendarSession.upsert_many` | `calendar`, `calendar-date`, `calendar-session` |
-| `build_etf_tracking_portfolio`, `publish_etf_tracking_portfolio` | the calendar and (with `register_missing`) registration calls, `Portfolio.upsert` (the row and, after a run, its pointers), `SignalMetadata.upsert` (by the signal updater), `PortfolioDatasets.register` when registering | `portfolio`, `signal-metadata`, `portfolio-datasets`, plus those of the calls it makes |
+| `build_etf_tracking_portfolio`, `publish_etf_tracking_portfolio` | the calendar and (with `register_missing`) registration calls, `Portfolio.upsert` (the row and, after a run, its pointers), `SignalMetadata.upsert` (by the signal updater), `PortfolioDatasets.register` or, for a signal-only instance, `PortfolioDatasets.register_signal` when registering | `portfolio`, `signal-metadata`, `portfolio-datasets`, plus those of the calls it makes |
 
 An application that runs these calls on the remote backend needs:
 
@@ -458,7 +459,7 @@ every default keeps the earlier behaviour:
 |---|---|
 | `signal_output_table` | `ETFHoldingsSignal` writes and reads its history in this `SignalWeightsTS` instance |
 | `portfolio_output_table`, `weights_output_table`, `rebalance_output_table` | `PortfoliosUpdater(output_table=, weights_output_table=, rebalance_output_table=)` |
-| `register_datasets` | `PortfolioDatasets.register` after the run (reconciling when it ran); default: when `portfolio_output_table` is given |
+| `register_datasets` | after the run: `PortfolioDatasets.register` with `portfolio_output_table` (reconciling when it ran; it binds the signal instance too), else `PortfolioDatasets.register_signal` for a `signal_output_table` alone (only after a run, which writes the signal's `SignalMetadata` row); default: whenever one of those tables is given |
 | `update_pointers` | `False` leaves the Portfolio row's table-update pointers alone |
 | `resolve_asset_identifiers_fn` | replaces the snapshot ticker resolver in the preflight and in the signal (`ETFHoldingsSignal.set_asset_identifier_resolver`) |
 
@@ -490,7 +491,10 @@ The library owns no instances (it has no deployment), so the application moves a
    application's one `start_engine` call) and publish with the four output tables and
    `start_engine=False`. With `portfolio_output_table` the build registers the instances in the
    Markets catalog after the run; `build.portfolio_datasets` (and the summary's
-   `portfolio_datasets`) shows the reconciled state, which should be `populated`.
+   `portfolio_datasets`) shows the reconciled state, which should be `populated`. A signal moved
+   on its own (core portfolio tables, or no portfolio) is bound with
+   `PortfolioDatasets.register_signal` after its first bound run (`build.signal_dataset`, or
+   `register_signal_dataset(signal_uid=..., signal_output_table=...)` after a signal-only run).
 6. Resume the scheduled runs. Readers get values and weights through the Markets API
    (`msm.client.MarketsClient.portfolio_values` / `portfolio_weights`). Markets never deletes
    rows in a table another application owns; leave the core rows in place until the move is

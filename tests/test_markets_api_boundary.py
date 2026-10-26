@@ -408,3 +408,38 @@ def test_injected_instances_join_todays_tables_on_the_runtime_backend() -> None:
 
     assert values in models
     assert "PortfoliosStorage" in {model.__name__ for model in models}
+
+
+def test_a_signal_only_instance_is_one_catalog_call(markets_api) -> None:
+    from etfhextractor.portfolio_publish import register_signal_dataset
+
+    class SignalInstance:
+        @staticmethod
+        def get_meta_table_uid() -> str:
+            return "signal-instance-uid"
+
+    backend = markets_api(
+        {
+            ("portfolio-datasets", "register_signal"): lambda arguments: dict(
+                arguments["registration"]
+            ),
+        }
+    )
+
+    registration = register_signal_dataset(
+        signal_uid="ivv-signal", signal_output_table=SignalInstance
+    )
+
+    assert backend.calls == [
+        (
+            "portfolio-datasets",
+            "register_signal",
+            {
+                "registration": {
+                    "signal_uid": "ivv-signal",
+                    "signal_meta_table_uid": "signal-instance-uid",
+                }
+            },
+        )
+    ]
+    assert registration.signal_meta_table_uid == "signal-instance-uid"

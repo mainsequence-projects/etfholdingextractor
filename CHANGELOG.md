@@ -55,13 +55,16 @@ once 3.0.0 is on PyPI.
   defaulting to the earlier behaviour: `signal_output_table`, `portfolio_output_table`,
   `weights_output_table` and `rebalance_output_table` bind the signal and `PortfoliosUpdater`
   (and its weights and rebalance updaters) to an application's own contract instances;
-  `register_datasets` records them in the Markets catalog with `PortfolioDatasets.register`
-  after the run (by default when `portfolio_output_table` is given); `update_pointers=False`
+  `register_datasets` records them in the Markets catalog after the run, with
+  `PortfolioDatasets.register` for a portfolio values instance or
+  `PortfolioDatasets.register_signal` for a signal instance alone (by default whenever one of
+  those tables is given); `update_pointers=False`
   leaves the Portfolio pointers alone; `resolve_asset_identifiers_fn` replaces the
   asset-snapshot ticker resolver.
 - `ETFHoldingsSignal.set_asset_identifier_resolver`, `portfolio_runtime_models`,
-  `register_portfolio_datasets`, `EtfTrackingPortfolioBuild.portfolio_datasets` (in the summary
-  only when registered), and `etfhextractor.markets_runtime`.
+  `register_portfolio_datasets`, `register_signal_dataset`,
+  `EtfTrackingPortfolioBuild.portfolio_datasets` and `.signal_dataset` (in the summary only when
+  registered), and `etfhextractor.markets_runtime`.
 - `tests/test_markets_api_boundary.py` runs the library against a recording remote backend. It
   checks the resource and operation of every Markets call, that nothing is attached for
   registries, and that the library never selects the backend. It also guards that no module
