@@ -103,5 +103,6 @@ Markets API the boundary for registries: the registry check is one
 `AssetSnapshots.publish`. Under ms-markets' remote backend, which the importing application
 selects, these run on the Markets API. ms-markets 3.0's own `AssetSnapshot` verifies duplicate
 keys in one read, so registration no longer uses `BatchVerifiedAssetSnapshot` (kept for callers
-that import it). The snapshot check still reads `AssetSnapshotsStorage` directly, because no
-Markets API route serves snapshots by asset identifier yet.
+that import it). The snapshot check is one `AssetSnapshots.latest(asset_identifiers=...)` read,
+and the ticker resolver one `AssetSnapshots.latest(tickers=...)`, both on the Markets API under
+the remote backend.

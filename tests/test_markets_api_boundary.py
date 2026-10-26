@@ -2,8 +2,8 @@
 
 The application chooses the ms-markets row backend; the library never does. Under the remote
 backend every registry read and write the library makes is one set-based call to the Markets
-API, nothing Markets-owned is attached for registries, and the only compiled SQL left on a
-Markets table is the asset-snapshot read (no Markets API route serves it yet).
+API, nothing Markets-owned is attached for registries, and no module compiles SQL on a Markets
+table.
 
 These tests select the remote backend with a recording fake, so they check exactly which
 resource and operation each library call sends to Markets, offline.
@@ -114,9 +114,8 @@ def test_the_library_never_selects_the_row_backend() -> None:
     assert offenders == []
 
 
-def test_only_the_snapshot_read_compiles_sql_on_a_markets_table() -> None:
-    """No module builds a statement or calls a repository helper on a Markets table, except the
-    asset-snapshot read that has no Markets API route yet."""
+def test_no_module_compiles_sql_on_a_markets_table() -> None:
+    """No module builds a statement or calls a repository helper on a Markets table."""
     forbidden = {
         "search_model",
         "count_model",
@@ -146,7 +145,7 @@ def test_only_the_snapshot_read_compiles_sql_on_a_markets_table() -> None:
                 name = getattr(node.func, "id", None) or getattr(node.func, "attr", None)
                 if name in forbidden:
                     found.add((path.name, function.name, name))
-    assert found == {("mainsequence_categories.py", "_search_snapshot_rows", "search_model")}
+    assert found == set()
 
 
 def test_registry_paths_attach_nothing_under_the_markets_api(markets_api, no_engine) -> None:
@@ -186,44 +185,46 @@ def test_category_sync_is_two_markets_calls(markets_api, no_engine) -> None:
     assert result.asset_uids == asset_uids
 
 
-def test_ticker_resolution_reads_snapshots_and_batches_the_asset_lookup(
-    markets_api, no_engine
-) -> None:
+def _reference(identifier: str, ticker: str | None) -> dict[str, Any]:
+    """An `AssetSnapshotReference` as the Markets API returns it."""
+    return {
+        "asset_uid": str(uuid.uuid5(uuid.NAMESPACE_URL, identifier)),
+        "asset_identifier": identifier,
+        "asset_type": "equity",
+        "snapshot_time": None if ticker is None else "2026-05-01T00:00:00Z",
+        "ticker": ticker,
+    }
+
+
+def test_ticker_resolution_is_one_latest_snapshot_read(markets_api, no_engine) -> None:
     from etfhextractor import mainsequence_categories
 
-    snapshot_rows = [
-        {"asset_identifier": "AAPL_ID", "ticker": "AAPL", "time_index": "2026-05-01T00:00:00Z"},
-        {"asset_identifier": "MSFT_ID", "ticker": "MSFT", "time_index": "2026-05-01T00:00:00Z"},
-    ]
     backend = markets_api(
         {
-            ("asset", "get_many_by_unique_identifier"): lambda arguments: {
-                identifier: _asset(identifier) for identifier in arguments["unique_identifiers"]
-            },
+            ("asset-snapshots", "latest"): lambda arguments: [
+                _reference("AAPL_ID", "AAPL"),
+                _reference("MSFT_ID", "MSFT"),
+                # Carried NVDA once; its latest snapshot carries another ticker.
+                _reference("OLD_NVDA_ID", "NVDA_OLD"),
+            ],
         }
     )
-    contexts: list[str] = []
 
-    def snapshot_context(*, row_model_name: str) -> object:
-        contexts.append(row_model_name)
-        return object()
+    existing, missing, ambiguous = mainsequence_categories.resolve_existing_assets_by_ticker(
+        component_symbols=["AAPL", "MSFT", "NVDA"]
+    )
+    identifiers, *_ = mainsequence_categories.resolve_asset_identifiers_by_ticker(
+        component_symbols=["AAPL", "MSFT", "NVDA"]
+    )
 
-    with (
-        patch(
-            "etfhextractor.markets_runtime.remote_snapshot_context", side_effect=snapshot_context
-        ),
-        patch.object(
-            mainsequence_categories, "_search_snapshot_rows", return_value=snapshot_rows
-        ),
-    ):
-        existing, missing, ambiguous = mainsequence_categories.resolve_existing_assets_by_ticker(
-            component_symbols=["AAPL", "MSFT", "NVDA"]
-        )
-
-    assert sorted(existing) == ["AAPL", "MSFT"] and missing == ["NVDA"] and ambiguous == []
-    assert contexts and all(name == "etfhextractor.mainsequence_categories" for name in contexts)
-    assert backend.operations() == [("asset", "get_many_by_unique_identifier")]
-    assert backend.calls[0][2]["unique_identifiers"] == ["AAPL_ID", "MSFT_ID"]
+    assert existing == {
+        "AAPL": uuid.uuid5(uuid.NAMESPACE_URL, "AAPL_ID"),
+        "MSFT": uuid.uuid5(uuid.NAMESPACE_URL, "MSFT_ID"),
+    }
+    assert missing == ["NVDA"] and ambiguous == []
+    assert identifiers == {"AAPL": "AAPL_ID", "MSFT": "MSFT_ID"}
+    assert backend.operations() == [("asset-snapshots", "latest"), ("asset-snapshots", "latest")]
+    assert backend.calls[0][2] == {"tickers": ["AAPL", "MSFT", "NVDA"]}
 
 
 def test_figi_registration_writes_each_table_once(markets_api, no_engine) -> None:
@@ -258,14 +259,17 @@ def test_figi_registration_writes_each_table_once(markets_api, no_engine) -> Non
                 {"uid": payload["asset_uid"], "asset_uid": payload["asset_uid"]}
                 for payload in arguments["payloads"]
             ],
+            ("asset-snapshots", "latest"): lambda arguments: [
+                # MSFT is registered and resolvable; NVDA exists without a snapshot.
+                _reference(identifier, "MSFT" if identifier == "BBG000BPH459" else None)
+                for identifier in arguments["asset_identifiers"]
+                if identifier in {"BBG000BPH459"}
+            ],
             ("asset-snapshots", "publish"): lambda arguments: len(arguments["snapshots"]),
         }
     )
 
-    with (
-        patch("msm.services.assets.openfigi.query_figi", return_value=figi_rows),
-        patch.object(asset_registration, "_figis_with_snapshots", return_value={"BBG000BPH459"}),
-    ):
+    with patch("msm.services.assets.openfigi.query_figi", return_value=figi_rows):
         result = asset_registration.register_equity_assets_from_tickers(
             tickers=["AAPL", "NVDA", "MSFT"],
             snapshot_time=dt.datetime(2026, 6, 10, tzinfo=dt.UTC),
@@ -275,12 +279,16 @@ def test_figi_registration_writes_each_table_once(markets_api, no_engine) -> Non
     assert result.already_registered_figi_by_ticker == {"MSFT": "BBG000BPH459"}
     assert backend.operations() == [
         ("asset", "get_many_by_unique_identifier"),
+        ("asset-snapshots", "latest"),
         ("asset-type", "upsert"),
         ("asset", "upsert_many"),
         ("open-figi-details", "upsert_many"),
         ("asset-snapshots", "publish"),
     ]
     arguments = {(resource, operation): args for resource, operation, args in backend.calls}
+    assert arguments[("asset-snapshots", "latest")] == {
+        "asset_identifiers": ["BBG000B9XRY4", "BBG000BBJQV0", "BBG000BPH459"]
+    }
     assert [p["unique_identifier"] for p in arguments[("asset", "upsert_many")]["payloads"]] == [
         "BBG000B9XRY4",
         "BBG000BBJQV0",
@@ -333,7 +341,6 @@ def test_market_calendars_are_materialized_by_markets(markets_api, no_engine) ->
 
 
 def test_portfolio_runtime_attaches_no_registry_under_the_markets_api(markets_api) -> None:
-    from msm.time_index.assets.storage import AssetSnapshotsStorage
     from msm_portfolios.time_index.portfolios.storage import (
         PortfolioRebalanceStateStorage,
         PortfoliosStorage,
@@ -351,7 +358,6 @@ def test_portfolio_runtime_attaches_no_registry_under_the_markets_api(markets_ap
         PortfolioWeightsStorage,
         PortfolioRebalanceStateStorage,
         PortfoliosStorage,
-        AssetSnapshotsStorage,
         DemoBarsStorage,
     ]
 
@@ -377,8 +383,8 @@ def test_portfolio_runtime_keeps_todays_tables_on_the_runtime_backend() -> None:
 
 
 def test_injected_instances_leave_no_markets_table_attached(markets_api) -> None:
-    """With every series bound to the application's instances and its own ticker resolver,
-    a publish on the Markets API attaches only the application's tables."""
+    """With every series bound to the application's instances, a publish on the Markets API
+    attaches only the application's tables."""
     from etfhextractor.portfolio_publish import portfolio_runtime_models
 
     signal, weights, rebalance, values = (
@@ -391,7 +397,6 @@ def test_injected_instances_leave_no_markets_table_attached(markets_api) -> None
         weights_output_table=weights,
         rebalance_output_table=rebalance,
         portfolio_output_table=values,
-        asset_snapshots=False,
     ) == [signal, weights, rebalance, values]
 
 

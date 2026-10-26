@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import datetime as dt
 import uuid
 from dataclasses import dataclass
 from typing import Any
@@ -11,12 +10,6 @@ from .providers.registry import infer_provider_name_from_url
 from .reader import ETFHoldingsReader
 
 HOLDINGS_ASSET_CATEGORY_PREFIX = "HOLDINGS__"
-
-# Page size for scanning the ms-markets asset-snapshot MetaTable. We page through
-# results explicitly instead of relying on the repository's default `limit`, so a
-# large ETF universe (hundreds of components, each with multiple historical
-# snapshot rows) is fully scanned. (Implementation task 0001 §10.6.)
-_SNAPSHOT_SCAN_PAGE_SIZE = 1000
 
 # Cached ms-markets runtime (set on first use by `_ensure_msm_started`).
 _MSM_RUNTIME: Any = None
@@ -68,20 +61,6 @@ def _ensure_msm_started() -> Any:
     return _MSM_RUNTIME
 
 
-def _snapshot_context() -> Any:
-    """Repository context for the asset-snapshot reads.
-
-    Asset snapshots by ticker or by asset identifier have no Markets API route yet, so this read
-    runs on an attached runtime under both backends: the category runtime by default, a runtime
-    holding only ``AssetSnapshotsStorage`` under the remote backend.
-    """
-    from .markets_runtime import markets_api_selected, remote_snapshot_context
-
-    if markets_api_selected():
-        return remote_snapshot_context(row_model_name=_ROW_MODEL_NAME)
-    return _ensure_msm_started().context
-
-
 def _clean_text(value: Any) -> str | None:
     if value is None:
         return None
@@ -93,26 +72,6 @@ def _as_uuid(value: Any) -> uuid.UUID:
     if isinstance(value, uuid.UUID):
         return value
     return uuid.UUID(str(value))
-
-
-def _snapshot_time(value: Any) -> dt.datetime | None:
-    if isinstance(value, dt.datetime):
-        parsed = value
-    elif isinstance(value, str):
-        text = value.strip()
-        if not text:
-            return None
-        if text.endswith("Z"):
-            text = f"{text[:-1]}+00:00"
-        try:
-            parsed = dt.datetime.fromisoformat(text)
-        except ValueError:
-            return None
-    else:
-        return None
-    if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=dt.timezone.utc)
-    return parsed
 
 
 def _component_weights_from_holdings(
@@ -229,61 +188,48 @@ def derive_component_weights_from_holdings(
     )
 
 
-def _search_snapshot_rows(
-    context: Any,
-    *,
-    in_filters: dict[str, list[str]],
-) -> list[dict[str, Any]]:
-    """Page through the asset-snapshot MetaTable for the given `in_filters`.
+def _latest_snapshots_by_symbol(
+    component_symbols: list[str],
+) -> tuple[dict[str, Any], list[str], list[str]]:
+    """Resolve component tickers to the assets whose latest snapshot still carries them.
 
-    The one direct Markets read left (no Markets API route serves snapshots by ticker or by
-    asset identifier yet); `context` comes from `_snapshot_context()`.
+    One ``AssetSnapshots.latest(tickers=...)`` row call (on the Markets API under the remote
+    backend): it returns every asset that ever had one of the tickers, each with its latest
+    snapshot; an asset matches a symbol only when that latest ticker normalizes to it. Classify
+    by count: zero → missing, one → existing, many → ambiguous. Returns
+    ``(reference_by_symbol, missing, ambiguous)`` with ``AssetSnapshotReference`` values.
     """
-    from msm.api.base import operation_result_rows
-    from msm.repositories.crud import search_model
-    from msm.time_index.assets.storage import AssetSnapshotsStorage
+    from msm.api.assets import AssetSnapshots
 
-    rows: list[dict[str, Any]] = []
-    offset = 0
-    while True:
-        page = operation_result_rows(
-            search_model(
-                context,
-                model=AssetSnapshotsStorage,
-                in_filters=in_filters,
-                limit=_SNAPSHOT_SCAN_PAGE_SIZE,
-                offset=offset,
-            )
-        )
-        rows.extend(page)
-        if len(page) < _SNAPSHOT_SCAN_PAGE_SIZE:
-            break
-        offset += _SNAPSHOT_SCAN_PAGE_SIZE
-    return rows
+    _ensure_msm_started()
+    references = AssetSnapshots.latest(tickers=list(component_symbols))
 
-
-def _latest_ticker_by_identifier(
-    context: Any,
-    identifiers: set[str],
-) -> dict[str, str | None]:
-    """Map each asset_identifier to the ticker on its most recent snapshot."""
-    if not identifiers:
-        return {}
-
-    rows = _search_snapshot_rows(
-        context,
-        in_filters={"asset_identifier": sorted(identifiers)},
-    )
-    latest: dict[str, tuple[dt.datetime, str | None]] = {}
-    for row in rows:
-        identifier = _clean_text(row.get("asset_identifier"))
-        snapshot_time = _snapshot_time(row.get("time_index"))
-        if identifier is None or snapshot_time is None:
+    matches_by_symbol: dict[str, dict[str, Any]] = {symbol: {} for symbol in component_symbols}
+    for reference in references:
+        ticker = _clean_text(reference.ticker)
+        identifier = _clean_text(reference.asset_identifier)
+        if ticker is None or identifier is None:
             continue
-        current = latest.get(identifier)
-        if current is None or snapshot_time > current[0]:
-            latest[identifier] = (snapshot_time, _clean_text(row.get("ticker")))
-    return {identifier: ticker for identifier, (_, ticker) in latest.items()}
+        symbol = normalize_ticker(ticker)
+        if symbol in matches_by_symbol:
+            matches_by_symbol[symbol][identifier] = reference
+
+    reference_by_symbol: dict[str, Any] = {}
+    missing_registered_symbols: list[str] = []
+    ambiguous_registered_symbols: list[str] = []
+    for symbol in component_symbols:
+        matched = matches_by_symbol.get(symbol, {})
+        if not matched:
+            missing_registered_symbols.append(symbol)
+        elif len(matched) == 1:
+            reference_by_symbol[symbol] = next(iter(matched.values()))
+        else:
+            ambiguous_registered_symbols.append(symbol)
+    return (
+        reference_by_symbol,
+        sorted(missing_registered_symbols),
+        sorted(ambiguous_registered_symbols),
+    )
 
 
 def _asset_uids_by_identifier(identifiers: set[str]) -> dict[str, uuid.UUID]:
@@ -315,65 +261,24 @@ def resolve_asset_identifiers_by_ticker(
 
     Ticker resolution uses the ms-markets asset-snapshot layer
     (``AssetSnapshotsStorage.ticker``, the successor to the platform's old
-    ``current_snapshot.ticker``): query snapshots whose ticker is one of the
-    component symbols and keep the asset identifiers whose *latest* snapshot
-    ticker still equals the symbol. Classify by count: zero → missing, one →
-    existing, many → ambiguous. Returns
+    ``current_snapshot.ticker``) through one ``AssetSnapshots.latest(tickers=...)``
+    row call: the assets that had one of the component symbols, kept when their
+    *latest* snapshot ticker still equals the symbol. Classify by count: zero →
+    missing, one → existing, many → ambiguous. Returns
     ``(asset_identifiers_by_symbol, missing, ambiguous)``.
 
     The identifier is ``Asset.unique_identifier`` — the key used by signal
-    frames and snapshot rows; `resolve_existing_assets_by_ticker` layers the
-    asset-uid lookup on top for category membership writes.
+    frames and snapshot rows; `resolve_existing_assets_by_ticker` returns the
+    asset uids of the same resolution for category membership writes.
     """
     if not component_symbols:
         return {}, [], []
 
-    context = _snapshot_context()
-
-    snapshot_rows = _search_snapshot_rows(
-        context,
-        in_filters={"ticker": list(component_symbols)},
-    )
-
-    candidates_by_symbol: dict[str, set[str]] = {symbol: set() for symbol in component_symbols}
-    for row in snapshot_rows:
-        ticker = _clean_text(row.get("ticker"))
-        identifier = _clean_text(row.get("asset_identifier"))
-        if ticker is None or identifier is None:
-            continue
-        normalized = normalize_ticker(ticker)
-        if normalized in candidates_by_symbol:
-            candidates_by_symbol[normalized].add(identifier)
-
-    all_candidates = {
-        identifier for identifiers in candidates_by_symbol.values() for identifier in identifiers
+    reference_by_symbol, missing, ambiguous = _latest_snapshots_by_symbol(component_symbols)
+    asset_identifiers_by_symbol = {
+        symbol: str(reference.asset_identifier) for symbol, reference in reference_by_symbol.items()
     }
-    latest_ticker_by_identifier = _latest_ticker_by_identifier(context, all_candidates)
-
-    asset_identifiers_by_symbol: dict[str, str] = {}
-    missing_registered_symbols: list[str] = []
-    ambiguous_registered_symbols: list[str] = []
-
-    for symbol in component_symbols:
-        matched_identifiers = [
-            identifier
-            for identifier in sorted(candidates_by_symbol.get(symbol, set()))
-            if (latest_ticker := latest_ticker_by_identifier.get(identifier)) is not None
-            and normalize_ticker(latest_ticker) == symbol
-        ]
-
-        if not matched_identifiers:
-            missing_registered_symbols.append(symbol)
-        elif len(matched_identifiers) == 1:
-            asset_identifiers_by_symbol[symbol] = matched_identifiers[0]
-        else:
-            ambiguous_registered_symbols.append(symbol)
-
-    return (
-        dict(sorted(asset_identifiers_by_symbol.items())),
-        sorted(missing_registered_symbols),
-        sorted(ambiguous_registered_symbols),
-    )
+    return dict(sorted(asset_identifiers_by_symbol.items())), missing, ambiguous
 
 
 def resolve_existing_assets_by_ticker(
@@ -382,36 +287,20 @@ def resolve_existing_assets_by_ticker(
 ) -> tuple[dict[str, uuid.UUID], list[str], list[str]]:
     """Resolve component tickers to registered ms-markets asset uids.
 
-    Builds on `resolve_asset_identifiers_by_ticker` (snapshot-layer ticker
-    resolution) and maps each resolved identifier to its Asset ``uid`` (one
-    ``Asset.get_many_by_unique_identifier`` row call) for category membership writes. Returns
+    The same snapshot-layer resolution as `resolve_asset_identifiers_by_ticker`,
+    returning each resolved asset's ``uid`` (carried by ``AssetSnapshots.latest``, so
+    no second lookup) for category membership writes. Returns
     ``(existing_asset_uids_by_symbol, missing, ambiguous)``.
     (Implementation task 0001 §10.1 / B-1.)
     """
     if not component_symbols:
         return {}, [], []
 
-    asset_identifiers_by_symbol, missing_registered_symbols, ambiguous_registered_symbols = (
-        resolve_asset_identifiers_by_ticker(component_symbols=component_symbols)
-    )
-
-    _ensure_msm_started()
-    uid_by_identifier = _asset_uids_by_identifier(set(asset_identifiers_by_symbol.values()))
-
-    existing_asset_uids_by_symbol: dict[str, uuid.UUID] = {}
-    missing = list(missing_registered_symbols)
-    for symbol, identifier in asset_identifiers_by_symbol.items():
-        uid = uid_by_identifier.get(identifier)
-        if uid is None:
-            missing.append(symbol)
-        else:
-            existing_asset_uids_by_symbol[symbol] = uid
-
-    return (
-        dict(sorted(existing_asset_uids_by_symbol.items())),
-        sorted(missing),
-        sorted(ambiguous_registered_symbols),
-    )
+    reference_by_symbol, missing, ambiguous = _latest_snapshots_by_symbol(component_symbols)
+    existing_asset_uids_by_symbol = {
+        symbol: _as_uuid(reference.asset_uid) for symbol, reference in reference_by_symbol.items()
+    }
+    return dict(sorted(existing_asset_uids_by_symbol.items())), missing, ambiguous
 
 
 def build_holdings_asset_category_plan(

@@ -64,10 +64,9 @@ When serving those capabilities:
   never selects the ms-markets row backend; the importing application does (`LazyRemoteBackend`
   or `MSM_API_BACKEND=remote`). Markets registries (assets, OpenFIGI details, asset types and
   snapshots, categories, calendars, portfolios, signal metadata, the portfolio catalog) are
-  reached only through set-based `msm.api` row calls, never compiled SQL, `search_model` or
-  repository helpers on a Markets table. The one exception is the asset-snapshot read in
-  `mainsequence_categories._search_snapshot_rows`, which has no Markets API route yet;
-  `tests/test_markets_api_boundary.py` guards both rules. Portfolio and signal time series go to
+  reached only through set-based `msm.api` row calls (asset snapshots are read with
+  `AssetSnapshots.latest`), never compiled SQL, `search_model` or repository helpers on a Markets
+  table; `tests/test_markets_api_boundary.py` guards both rules. Portfolio and signal time series go to
   an application's own instances through the seams of `build_etf_tracking_portfolio`
   (`*_output_table`, `register_datasets`, `update_pointers`, `resolve_asset_identifiers_fn`);
   the defaults write the core ms-markets tables as before.

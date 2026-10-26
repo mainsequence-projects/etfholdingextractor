@@ -365,7 +365,6 @@ class InjectionSeamTests(unittest.TestCase):
         mocks.register.assert_not_called()
         mocks.signal.set_asset_identifier_resolver.assert_not_called()
         engine_kwargs = mocks.engine.call_args.kwargs
-        self.assertTrue(engine_kwargs["asset_snapshots"])
         self.assertIsNone(engine_kwargs["portfolio_output_table"])
 
     def test_instances_bind_every_updater_and_register_the_catalog_after_the_run(self) -> None:
@@ -461,7 +460,6 @@ class InjectionSeamTests(unittest.TestCase):
         resolver.assert_called_once_with(component_symbols=["AAPL"])
         snapshot_resolver.assert_not_called()
         mocks.signal.set_asset_identifier_resolver.assert_called_once_with(resolver)
-        self.assertFalse(mocks.engine.call_args.kwargs["asset_snapshots"])
 
 
 if __name__ == "__main__":

@@ -385,7 +385,8 @@ ticker-keyed assets are forbidden), and **a ticker must map to exactly one FIGI*
 candidates stay unregistered blockers so same-ticker assets are never mixed.
 `register_equity_assets_from_tickers(...)` resolves smartly — always: batched `query_figi`
 (ticker→FIGI), then **one batch lookup** of all mapped FIGIs in the asset registry
-(`Asset.get_many_by_unique_identifier`) and one search of the snapshot table, then writes **only
+(`Asset.get_many_by_unique_identifier`) and one read of their latest snapshots
+(`AssetSnapshots.latest(asset_identifiers=...)`), then writes **only
 the deltas**, set-based (one `Asset.upsert_many` of `unique_identifier=figi` and one
 `OpenFigiDetails.upsert_many` for the missing FIGIs; one `AssetSnapshots.publish` for the FIGIs
 lacking a snapshot). A fully-registered universe re-runs with zero writes. Registered identity is the US
@@ -421,10 +422,9 @@ use_remote_backend(LazyRemoteBackend())   # or MSM_API_BACKEND=remote, which als
 
 | Library call | Markets row calls | Write-policy resources |
 |---|---|---|
-| `resolve_existing_assets_by_ticker`, `build_holdings_asset_category_plan` | snapshot read (direct, below), `Asset.get_many_by_unique_identifier` | none (reads) |
-| `resolve_asset_identifiers_by_ticker` | snapshot read (direct, below) | none |
+| `resolve_existing_assets_by_ticker`, `resolve_asset_identifiers_by_ticker`, `build_holdings_asset_category_plan` | `AssetSnapshots.latest(tickers=...)` (each asset that ever carried a ticker, with its latest snapshot; kept when that ticker still matches) | none (reads) |
 | `sync_holdings_asset_category` | `AssetCategory.upsert`, `AssetCategory.replace_memberships` | `asset-category` |
-| `register_equity_assets_from_tickers` | `Asset.get_many_by_unique_identifier`, `AssetType.upsert`, `Asset.upsert_many`, `OpenFigiDetails.upsert_many`, `AssetSnapshots.publish`, snapshot read | `asset-type`, `asset`, `open-figi-details`, `asset-snapshots` |
+| `register_equity_assets_from_tickers` | `Asset.get_many_by_unique_identifier`, `AssetType.upsert`, `Asset.upsert_many`, `OpenFigiDetails.upsert_many`, `AssetSnapshots.latest(asset_identifiers=...)`, `AssetSnapshots.publish` | `asset-type`, `asset`, `open-figi-details`, `asset-snapshots` |
 | `ensure_trading_calendar` | `Calendar.filter`; `Calendar.create_from_pandas_calendar`, or for always-open keys `Calendar.upsert`, `CalendarDate.upsert_many`, `CalendarSession.upsert_many` | `calendar`, `calendar-date`, `calendar-session` |
 | `build_etf_tracking_portfolio`, `publish_etf_tracking_portfolio` | the calendar and (with `register_missing`) registration calls, `Portfolio.upsert` (the row and, after a run, its pointers), `SignalMetadata.upsert` (by the signal updater), `PortfolioDatasets.register` when registering | `portfolio`, `signal-metadata`, `portfolio-datasets`, plus those of the calls it makes |
 
@@ -440,15 +440,9 @@ An application that runs these calls on the remote backend needs:
 
 ### Direct Markets access that remains
 
-- **Asset-snapshot read.** Ticker resolution (`resolve_asset_identifiers_by_ticker`, the
-  signal's update, category planning) and the registration snapshot check read
-  `AssetSnapshotsStorage` by ticker and by asset identifier with compiled SQL
-  (`mainsequence_categories._search_snapshot_rows`). No Markets API route serves that yet. On the
-  remote backend the library reuses the application's runtime when it attached the table, or
-  attaches the table alone with `msm.bootstrap.attach_schemas`, so the workload needs read access
-  to it (and to the Asset table it references). The portfolio path avoids it with
-  `resolve_asset_identifiers_fn`, and `build_holdings_asset_category_plan` with
-  `resolve_existing_assets_by_ticker_fn`; FIGI registration always reads it.
+No module compiles SQL on a Markets table; `tests/test_markets_api_boundary.py` guards it.
+What still uses MetaTables on a Markets table:
+
 - **Portfolio time series by default.** Unless the seams below bind them elsewhere, the signal
   weights, portfolio weights, rebalance state and portfolio values are written to the core
   ms-markets tables with MetaTables, which needs write access to those tables.
@@ -469,9 +463,8 @@ every default keeps the earlier behaviour:
 | `resolve_asset_identifiers_fn` | replaces the snapshot ticker resolver in the preflight and in the signal (`ETFHoldingsSignal.set_asset_identifier_resolver`) |
 
 `portfolio_runtime_models(...)` and `start_portfolio_engine(...)` take the same output tables:
-on the remote backend an instance replaces the core table it stands for (and
-`asset_snapshots=False` drops the snapshot table), on the runtime backend the instances join the
-usual set. Output tables never enter `update_hash` or `signal_uid`; MetaTables keys each update
+on the remote backend an instance replaces the core table it stands for, on the runtime backend
+the instances join the usual set. Output tables never enter `update_hash` or `signal_uid`; MetaTables keys each update
 record by update hash and output table, so a bound updater gets its own record.
 
 The library owns no instances (it has no deployment), so the application moves a portfolio:

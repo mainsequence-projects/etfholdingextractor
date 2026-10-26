@@ -392,98 +392,61 @@ class MsmBoundaryTests(unittest.TestCase):
 
     `_ensure_msm_started` is replaced so no real markets runtime is started, and
     the lazily-imported msm calls are patched at their source modules (the lazy
-    `from msm... import ...` re-reads the patched attribute at call time). Asset
-    uids come from one `Asset.get_many_by_unique_identifier` row call; only the
-    snapshot reads still use `search_model` (no Markets API route serves them).
+    `from msm... import ...` re-reads the patched attribute at call time). Ticker
+    resolution is one `AssetSnapshots.latest(tickers=...)` row call that returns
+    each asset that ever carried a ticker with its LATEST snapshot.
     """
 
-    def test_resolve_existing_assets_by_ticker_classifies_zero_one_many(self) -> None:
-        aapl_uid = uuid.uuid4()
-        msft_uid_1 = uuid.uuid4()
-        msft_uid_2 = uuid.uuid4()
-
-        snapshots_by_ticker = [
-            {"asset_identifier": "AAPL_ID", "ticker": "AAPL", "time_index": "2026-01-01T00:00:00Z"},
-            {"asset_identifier": "MSFT_ID_1", "ticker": "MSFT", "time_index": "2026-01-01T00:00:00Z"},
-            {"asset_identifier": "MSFT_ID_2", "ticker": "MSFT", "time_index": "2026-01-01T00:00:00Z"},
-        ]
-        latest_snapshots = [
-            {"asset_identifier": "AAPL_ID", "ticker": "AAPL", "time_index": "2026-05-01T00:00:00Z"},
-            {"asset_identifier": "MSFT_ID_1", "ticker": "MSFT", "time_index": "2026-05-01T00:00:00Z"},
-            {"asset_identifier": "MSFT_ID_2", "ticker": "MSFT", "time_index": "2026-05-01T00:00:00Z"},
-        ]
-        assets_by_identifier = {
-            "AAPL_ID": SimpleNamespace(uid=aapl_uid, unique_identifier="AAPL_ID"),
-            "MSFT_ID_1": SimpleNamespace(uid=msft_uid_1, unique_identifier="MSFT_ID_1"),
-            "MSFT_ID_2": SimpleNamespace(uid=msft_uid_2, unique_identifier="MSFT_ID_2"),
-        }
-        asset_lookups: list[list[str]] = []
-
-        def fake_search_model(context, *, model, in_filters=None, **kwargs):
-            in_filters = in_filters or {}
-            name = model.__name__
-            if name == "AssetSnapshotsStorage" and "ticker" in in_filters:
-                return {"rows": snapshots_by_ticker}
-            if name == "AssetSnapshotsStorage" and "asset_identifier" in in_filters:
-                return {"rows": latest_snapshots}
-            raise AssertionError(f"compiled SQL on {name}")
-
-        def fake_get_many(unique_identifiers):
-            asset_lookups.append(list(unique_identifiers))
-            return {
-                identifier: assets_by_identifier[identifier]
-                for identifier in unique_identifiers
-                if identifier in assets_by_identifier
-            }
-
-        fake_runtime = SimpleNamespace(context=object())
-        with patch(
-            "etfhextractor.mainsequence_categories._ensure_msm_started",
-            return_value=fake_runtime,
-        ), patch("msm.repositories.crud.search_model", side_effect=fake_search_model), patch(
-            "msm.api.assets.Asset.get_many_by_unique_identifier", side_effect=fake_get_many
-        ):
-            existing, missing, ambiguous = resolve_existing_assets_by_ticker(
-                component_symbols=["AAPL", "MSFT", "NVDA"],
+    @staticmethod
+    def _references() -> list[SimpleNamespace]:
+        def reference(identifier: str, ticker: str | None) -> SimpleNamespace:
+            return SimpleNamespace(
+                asset_uid=uuid.uuid4(),
+                asset_identifier=identifier,
+                ticker=ticker,
+                snapshot_time=None if ticker is None else "2026-05-01T00:00:00Z",
             )
 
-        # One batch lookup for the resolved identifiers, never one call per asset.
-        self.assertEqual(asset_lookups, [["AAPL_ID"]])
-        self.assertEqual(existing, {"AAPL": aapl_uid})
-        self.assertEqual(missing, ["NVDA"])
+        return [
+            reference("AAPL_ID", "AAPL"),
+            reference("MSFT_ID_1", "MSFT"),
+            reference("MSFT_ID_2", "MSFT"),
+            # Carried GOOG once; its latest snapshot moved to another ticker.
+            reference("OLD_GOOG_ID", "GOOGL_OLD"),
+        ]
+
+    def _resolve(self, resolver):
+        references = self._references()
+        with patch(
+            "etfhextractor.mainsequence_categories._ensure_msm_started",
+            return_value=SimpleNamespace(context=object()),
+        ), patch(
+            "msm.repositories.crud.search_model",
+            side_effect=AssertionError("compiled SQL on a Markets table"),
+        ), patch(
+            "msm.api.assets.AssetSnapshots.latest", return_value=references
+        ) as latest:
+            result = resolver(component_symbols=["AAPL", "MSFT", "NVDA", "GOOG"])
+        latest.assert_called_once_with(tickers=["AAPL", "MSFT", "NVDA", "GOOG"])
+        return result, references
+
+    def test_resolve_existing_assets_by_ticker_classifies_zero_one_many(self) -> None:
+        (existing, missing, ambiguous), references = self._resolve(
+            resolve_existing_assets_by_ticker
+        )
+
+        # The uid comes with the snapshot reference: no second lookup per asset.
+        self.assertEqual(existing, {"AAPL": references[0].asset_uid})
+        self.assertEqual(missing, ["GOOG", "NVDA"])
         self.assertEqual(ambiguous, ["MSFT"])
 
     def test_resolve_asset_identifiers_by_ticker_returns_unique_identifiers(self) -> None:
-        snapshots_by_ticker = [
-            {"asset_identifier": "AAPL_ID", "ticker": "AAPL", "time_index": "2026-01-01T00:00:00Z"},
-            {"asset_identifier": "MSFT_ID_1", "ticker": "MSFT", "time_index": "2026-01-01T00:00:00Z"},
-            {"asset_identifier": "MSFT_ID_2", "ticker": "MSFT", "time_index": "2026-01-01T00:00:00Z"},
-        ]
-        latest_snapshots = [
-            {"asset_identifier": "AAPL_ID", "ticker": "AAPL", "time_index": "2026-05-01T00:00:00Z"},
-            {"asset_identifier": "MSFT_ID_1", "ticker": "MSFT", "time_index": "2026-05-01T00:00:00Z"},
-            {"asset_identifier": "MSFT_ID_2", "ticker": "MSFT", "time_index": "2026-05-01T00:00:00Z"},
-        ]
-
-        def fake_search_model(context, *, model, in_filters=None, **kwargs):
-            in_filters = in_filters or {}
-            if model.__name__ == "AssetSnapshotsStorage" and "ticker" in in_filters:
-                return {"rows": snapshots_by_ticker}
-            if model.__name__ == "AssetSnapshotsStorage" and "asset_identifier" in in_filters:
-                return {"rows": latest_snapshots}
-            return {"rows": []}
-
-        fake_runtime = SimpleNamespace(context=object())
-        with patch(
-            "etfhextractor.mainsequence_categories._ensure_msm_started",
-            return_value=fake_runtime,
-        ), patch("msm.repositories.crud.search_model", side_effect=fake_search_model):
-            existing, missing, ambiguous = resolve_asset_identifiers_by_ticker(
-                component_symbols=["AAPL", "MSFT", "NVDA"],
-            )
+        (existing, missing, ambiguous), _references = self._resolve(
+            resolve_asset_identifiers_by_ticker
+        )
 
         self.assertEqual(existing, {"AAPL": "AAPL_ID"})
-        self.assertEqual(missing, ["NVDA"])
+        self.assertEqual(missing, ["GOOG", "NVDA"])
         self.assertEqual(ambiguous, ["MSFT"])
 
     def test_sync_holdings_asset_category_upserts_then_replaces(self) -> None:

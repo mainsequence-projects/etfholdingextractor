@@ -157,9 +157,9 @@ class ETFHoldingsSignal(SignalWeights):
 
         `resolver(component_symbols=[...])` returns `(identifiers_by_symbol, missing,
         ambiguous)` like `resolve_asset_identifiers_by_ticker`; `None` restores that default.
-        Runtime wiring only: it enters neither `update_hash` nor `signal_uid`. An application
-        on the Markets API uses it to avoid the one direct Markets read left, the
-        asset-snapshot table (ms-markets ADR 0047).
+        Runtime wiring only: it enters neither `update_hash` nor `signal_uid`. It lets an
+        application resolve tickers its own way instead of through the Markets asset
+        snapshots.
         """
         self._asset_identifier_resolver = resolver
         return self

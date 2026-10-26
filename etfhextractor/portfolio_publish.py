@@ -99,7 +99,6 @@ def portfolio_runtime_models(
     portfolio_output_table: Any | None = None,
     weights_output_table: Any | None = None,
     rebalance_output_table: Any | None = None,
-    asset_snapshots: bool = True,
 ) -> list[Any]:
     """Tables a portfolio publish attaches in this process, for the selected backend.
 
@@ -109,8 +108,7 @@ def portfolio_runtime_models(
     process reuse one runtime. Remote backend (selected by the application, ADR 0047): the
     registries run on the Markets API, so only the time series this process still reads or
     writes with MetaTables: the signal-weights, portfolio-weights, rebalance-state and
-    portfolio-values outputs and, unless `asset_snapshots=False` (a caller-supplied ticker
-    resolver and no FIGI registration), the asset snapshots read by the ticker resolver.
+    portfolio-values outputs.
 
     An output table passed here (an instance in the application's own namespace, built with the
     `msm_portfolios.time_index.contract_instances` factories) replaces the core table it stands
@@ -121,8 +119,6 @@ def portfolio_runtime_models(
     tables at its composition root includes these models in that call and passes
     `start_engine=False` to `build_etf_tracking_portfolio`.
     """
-    from msm.time_index.assets.storage import AssetSnapshotsStorage
-
     from .markets_runtime import markets_api_selected
 
     if markets_api_selected():
@@ -139,8 +135,6 @@ def portfolio_runtime_models(
             rebalance_output_table or PortfolioRebalanceStateStorage,
             portfolio_output_table or PortfoliosStorage,
         ]
-        if asset_snapshots:
-            models.append(AssetSnapshotsStorage)
     else:
         from msm.models import (
             AssetCategoryMembershipTable,
@@ -149,6 +143,7 @@ def portfolio_runtime_models(
             CalendarSessionTable,
             OpenFigiAssetDetailsTable,
         )
+        from msm.time_index.assets.storage import AssetSnapshotsStorage
         from msm_portfolios.bootstrap import resolve_portfolio_models
 
         models = [
@@ -181,8 +176,7 @@ def start_portfolio_engine(
 ) -> Any:
     """Attach the markets runtime with `portfolio_runtime_models(extra_models, ...)`.
 
-    Keyword arguments are those of `portfolio_runtime_models` (the output tables and
-    `asset_snapshots`). When a superset runtime is already attached, it is reused. The row
+    Keyword arguments are those of `portfolio_runtime_models` (the output tables). When a superset runtime is already attached, it is reused. The row
     backend is the application's choice; this only attaches what that choice leaves in-process.
     """
     import msm_portfolios
@@ -280,8 +274,7 @@ def build_etf_tracking_portfolio(
     - `update_pointers=False` leaves the Portfolio row's table-update pointers untouched.
     - `resolve_asset_identifiers_fn` replaces the asset-snapshot ticker resolver
       (`resolve_asset_identifiers_by_ticker`, same signature and return value) in the
-      preflight and in the signal, so a process on the remote backend need not read the
-      Markets snapshot table.
+      preflight and in the signal, for an application that resolves tickers its own way.
     """
     should_register_datasets = (
         portfolio_output_table is not None if register_datasets is None else register_datasets
@@ -308,7 +301,6 @@ def build_etf_tracking_portfolio(
             portfolio_output_table=portfolio_output_table,
             weights_output_table=weights_output_table,
             rebalance_output_table=rebalance_output_table,
-            asset_snapshots=resolve_asset_identifiers_fn is None or register_missing,
         )
 
     # Persist (or reuse) the trading calendar BEFORE any portfolio wiring: the

@@ -23,6 +23,11 @@ once 3.0.0 is on PyPI.
   before.
   - Asset uids by identifier: one `Asset.get_many_by_unique_identifier` instead of
     `search_model` on `AssetTable`.
+  - Ticker resolution (`resolve_asset_identifiers_by_ticker`, `resolve_existing_assets_by_ticker`,
+    the signal's update, category planning): one `AssetSnapshots.latest(tickers=...)` instead of
+    paging `search_model` over `AssetSnapshotsStorage` twice and then looking the asset uids up;
+    an asset still matches a symbol only when its latest snapshot ticker does. The registration
+    snapshot check is one `AssetSnapshots.latest(asset_identifiers=...)`.
   - FIGI registration: one `Asset.upsert_many` and one `OpenFigiDetails.upsert_many` instead of
     one `Asset.upsert` and one `OpenFigiDetails.upsert` per new asset, and
     `AssetSnapshots.publish` instead of running `BatchVerifiedAssetSnapshot`. The snapshot rows
@@ -59,9 +64,8 @@ once 3.0.0 is on PyPI.
   only when registered), and `etfhextractor.markets_runtime`.
 - `tests/test_markets_api_boundary.py` runs the library against a recording remote backend. It
   checks the resource and operation of every Markets call, that nothing is attached for
-  registries, and that the library never selects the backend. It also guards that the
-  asset-snapshot read is the only compiled SQL left on a Markets table. Another test pins the
-  default IVV/ishares `signal_uid`.
+  registries, and that the library never selects the backend. It also guards that no module
+  compiles SQL on a Markets table. Another test pins the default IVV/ishares `signal_uid`.
 
 ### Upgrade notes for applications
 
@@ -73,10 +77,10 @@ once 3.0.0 is on PyPI.
   write-policy resources of the calls it makes: `asset-category`, `asset-type`, `asset`,
   `open-figi-details`, `asset-snapshots`, `calendar`, `calendar-date`, `calendar-session`,
   `portfolio`, `signal-metadata`, `portfolio-datasets` (`docs/library.md`, "Markets Access").
-- Still direct MetaTables access: the asset-snapshot read (ticker resolution and the
-  registration snapshot check), which needs read access to `AssetSnapshotsStorage`, because no
-  Markets API route serves it yet; and, unless instances are injected, the writes to the core
-  signal-weights, portfolio-weights, rebalance-state and portfolio-values tables.
+- Still direct MetaTables access on Markets tables: only, unless instances are injected, the
+  writes to the core signal-weights, portfolio-weights, rebalance-state and portfolio-values
+  tables. Asset snapshots are read through the Markets API (`AssetSnapshots.latest`, a read with
+  no write-policy entry).
 - A fresh signal instance keeps the `signal_uid` but has no history: copy the existing rows into
   the instances before the first bound run, never recompute (runbook in `docs/library.md`).
 - On their first ms-markets 3.0 run, `ETFHoldingsSignal` and `PortfoliosUpdater` get a new

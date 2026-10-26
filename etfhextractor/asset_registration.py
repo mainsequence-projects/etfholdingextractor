@@ -156,8 +156,8 @@ def register_equity_assets_from_tickers(
        `unmapped_tickers` / `ambiguous_figi_candidates_by_ticker` otherwise,
        and neither is registered.
     2. **ONE batch lookup** of all mapped FIGIs in the asset registry
-       (`Asset.get_many_by_unique_identifier(figis)`) plus one batch search of
-       the snapshot table.
+       (`Asset.get_many_by_unique_identifier(figis)`) plus one batch read of
+       their latest snapshots (`AssetSnapshots.latest(asset_identifiers=figis)`).
     3. Write only the deltas, set-based: one `Asset.upsert_many` of
        `{unique_identifier: figi, asset_type: "equity"}` and one
        `OpenFigiDetails.upsert_many` for the FIGIs not in the registry, and one
@@ -407,16 +407,19 @@ def _existing_asset_uids_by_figi(figis: list[str]) -> dict[str, Any]:
 
 
 def _figis_with_snapshots(figis: list[str]) -> set[str]:
-    """ONE batch search of the snapshot table: which FIGIs are already resolvable."""
+    """ONE batch read of the latest snapshots: which FIGIs are already resolvable.
+
+    ``AssetSnapshots.latest(asset_identifiers=...)`` leaves out FIGIs with no asset and gives
+    assets without a snapshot ``snapshot_time=None``.
+    """
     if not figis:
         return set()
-    from .mainsequence_categories import _search_snapshot_rows, _snapshot_context
+    from msm.api.assets import AssetSnapshots
 
-    rows = _search_snapshot_rows(_snapshot_context(), in_filters={"asset_identifier": list(figis)})
     return {
-        str(row["asset_identifier"])
-        for row in rows
-        if row.get("asset_identifier") not in (None, "")
+        str(reference.asset_identifier)
+        for reference in AssetSnapshots.latest(asset_identifiers=list(figis))
+        if reference.snapshot_time is not None
     }
 
 

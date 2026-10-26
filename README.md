@@ -126,7 +126,7 @@ does. With ms-markets' remote row backend selected
 publication, categories, calendars, portfolios, the portfolio catalog) runs on the Markets API,
 and the application needs `reader` on the `MainSequenceMarkets` branch plus entries in the
 Environment's `MARKETS_REGISTRY_WRITERS` constant instead of grants on `mainsequence.markets`.
-The asset-snapshot ticker read still uses MetaTables. `build_etf_tracking_portfolio` takes
+Ticker resolution reads the latest asset snapshots the same way. `build_etf_tracking_portfolio` takes
 output tables, catalog registration, pointer and ticker-resolver seams, so an application can
 keep every portfolio series in its own namespace. Details, the write-policy resources and the
 move runbook: [docs/library.md](docs/library.md) ("Markets Access").

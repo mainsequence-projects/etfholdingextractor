@@ -41,7 +41,7 @@ capabilities to claim.
   application binds its own instance with
   `ETFHoldingsSignal.from_signal_configuration(config, output_table=...)` (or the
   `*_output_table` arguments of `build_etf_tracking_portfolio`) and may replace the
-  asset-snapshot ticker resolver with `set_asset_identifier_resolver`. Neither changes the
+  asset-snapshot ticker resolver (`AssetSnapshots.latest`) with `set_asset_identifier_resolver`. Neither changes the
   `signal_uid`, but a fresh instance has no history: its rows must be copied in before the first
   bound run (`docs/library.md`, "Moving the series to your own instances").
 
