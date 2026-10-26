@@ -10,9 +10,12 @@ Identity rules (ADR 0004):
    blocker and the candidates are reported.
 
 Registration uses the ms-markets machinery directly: `query_figi` (ticker →
-normalized OpenFIGI rows), `Asset.upsert(unique_identifier=figi)`,
-`OpenFigiDetails.upsert(asset_uid=...)` and one `AssetSnapshot` publication so
-the snapshot-layer ticker resolver finds the new assets immediately.
+normalized OpenFIGI rows), then set-based row calls — `Asset.upsert_many`,
+`OpenFigiDetails.upsert_many` — and one `AssetSnapshots.publish` so the
+snapshot-layer ticker resolver finds the new assets immediately. Under the
+ms-markets remote backend (ADR 0047), which the application selects, every write
+runs on the Markets API (write-policy resources `asset-type`, `asset`,
+`open-figi-details` and `asset-snapshots`).
 
 Requires the `OPEN_FIGI_API_KEY` Main Sequence secret (or an explicit
 `api_key`).
@@ -152,14 +155,15 @@ def register_equity_assets_from_tickers(
        "exchCode": <code>}`); per ticker exactly one FIGI must come back —
        `unmapped_tickers` / `ambiguous_figi_candidates_by_ticker` otherwise,
        and neither is registered.
-    2. **ONE batch search** of all mapped FIGIs against the asset registry
-       (`AssetTable.unique_identifier IN [figis]`) plus one batch search of the
-       snapshot table.
-    3. Write only the deltas: `Asset.upsert(unique_identifier=figi,
-       asset_type="equity")` + `OpenFigiDetails.upsert(asset_uid=...)` for FIGIs
-       not in the registry, and one `AssetSnapshot` run covering every mapped
-       FIGI that lacks a snapshot (repairs interrupted earlier registrations).
-       Already-registered FIGIs cost zero writes on re-runs.
+    2. **ONE batch lookup** of all mapped FIGIs in the asset registry
+       (`Asset.get_many_by_unique_identifier(figis)`) plus one batch search of
+       the snapshot table.
+    3. Write only the deltas, set-based: one `Asset.upsert_many` of
+       `{unique_identifier: figi, asset_type: "equity"}` and one
+       `OpenFigiDetails.upsert_many` for the FIGIs not in the registry, and one
+       `AssetSnapshots.publish` covering every mapped FIGI that lacks a snapshot
+       (repairs interrupted earlier registrations). Already-registered FIGIs
+       cost zero writes on re-runs.
 
     `disambiguation_filters` narrows the OpenFIGI query per ticker so ambiguous
     mappings can be resolved explicitly, e.g.::
@@ -207,14 +211,10 @@ def register_equity_assets_from_tickers(
 
     _ensure_msm_started()
 
-    import pandas as pd
     from mainsequence.logconf import logger as _ms_logger
-    from msm.api.assets import Asset, AssetType, OpenFigiDetails
+    from msm.api.assets import Asset, AssetSnapshots, AssetType, OpenFigiDetails
     from msm.constants import ASSET_TYPE_EQUITY
-    from msm.services.assets.openfigi import (
-        build_asset_snapshot_frame_from_openfigi_result,
-        query_figi,
-    )
+    from msm.services.assets.openfigi import query_figi
 
     log = _ms_logger.bind(sub_application="etfhextractor", component="asset_registration")
 
@@ -294,74 +294,59 @@ def register_equity_assets_from_tickers(
 
     if registered_figi_by_ticker:
         AssetType.upsert(asset_type=ASSET_TYPE_EQUITY, display_name="Equity")
-        to_create = sorted(registered_figi_by_ticker.items())
-        total_to_create = len(to_create)
-        progress_step = max(1, min(25, total_to_create // 10 or 1))
-        for index, (ticker, figi) in enumerate(to_create, start=1):
-            normalized = normalized_by_figi[figi]
-            asset = Asset.upsert(
-                unique_identifier=normalized["unique_identifier"],
-                asset_type=ASSET_TYPE_EQUITY,
-            )
-            OpenFigiDetails.upsert(
-                asset_uid=asset.uid,
-                figi=normalized.get("figi"),
-                composite=normalized.get("composite"),
-                share_class=normalized.get("share_class"),
-                isin=normalized.get("isin"),
-                ticker=normalized.get("ticker"),
-                name=normalized.get("name"),
-                exchange_code=normalized.get("exchange_code"),
-                security_type=normalized.get("security_type"),
-                security_type_2=normalized.get("security_type_2"),
-                security_market_sector=normalized.get("security_market_sector"),
-                security_description=normalized.get("security_description"),
-                unique_id=normalized.get("unique_id"),
-                unique_id_fut_opt=normalized.get("unique_id_fut_opt"),
-                metadata_text=normalized.get("metadata"),
-                raw_payload=normalized.get("raw_payload"),
-            )
-            if index % progress_step == 0 or index == total_to_create:
-                log.info(
-                    f"Registered {index}/{total_to_create} new assets "
-                    f"({index * 100 // total_to_create}%) — last: {ticker} -> {figi}"
+        to_create = [
+            normalized_by_figi[figi] for _ticker, figi in sorted(registered_figi_by_ticker.items())
+        ]
+        assets = Asset.upsert_many(
+            [
+                {
+                    "unique_identifier": normalized["unique_identifier"],
+                    "asset_type": ASSET_TYPE_EQUITY,
+                }
+                for normalized in to_create
+            ]
+        )
+        uid_by_identifier = {str(asset.unique_identifier): asset.uid for asset in assets}
+        unwritten = sorted(
+            str(normalized["unique_identifier"])
+            for normalized in to_create
+            if str(normalized["unique_identifier"]) not in uid_by_identifier
+        )
+        if unwritten:
+            raise RuntimeError(f"Asset registration returned no row for FIGIs {unwritten}.")
+        OpenFigiDetails.upsert_many(
+            [
+                _openfigi_details_payload(
+                    normalized,
+                    asset_uid=uid_by_identifier[str(normalized["unique_identifier"])],
                 )
+                for normalized in to_create
+            ]
+        )
+        log.info(f"Registered {len(to_create)} new assets with their OpenFIGI details.")
 
     # Snapshots make assets resolvable by ticker; publish them for every mapped
     # FIGI that lacks one (covers assets created here AND assets that exist but
     # were never snapshotted, e.g. an interrupted earlier registration).
     snapshot_target_figis = [figi for figi in all_figis if figi not in figis_with_snapshots]
     if snapshot_target_figis:
-        log.info(
-            f"Publishing {len(snapshot_target_figis)} asset snapshots in one batch "
-            "(single write + single batched duplicate-check read)..."
-        )
+        log.info(f"Publishing {len(snapshot_target_figis)} asset snapshots in one batch...")
         resolved_snapshot_time = snapshot_time or dt.datetime.now(dt.UTC).replace(microsecond=0)
         # The snapshot carries the REQUESTED ticker (the provider/extraction
         # convention, e.g. BRKB), not OpenFIGI's symbol (BRK/B) — the snapshot
         # layer resolves extraction tickers, so an aliased symbol must be stored
         # under the form extractions actually produce. OpenFIGI's own symbol
         # stays on OpenFigiDetails.ticker.
-        snapshot_frames = [
-            build_asset_snapshot_frame_from_openfigi_result(
-                {
-                    **normalized_by_figi[figi],
-                    "ticker": requested_ticker_by_figi[figi],
-                },
-                time_index=resolved_snapshot_time,
-            )
-            for figi in snapshot_target_figis
-        ]
-        # Batch-verified node: duplicate-key verification is ONE read, not one
-        # read per row (plain AssetSnapshot does N reads — the request storm).
-        from .markets_models import BatchVerifiedAssetSnapshot
-
-        snapshot_node = BatchVerifiedAssetSnapshot().set_frame(pd.concat(snapshot_frames))
-        error_on_last_update, _frame = snapshot_node.run()
-        if error_on_last_update:
-            raise RuntimeError(
-                "AssetSnapshot update failed while publishing FIGI-registered assets."
-            )
+        AssetSnapshots.publish(
+            [
+                _snapshot_row(
+                    normalized_by_figi[figi],
+                    ticker=requested_ticker_by_figi[figi],
+                    time_index=resolved_snapshot_time,
+                )
+                for figi in snapshot_target_figis
+            ]
+        )
         log.info(f"Snapshots published: {len(snapshot_target_figis)} assets now resolvable.")
 
     return FigiAssetRegistrationResult(
@@ -373,24 +358,61 @@ def register_equity_assets_from_tickers(
     )
 
 
+def _openfigi_details_payload(normalized: Mapping[str, Any], *, asset_uid: Any) -> dict[str, Any]:
+    """`OpenFigiDetails` upsert payload for one normalized OpenFIGI row."""
+    return {
+        "asset_uid": asset_uid,
+        "figi": normalized.get("figi"),
+        "composite": normalized.get("composite"),
+        "share_class": normalized.get("share_class"),
+        "isin": normalized.get("isin"),
+        "ticker": normalized.get("ticker"),
+        "name": normalized.get("name"),
+        "exchange_code": normalized.get("exchange_code"),
+        "security_type": normalized.get("security_type"),
+        "security_type_2": normalized.get("security_type_2"),
+        "security_market_sector": normalized.get("security_market_sector"),
+        "security_description": normalized.get("security_description"),
+        "unique_id": normalized.get("unique_id"),
+        "unique_id_fut_opt": normalized.get("unique_id_fut_opt"),
+        "metadata_text": normalized.get("metadata"),
+        "raw_payload": normalized.get("raw_payload"),
+    }
+
+
+def _snapshot_row(
+    normalized: Mapping[str, Any],
+    *,
+    ticker: str,
+    time_index: dt.datetime,
+) -> dict[str, Any]:
+    """One `AssetSnapshots.publish` row, as ms-markets builds it from an OpenFIGI result."""
+    return {
+        "time_index": time_index,
+        "asset_identifier": normalized["unique_identifier"],
+        "name": normalized.get("name") or "",
+        "ticker": ticker,
+        "exchange_code": normalized.get("exchange_code") or "",
+        "asset_ticker_group_id": normalized.get("share_class") or "",
+    }
+
+
 def _existing_asset_uids_by_figi(figis: list[str]) -> dict[str, Any]:
-    """ONE batch search of the asset registry: which FIGIs already exist."""
+    """ONE batch row call against the asset registry: which FIGIs already exist."""
     if not figis:
         return {}
-    from .mainsequence_categories import _asset_uids_by_identifier, _ensure_msm_started
+    from .mainsequence_categories import _asset_uids_by_identifier
 
-    runtime = _ensure_msm_started()
-    return _asset_uids_by_identifier(runtime.context, set(figis))
+    return _asset_uids_by_identifier(set(figis))
 
 
 def _figis_with_snapshots(figis: list[str]) -> set[str]:
     """ONE batch search of the snapshot table: which FIGIs are already resolvable."""
     if not figis:
         return set()
-    from .mainsequence_categories import _ensure_msm_started, _search_snapshot_rows
+    from .mainsequence_categories import _search_snapshot_rows, _snapshot_context
 
-    runtime = _ensure_msm_started()
-    rows = _search_snapshot_rows(runtime.context, in_filters={"asset_identifier": list(figis)})
+    rows = _search_snapshot_rows(_snapshot_context(), in_filters={"asset_identifier": list(figis)})
     return {
         str(row["asset_identifier"])
         for row in rows

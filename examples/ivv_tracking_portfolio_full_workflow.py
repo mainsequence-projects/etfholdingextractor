@@ -26,14 +26,16 @@ flag-free run does everything else itself:
      deployment workflow's migration Job, and etfholdingextractor has no
      deployment: the application that deploys code using these tables applies
      `etfhextractor_migrations:migration` in its own migration Job.
-1. Attach the markets runtime once (`msm_portfolios.start_engine` superset: portfolio
-   graph + asset snapshots + category tables + `DemoBarsStorage`).
+1. Attach the markets runtime once (`start_portfolio_engine`: on the default runtime
+   backend the portfolio graph + asset snapshots + category tables + `DemoBarsStorage`;
+   with `MSM_API_BACKEND=remote` the registries run on the Markets API and only the
+   portfolio time series, asset snapshots and `DemoBarsStorage` are attached).
 2. Extract the ETF holdings with the same `ETFHoldingsReader` the category workflow uses.
 3. Derive component weights (shared equity filter) and resolve tickers to ms-markets
    asset identifiers through the snapshot layer.
 4. FIGI-register missing components (default; disable with `--no-register-missing`):
-   `query_figi` → `Asset.upsert(unique_identifier=figi)` + `OpenFigiDetails.upsert` +
-   `AssetSnapshot` rows (ADR 0004 — no asset without a FIGI, and a ticker must map to
+   `query_figi` → `Asset.upsert_many` (identity = FIGI) + `OpenFigiDetails.upsert_many` +
+   `AssetSnapshots.publish` (ADR 0004 — no asset without a FIGI, and a ticker must map to
    exactly one FIGI; unmapped/ambiguous tickers stay blockers, disambiguate with
    `--figi-filter`). Reads the `OPEN_FIGI_API_KEY` Main Sequence secret.
 5. Optionally sync the `HOLDINGS__<ETF>` asset category (`--with-category-sync`).
@@ -53,8 +55,13 @@ flag-free run does everything else itself:
    FK (`calendar_uid`), so valuations land on real session closes only. The
    signal's first observation is backdated `--backtest-start-days` (default 60)
    so the portfolio backtests that window before live tracking takes over.
-7. Verify by reading back the platform rows: signal weights, portfolio values,
-   portfolio weights, and the `Portfolio` identity row (including its calendar FK).
+7. Verify by reading back the platform rows: signal weights, portfolio values and
+   portfolio weights through the updaters that wrote them, and the `Portfolio` identity
+   row (including its calendar FK) through the row API.
+
+Markets registries (assets, calendars, categories, portfolios) are written with `msm.api`
+row calls. Set `MSM_API_BACKEND=remote` to run them on the Markets API instead of the
+local runtime (ms-markets ADR 0047); `--local` runs need the default runtime backend.
 
 For isolated sandboxes set `MSM_AUTO_REGISTER_NAMESPACE` before running.
 
@@ -88,7 +95,7 @@ from etfhextractor.portfolio_publish import (
     PRICE_SOURCE_TABLE_UID_ENV,
     US_EQUITY_CALENDAR_KEY,
     build_etf_tracker_unique_identifier,
-    publish_etf_tracking_portfolio,
+    build_etf_tracking_portfolio,
     start_portfolio_engine,
 )
 from etfhextractor.portfolio_signal import ETFHoldingsSignal, ETFHoldingsSignalConfig
@@ -221,7 +228,7 @@ def _run_signal_only(
     provider: str | None,
     fund_url: str | None,
     timeout: float,
-) -> dict[str, Any]:
+) -> tuple[dict[str, Any], ETFHoldingsSignal]:
     """Run only the holdings signal node — writes canonical SignalWeights rows."""
     signal_config = ETFHoldingsSignalConfig(
         etf_ticker=etf_ticker,
@@ -238,62 +245,55 @@ def _run_signal_only(
         rows = 0 if frame is None else int(getattr(frame, "shape", (0,))[0])
     else:
         rows = None
-    return {"signal_uid": signal.signal_uid, "signal_rows_written": rows}
+    return {"signal_uid": signal.signal_uid, "signal_rows_written": rows}, signal
+
+
+def _frame_rows(frame: Any) -> list[dict[str, Any]]:
+    if frame is None or len(frame) == 0:
+        return []
+    return frame.reset_index().to_dict("records")
 
 
 def _verify_platform_rows(
     *,
     portfolio_identifier: str,
-    signal_uid: str | None,
+    signal: Any | None,
+    portfolio_node: Any | None,
 ) -> dict[str, Any]:
-    """Read back what the run produced, straight from the MetaTables."""
-    from msm.api.base import operation_result_rows
-    from msm.api.portfolios import Portfolio
-    from msm.bootstrap import get_runtime
-    from msm.repositories.crud import search_model
-    from msm_portfolios.time_index.portfolios.storage import (
-        PortfoliosStorage,
-        PortfolioWeightsStorage,
-    )
-    from msm_portfolios.time_index.signals.storage import SignalWeightsStorage
+    """Read back what the run produced.
 
-    context = get_runtime().context
+    Each updater reads the table it is bound to (the core ms-markets tables by default, an
+    application's own instances when they are injected), so the example never compiles SQL on a
+    Markets table class; the `Portfolio` row is a registry row call, which runs on the Markets
+    API under the remote backend.
+    """
+    from msm.api.portfolios import Portfolio
+    from msm_portfolios.time_index.constants import PORTFOLIO_IDENTIFIER, SIGNAL_UID
+
     verification: dict[str, Any] = {}
 
-    if signal_uid is not None:
-        signal_rows = operation_result_rows(
-            search_model(
-                context,
-                model=SignalWeightsStorage,
-                filters={"signal_uid": signal_uid},
-                limit=500,
-            )
+    if signal is not None:
+        signal_rows = _frame_rows(
+            signal.get_df_between_dates(dimension_filters={SIGNAL_UID: [signal.signal_uid]})
         )
         verification["signal_weight_rows"] = len(signal_rows)
         verification["signal_weight_sample"] = signal_rows[:3]
 
-    portfolio_values_rows = operation_result_rows(
-        search_model(
-            context,
-            model=PortfoliosStorage,
-            filters={"portfolio_identifier": portfolio_identifier},
-            limit=500,
+    if portfolio_node is not None:
+        # ms-markets >= 0.0.54: values and weights are keyed by the portfolio unique
+        # identifier (PortfolioIndex is just a reference, never identity).
+        portfolio_filter = {PORTFOLIO_IDENTIFIER: [portfolio_identifier]}
+        portfolio_values_rows = _frame_rows(
+            portfolio_node.get_df_between_dates(dimension_filters=portfolio_filter)
         )
-    )
-    verification["portfolio_value_rows"] = len(portfolio_values_rows)
-    verification["portfolio_value_sample"] = portfolio_values_rows[:3]
-
-    portfolio_weight_rows = operation_result_rows(
-        search_model(
-            context,
-            model=PortfolioWeightsStorage,
-            # ms-markets >= 0.0.54: portfolio weights are keyed by the portfolio
-            # unique identifier (PortfolioIndex is just a reference, never identity).
-            filters={"portfolio_identifier": portfolio_identifier},
-            limit=500,
+        verification["portfolio_value_rows"] = len(portfolio_values_rows)
+        verification["portfolio_value_sample"] = portfolio_values_rows[:3]
+        portfolio_weight_rows = _frame_rows(
+            portfolio_node.portfolio_weights.get_df_between_dates(
+                dimension_filters=portfolio_filter
+            )
         )
-    )
-    verification["portfolio_weight_rows"] = len(portfolio_weight_rows)
+        verification["portfolio_weight_rows"] = len(portfolio_weight_rows)
 
     portfolio_row = Portfolio.get_by_unique_identifier(portfolio_identifier)
     verification["portfolio_row"] = None if portfolio_row is None else portfolio_row.model_dump()
@@ -413,8 +413,7 @@ def run_full_workflow(
     if missing and register_missing_assets and not plan_only:
         _log(
             "register",
-            f"FIGI-registering {len(missing)} components (2 row ops each; on remote "
-            "databases this can take several seconds per asset)...",
+            f"FIGI-registering {len(missing)} components (set-based row calls)...",
         )
         summary["asset_registration"] = _register_missing_assets_via_figi(
             missing_symbols=missing,
@@ -498,23 +497,23 @@ def run_full_workflow(
 
     # 6. Signal (+ portfolio) publication.
     portfolio_identifier = build_etf_tracker_unique_identifier(etf_ticker)
+    portfolio_node = None
     if signal_only:
         _log("signal", "Signal-only mode: running ETFHoldingsSignal without a portfolio...")
-        signal_result = _run_signal_only(
+        signal_result, signal = _run_signal_only(
             etf_ticker=etf_ticker,
             provider=provider,
             fund_url=fund_url,
             timeout=timeout,
         )
         summary["signal"] = signal_result
-        signal_uid = signal_result["signal_uid"]
     else:
         _log(
             "portfolio",
             f"Publishing the ETF-tracking portfolio pipeline ({calendar_key} trading "
             f"calendar attached by FK; {backtest_start_days}-day backtest window)...",
         )
-        publish_result = publish_etf_tracking_portfolio(
+        build = build_etf_tracking_portfolio(
             etf_ticker=etf_ticker,
             provider=provider,
             fund_url=fund_url,
@@ -533,15 +532,19 @@ def run_full_workflow(
             backtest_start_days=backtest_start_days,
             timeout=timeout,
             run=True,
+            # The runtime is attached in step 1 (one start_engine config per process).
+            start_engine=False,
         )
-        summary["portfolio_publish"] = publish_result
-        signal_uid = publish_result["signal_uid"]
+        summary["portfolio_publish"] = build.summary()
+        signal = build.signal
+        portfolio_node = build.portfolio_node
 
     # 7. Verify on-platform state instead of trusting return values.
     _log("verify", "Reading back platform rows...")
     summary["verification"] = _verify_platform_rows(
         portfolio_identifier=portfolio_identifier,
-        signal_uid=signal_uid,
+        signal=signal,
+        portfolio_node=portfolio_node,
     )
     return summary
 

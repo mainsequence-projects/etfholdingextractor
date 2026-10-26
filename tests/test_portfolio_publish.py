@@ -55,10 +55,15 @@ class EnsureTradingCalendarTests(unittest.TestCase):
     def test_always_open_keys_persist_a_calendar_row_for_the_obligatory_fk(self) -> None:
         # Rebalance strategies take no calendar in ms-markets 2.x, but the Portfolio
         # row's calendar remains obligatory (NOT NULL calendar_uid FK), so even
-        # always-open keys persist a Calendar row + sessions.
-        materialization_rows = object()
+        # always-open keys persist a Calendar row + dates and sessions — through
+        # set-based registry row calls, never a runtime context.
+        materialization_rows = SimpleNamespace(
+            dates=[{"local_date": TODAY}], sessions=[{"local_date": TODAY}]
+        )
         with (
             patch("msm.api.calendars.Calendar") as calendar_cls,
+            patch("msm.api.calendars.CalendarDate") as calendar_date_cls,
+            patch("msm.api.calendars.CalendarSession") as calendar_session_cls,
             patch("msm.bootstrap.resolve_runtime") as resolve_runtime,
             patch(
                 "msm.services.calendars.build_always_open_calendar_materialization",
@@ -85,9 +90,10 @@ class EnsureTradingCalendarTests(unittest.TestCase):
             start_date=TODAY - dt.timedelta(days=60 + CALENDAR_PAST_BUFFER_DAYS),
             end_date=TODAY + dt.timedelta(days=CALENDAR_FUTURE_HORIZON_DAYS),
         )
-        materialize.assert_called_once_with(
-            resolve_runtime.return_value.context, materialization_rows
-        )
+        calendar_date_cls.upsert_many.assert_called_once_with(materialization_rows.dates)
+        calendar_session_cls.upsert_many.assert_called_once_with(materialization_rows.sessions)
+        resolve_runtime.assert_not_called()
+        materialize.assert_not_called()
         calendar_cls.create_from_pandas_calendar.assert_not_called()
 
     def test_covering_always_open_calendar_is_reused_without_writes(self) -> None:

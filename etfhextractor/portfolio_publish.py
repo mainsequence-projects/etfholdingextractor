@@ -11,13 +11,21 @@ portfolio stack.
 
 from __future__ import annotations
 
-import datetime as dt
 import os
 from dataclasses import dataclass
 from typing import Any
 
-from .portfolio_signal import (
+# Calendar helpers live in the light `etfhextractor.calendars` module (registry row calls only,
+# no msm_portfolios import); they are re-exported here for existing imports.
+from .calendars import (
     ALWAYS_OPEN_CALENDAR_KEYS,
+    CALENDAR_FUTURE_HORIZON_DAYS,
+    CALENDAR_PAST_BUFFER_DAYS,
+    US_EQUITY_CALENDAR_KEY,
+    ensure_trading_calendar,
+    required_calendar_window,
+)
+from .portfolio_signal import (
     ETFHoldingsSignal,
     ETFHoldingsSignalConfig,
 )
@@ -26,20 +34,6 @@ from .providers.common import normalize_ticker
 PRICE_SOURCE_TABLE_UID_ENV = "ETFH_PORTFOLIO_PRICE_SOURCE_TABLE_UID"
 
 ETF_TRACKER_IDENTIFIER_PREFIX = "etf_tracker_"
-
-# US-listed ETFs trade on US equity sessions; the rebalance index and portfolio
-# valuations must follow that trading calendar, not a synthetic 24/7 one.
-US_EQUITY_CALENDAR_KEY = "NYSE"
-# NOTE: ms-markets >= 1.0.7 rebalance strategies take no calendar: ImmediateSignal
-# rebalances on the signal's observations, which ETFHoldingsSignal stamps on
-# calendar_key session closes. The Portfolio row's calendar stays obligatory
-# (ms-markets 2.x: PortfolioTable.calendar_uid is a NOT NULL FK), so even
-# ALWAYS_OPEN_CALENDAR_KEYS persist a row.
-# Materialized session coverage around "today": enough past for the backtest
-# bootstrap plus headroom, and enough future for scheduled updates without
-# re-materializing on every publish.
-CALENDAR_PAST_BUFFER_DAYS = 30
-CALENDAR_FUTURE_HORIZON_DAYS = 366
 
 
 @dataclass(frozen=True, slots=True)
@@ -85,116 +79,6 @@ class EtfTrackingPortfolioBuild:
         }
 
 
-def required_calendar_window(
-    *,
-    backtest_start_days: int,
-    today: dt.date,
-) -> tuple[dt.date, dt.date]:
-    """Session window the persisted calendar must cover for one publish."""
-    start = today - dt.timedelta(days=max(backtest_start_days, 0) + CALENDAR_PAST_BUFFER_DAYS)
-    end = today + dt.timedelta(days=CALENDAR_FUTURE_HORIZON_DAYS)
-    return start, end
-
-
-def ensure_trading_calendar(
-    calendar_key: str,
-    *,
-    backtest_start_days: int = 0,
-    today: dt.date | None = None,
-) -> Any:
-    """Ensure a persisted ms-markets Calendar exists for `calendar_key`.
-
-    The calendar is obligatory in the portfolio architecture (ms-markets >=
-    0.0.58): every Portfolio row must reference a persisted Calendar through the
-    NOT NULL `calendar_uid` FK, so this ALWAYS returns a Calendar row.
-
-    Market keys use the msm util `Calendar.create_from_pandas_calendar`, which
-    upserts the typed Calendar row and materializes CalendarDate/CalendarSession
-    rows from pandas_market_calendars — exactly what ms-markets'
-    `resolve_rebalance_calendar` resolves into a `PersistedCalendarSchedule`.
-    Always-open keys ("24/7") persist an always-open calendar row for the FK.
-
-    Idempotent and write-frugal: when the persisted calendar already covers the
-    required window, the existing row is returned with zero writes; otherwise
-    the window is extended (merged) and re-materialized.
-    """
-    from msm.api.calendars import Calendar, CalendarType
-
-    resolved_today = today or dt.datetime.now(dt.timezone.utc).date()
-    needed_from, needed_to = required_calendar_window(
-        backtest_start_days=backtest_start_days, today=resolved_today
-    )
-
-    existing = Calendar.filter(unique_identifier=calendar_key, limit=1)
-    calendar = existing[0] if existing else None
-    if calendar is not None:
-        if calendar.valid_from <= needed_from and calendar.valid_to >= needed_to:
-            return calendar
-
-    valid_from = min(needed_from, calendar.valid_from) if calendar is not None else needed_from
-    valid_to = max(needed_to, calendar.valid_to) if calendar is not None else needed_to
-
-    if calendar_key in ALWAYS_OPEN_CALENDAR_KEYS:
-        return _persist_always_open_calendar(
-            calendar_key=calendar_key, valid_from=valid_from, valid_to=valid_to
-        )
-
-    source_identifier = calendar_key
-    if calendar is not None and calendar.source_identifier:
-        source_identifier = calendar.source_identifier
-    return Calendar.create_from_pandas_calendar(
-        source_identifier=source_identifier,
-        unique_identifier=calendar_key,
-        display_name=f"{calendar_key} trading sessions",
-        calendar_type=CalendarType.TRADING,
-        valid_from=valid_from,
-        valid_to=valid_to,
-    )
-
-
-def _persist_always_open_calendar(
-    *,
-    calendar_key: str,
-    valid_from: dt.date,
-    valid_to: dt.date,
-) -> Any:
-    """Persist an always-open Calendar row + sessions for the Portfolio FK.
-
-    msm ships the materialization builder but no one-call util for always-open
-    calendars; the Portfolio row still needs a persisted calendar to satisfy the
-    obligatory FK.
-    """
-    from msm.api.calendars import Calendar, CalendarType
-    from msm.bootstrap import resolve_runtime
-    from msm.models import CalendarDateTable, CalendarSessionTable, CalendarTable
-    from msm.services.calendars import (
-        build_always_open_calendar_materialization,
-        materialize_calendar_rows,
-    )
-
-    runtime = resolve_runtime(
-        models=[CalendarTable, CalendarDateTable, CalendarSessionTable],
-        row_model_name="etfhextractor.portfolio_publish",
-    )
-    calendar = Calendar.upsert(
-        unique_identifier=calendar_key,
-        display_name=f"{calendar_key} always-open sessions",
-        calendar_type=CalendarType.TRADING,
-        timezone="UTC",
-        source="always_open",
-        source_identifier=calendar_key,
-        valid_from=valid_from,
-        valid_to=valid_to,
-    )
-    rows = build_always_open_calendar_materialization(
-        calendar_uid=calendar.uid,
-        start_date=valid_from,
-        end_date=valid_to,
-    )
-    materialize_calendar_rows(runtime.context, rows)
-    return calendar
-
-
 def build_etf_tracker_unique_identifier(etf_ticker: str) -> str:
     normalized_ticker = normalize_ticker(etf_ticker)
     if not normalized_ticker:
@@ -202,40 +86,75 @@ def build_etf_tracker_unique_identifier(etf_ticker: str) -> str:
     return f"{ETF_TRACKER_IDENTIFIER_PREFIX}{normalized_ticker.lower()}"
 
 
-def start_portfolio_engine(extra_models: list[Any] | None = None) -> Any:
-    """Attach the markets runtime with the portfolio graph plus the snapshot and
-    category tables, so the signal's ticker resolution and any category sync in
-    the same process reuse this one runtime (a process can only call
-    start_engine with one schema config).
+def portfolio_runtime_models(extra_models: list[Any] | None = None) -> list[Any]:
+    """Tables a portfolio publish attaches in this process, for the selected backend.
 
-    `extra_models` extends the list with additional backend table classes — e.g.
-    the project-owned `DemoBarsStorage` when the example publishes demo prices.
-    When a superset runtime is already attached, it is reused.
+    Runtime backend (the ms-markets default): the msm_portfolios graph plus the OpenFIGI,
+    asset-snapshot, category and calendar date/session tables, so the signal's ticker
+    resolution, FIGI registration, category sync and calendar materialization in the same
+    process reuse one runtime. Remote backend (selected by the application, ADR 0047): the
+    registries run on the Markets API, so only the time series this process still reads or
+    writes with MetaTables: the signal-weights, portfolio-weights, rebalance-state and
+    portfolio-values outputs and the asset snapshots read by the ticker resolver.
+    `extra_models` (e.g. the project-owned `DemoBarsStorage` price source) is appended in both.
+
+    A process gets one `start_engine` configuration: an application that attaches its own
+    tables at its composition root includes these models in that call and passes
+    `start_engine=False` to `build_etf_tracking_portfolio`.
+    """
+    from msm.time_index.assets.storage import AssetSnapshotsStorage
+
+    from .markets_runtime import markets_api_selected
+
+    if markets_api_selected():
+        from msm_portfolios.time_index.portfolios.storage import (
+            PortfolioRebalanceStateStorage,
+            PortfoliosStorage,
+            PortfolioWeightsStorage,
+        )
+        from msm_portfolios.time_index.signals.storage import SignalWeightsStorage
+
+        models: list[Any] = [
+            SignalWeightsStorage,
+            PortfolioWeightsStorage,
+            PortfolioRebalanceStateStorage,
+            PortfoliosStorage,
+            AssetSnapshotsStorage,
+        ]
+    else:
+        from msm.models import (
+            AssetCategoryMembershipTable,
+            AssetCategoryTable,
+            CalendarDateTable,
+            CalendarSessionTable,
+            OpenFigiAssetDetailsTable,
+        )
+        from msm_portfolios.bootstrap import resolve_portfolio_models
+
+        models = [
+            *resolve_portfolio_models(None),
+            OpenFigiAssetDetailsTable,
+            AssetSnapshotsStorage,
+            AssetCategoryTable,
+            AssetCategoryMembershipTable,
+            # Trading-calendar materialization + persisted-session reads
+            # (CalendarTable itself ships with the portfolio models).
+            CalendarDateTable,
+            CalendarSessionTable,
+        ]
+    return [*models, *(extra_models or [])]
+
+
+def start_portfolio_engine(extra_models: list[Any] | None = None) -> Any:
+    """Attach the markets runtime with `portfolio_runtime_models(extra_models)`.
+
+    When a superset runtime is already attached, it is reused. The row backend is the
+    application's choice; this only attaches what that choice leaves in-process.
     """
     import msm_portfolios
     from msm.bootstrap import resolve_runtime
-    from msm.models import (
-        AssetCategoryMembershipTable,
-        AssetCategoryTable,
-        CalendarDateTable,
-        CalendarSessionTable,
-        OpenFigiAssetDetailsTable,
-    )
-    from msm.time_index.assets.storage import AssetSnapshotsStorage
-    from msm_portfolios.bootstrap import resolve_portfolio_models
 
-    models = [
-        *resolve_portfolio_models(None),
-        OpenFigiAssetDetailsTable,
-        AssetSnapshotsStorage,
-        AssetCategoryTable,
-        AssetCategoryMembershipTable,
-        # Trading-calendar materialization + the rebalancer's persisted-session
-        # reads (CalendarTable itself ships with the portfolio models).
-        CalendarDateTable,
-        CalendarSessionTable,
-        *(extra_models or []),
-    ]
+    models = portfolio_runtime_models(extra_models)
     try:
         return resolve_runtime(models=models, row_model_name="etfhextractor.portfolio_publish")
     except RuntimeError:
@@ -571,6 +490,9 @@ def _summarize_run_result(run_result: Any) -> Any:
 
 
 __all__ = [
+    "ALWAYS_OPEN_CALENDAR_KEYS",
+    "CALENDAR_FUTURE_HORIZON_DAYS",
+    "CALENDAR_PAST_BUFFER_DAYS",
     "ETF_TRACKER_IDENTIFIER_PREFIX",
     "EtfTrackingPortfolioBuild",
     "PRICE_SOURCE_TABLE_UID_ENV",
@@ -578,6 +500,7 @@ __all__ = [
     "build_etf_tracker_unique_identifier",
     "build_etf_tracking_portfolio",
     "ensure_trading_calendar",
+    "portfolio_runtime_models",
     "publish_etf_tracking_portfolio",
     "required_calendar_window",
     "start_portfolio_engine",

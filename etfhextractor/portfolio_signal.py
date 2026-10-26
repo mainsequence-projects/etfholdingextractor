@@ -22,6 +22,7 @@ from msm_portfolios.time_index import SignalWeights
 from msm_portfolios.time_index.constants import ASSET_IDENTIFIER, SIGNAL_UID
 from pydantic import model_validator
 
+from .calendars import ALWAYS_OPEN_CALENDAR_KEYS
 from .mainsequence_categories import (
     derive_component_weights_from_holdings,
     resolve_asset_identifiers_by_ticker,
@@ -32,9 +33,6 @@ from .reader import ETFHoldingsReader
 # Stored weights are float64 roundtripped through the MetaTable backend; this
 # tolerance treats re-extracted, numerically identical weights as unchanged.
 WEIGHT_EQUALITY_TOLERANCE = 1e-9
-
-# Calendar keys whose sessions are synthetic always-open days (close = UTC midnight).
-ALWAYS_OPEN_CALENDAR_KEYS = ("24/7", "CRYPTO_24_7")
 
 # Coverage margin (days) the signal validity must keep over the backtest window:
 # the portfolio index legitimately reaches price-end + forward-fill (one session)

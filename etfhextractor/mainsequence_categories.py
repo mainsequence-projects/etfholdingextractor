@@ -21,47 +21,65 @@ _SNAPSHOT_SCAN_PAGE_SIZE = 1000
 # Cached ms-markets runtime (set on first use by `_ensure_msm_started`).
 _MSM_RUNTIME: Any = None
 
+_ROW_MODEL_NAME = "etfhextractor.mainsequence_categories"
+
+
+def _category_runtime_models() -> list[Any]:
+    """Markets tables the category and registration paths use on the runtime backend."""
+    from msm.models import (
+        AssetCategoryMembershipTable,
+        AssetCategoryTable,
+        AssetTable,
+        OpenFigiAssetDetailsTable,
+    )
+    from msm.time_index.assets.storage import AssetSnapshotsStorage
+
+    return [
+        AssetTable,
+        OpenFigiAssetDetailsTable,
+        AssetSnapshotsStorage,
+        AssetCategoryTable,
+        AssetCategoryMembershipTable,
+    ]
+
 
 def _ensure_msm_started() -> Any:
-    """Bootstrap the ms-markets runtime once and return it.
+    """Attach the ms-markets runtime for registry row calls once; ``None`` under the API.
 
-    ms-markets row and repository operations require a runtime attached to the
-    already-registered markets MetaTables. This is intentionally lazy so importing
-    ``etfhextractor`` and running pure extraction never starts the markets engine or
-    requires MainSequence to be configured. ``start_engine`` is idempotent for an
-    identical model list, so the module-level cache is just an optimization.
+    The application chooses the ms-markets row backend (ADR 0047; see
+    ``etfhextractor.markets_runtime``). Under the remote backend every ``msm.api`` row call
+    used here runs on the Markets API, so nothing is attached and this returns ``None``.
+    Under the runtime backend (the default) it attaches the asset, OpenFIGI, snapshot and
+    category tables, reusing a superset runtime when one is already attached (a process may
+    only call ``start_engine`` with one schema config; the portfolio-publish path boots the
+    msm_portfolios graph first). It is lazy so importing ``etfhextractor`` and running pure
+    extraction never starts the markets engine or requires MainSequence to be configured.
     (Implementation task 0001 §3 / A-1.)
     """
-    global _MSM_RUNTIME
-    if _MSM_RUNTIME is None:
-        from msm import start_engine
-        from msm.bootstrap import resolve_runtime
-        from msm.models import (
-            AssetCategoryMembershipTable,
-            AssetCategoryTable,
-            AssetTable,
-            OpenFigiAssetDetailsTable,
-        )
-        from msm.time_index.assets.storage import AssetSnapshotsStorage
+    from .markets_runtime import attach_markets_runtime, markets_api_selected
 
-        models = [
-            AssetTable,
-            OpenFigiAssetDetailsTable,
-            AssetSnapshotsStorage,
-            AssetCategoryTable,
-            AssetCategoryMembershipTable,
-        ]
-        try:
-            # A process may only call start_engine with one schema config. When a
-            # superset runtime is already attached (e.g. the portfolio-publish path
-            # boots the msm_portfolios graph first), reuse it instead.
-            _MSM_RUNTIME = resolve_runtime(
-                models=models,
-                row_model_name="etfhextractor.mainsequence_categories",
-            )
-        except RuntimeError:
-            _MSM_RUNTIME = start_engine(models=models)
+    global _MSM_RUNTIME
+    if markets_api_selected():
+        return None
+    if _MSM_RUNTIME is None:
+        _MSM_RUNTIME = attach_markets_runtime(
+            _category_runtime_models(), row_model_name=_ROW_MODEL_NAME
+        )
     return _MSM_RUNTIME
+
+
+def _snapshot_context() -> Any:
+    """Repository context for the asset-snapshot reads.
+
+    Asset snapshots by ticker or by asset identifier have no Markets API route yet, so this read
+    runs on an attached runtime under both backends: the category runtime by default, a runtime
+    holding only ``AssetSnapshotsStorage`` under the remote backend.
+    """
+    from .markets_runtime import markets_api_selected, remote_snapshot_context
+
+    if markets_api_selected():
+        return remote_snapshot_context(row_model_name=_ROW_MODEL_NAME)
+    return _ensure_msm_started().context
 
 
 def _clean_text(value: Any) -> str | None:
@@ -216,7 +234,11 @@ def _search_snapshot_rows(
     *,
     in_filters: dict[str, list[str]],
 ) -> list[dict[str, Any]]:
-    """Page through the asset-snapshot MetaTable for the given `in_filters`."""
+    """Page through the asset-snapshot MetaTable for the given `in_filters`.
+
+    The one direct Markets read left (no Markets API route serves snapshots by ticker or by
+    asset identifier yet); `context` comes from `_snapshot_context()`.
+    """
     from msm.api.base import operation_result_rows
     from msm.repositories.crud import search_model
     from msm.time_index.assets.storage import AssetSnapshotsStorage
@@ -264,34 +286,24 @@ def _latest_ticker_by_identifier(
     return {identifier: ticker for identifier, (_, ticker) in latest.items()}
 
 
-def _asset_uids_by_identifier(
-    context: Any,
-    identifiers: set[str],
-) -> dict[str, uuid.UUID]:
-    """Resolve asset unique_identifiers to their AssetTable uid."""
+def _asset_uids_by_identifier(identifiers: set[str]) -> dict[str, uuid.UUID]:
+    """Resolve asset unique_identifiers to their Asset uid in one batch row call.
+
+    ``Asset.get_many_by_unique_identifier`` runs on the Markets API under the remote backend
+    and on the attached runtime otherwise.
+    """
     if not identifiers:
         return {}
 
-    from msm.api.base import operation_result_rows
-    from msm.models import AssetTable
-    from msm.repositories.crud import search_model
+    from msm.api.assets import Asset
 
-    ordered_identifiers = sorted(identifiers)
-    rows = operation_result_rows(
-        search_model(
-            context,
-            model=AssetTable,
-            in_filters={"unique_identifier": ordered_identifiers},
-            limit=max(len(ordered_identifiers), _SNAPSHOT_SCAN_PAGE_SIZE),
-        )
-    )
+    rows = Asset.get_many_by_unique_identifier(sorted(identifiers))
     uid_by_identifier: dict[str, uuid.UUID] = {}
-    for row in rows:
-        identifier = _clean_text(row.get("unique_identifier"))
-        raw_uid = row.get("uid")
-        if identifier is None or raw_uid is None:
+    for identifier, row in rows.items():
+        cleaned = _clean_text(identifier)
+        if cleaned is None or row.uid is None:
             continue
-        uid_by_identifier[identifier] = _as_uuid(raw_uid)
+        uid_by_identifier[cleaned] = _as_uuid(row.uid)
     return uid_by_identifier
 
 
@@ -316,8 +328,7 @@ def resolve_asset_identifiers_by_ticker(
     if not component_symbols:
         return {}, [], []
 
-    runtime = _ensure_msm_started()
-    context = runtime.context
+    context = _snapshot_context()
 
     snapshot_rows = _search_snapshot_rows(
         context,
@@ -372,8 +383,8 @@ def resolve_existing_assets_by_ticker(
     """Resolve component tickers to registered ms-markets asset uids.
 
     Builds on `resolve_asset_identifiers_by_ticker` (snapshot-layer ticker
-    resolution) and maps each resolved identifier to its ``AssetTable.uid`` for
-    category membership writes. Returns
+    resolution) and maps each resolved identifier to its Asset ``uid`` (one
+    ``Asset.get_many_by_unique_identifier`` row call) for category membership writes. Returns
     ``(existing_asset_uids_by_symbol, missing, ambiguous)``.
     (Implementation task 0001 §10.1 / B-1.)
     """
@@ -384,11 +395,8 @@ def resolve_existing_assets_by_ticker(
         resolve_asset_identifiers_by_ticker(component_symbols=component_symbols)
     )
 
-    runtime = _ensure_msm_started()
-    uid_by_identifier = _asset_uids_by_identifier(
-        runtime.context,
-        set(asset_identifiers_by_symbol.values()),
-    )
+    _ensure_msm_started()
+    uid_by_identifier = _asset_uids_by_identifier(set(asset_identifiers_by_symbol.values()))
 
     existing_asset_uids_by_symbol: dict[str, uuid.UUID] = {}
     missing = list(missing_registered_symbols)
@@ -475,7 +483,8 @@ def sync_holdings_asset_category(
     """Create/refresh the ``HOLDINGS__<ETF>`` category membership in ms-markets.
 
     Uses the ms-markets typed-row API: ``AssetCategory.upsert`` then
-    ``AssetCategory.replace_memberships`` (delete-all-then-insert). That two-step
+    ``AssetCategory.replace_memberships`` (delete-all-then-insert), on the Markets API under
+    the remote backend (write-policy resource ``asset-category``). That two-step
     is **not** atomic (separate operations, see task 0001 §10.2), but it is
     idempotent — re-running restores the full set — so any failure is allowed to
     propagate and the caller must treat it as a hard error and re-run.

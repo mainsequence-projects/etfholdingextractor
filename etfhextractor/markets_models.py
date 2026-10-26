@@ -113,11 +113,18 @@ ETFHEXTRACTOR_MIGRATION_METADATA = _migration_metadata()
 class BatchVerifiedAssetSnapshot(AssetSnapshot):
     """AssetSnapshot whose duplicate-key verification is ONE batched read.
 
-    The base class verifies `(time_index, asset_identifier)` collisions with one
-    `get_df_between_dates` call **per row** — for an ETF-sized universe that is
-    hundreds of sequential backend reads. This override keeps the exact same
-    verification semantics with a single read over the frame's time range and
-    identifier set (smart resolution rule: batch lookups, never per-row).
+    The ms-markets 2.x base class verified `(time_index, asset_identifier)`
+    collisions with one `get_df_between_dates` call **per row** — for an
+    ETF-sized universe that is hundreds of sequential backend reads. This
+    override keeps the exact same verification semantics with a single read over
+    the frame's time range and identifier set (smart resolution rule: batch
+    lookups, never per-row).
+
+    No longer used by the library: FIGI registration publishes snapshots with
+    `msm.api.assets.AssetSnapshots.publish` (ms-markets ADR 0047), which runs on
+    the Markets API under the remote backend and whose ms-markets 3.0 updater
+    verifies collisions in one read. Kept, unchanged, for callers that import it;
+    it writes the Markets `AssetSnapshotsStorage` table directly.
     """
 
     def existing_backend_index_keys(self, frame: pd.DataFrame) -> list[tuple[str, str]]:

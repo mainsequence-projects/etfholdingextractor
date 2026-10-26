@@ -6,8 +6,6 @@ from types import SimpleNamespace
 from typing import Any
 from unittest.mock import Mock, patch
 
-import pandas as pd
-
 from etfhextractor.asset_registration import register_equity_assets_from_tickers
 
 AAPL_FIGI = "BBG000B9XRY4"
@@ -38,6 +36,13 @@ def figi_row(ticker: str, figi: str, **overrides: Any) -> dict[str, Any]:
     return row
 
 
+def _upserted_assets(payloads: list[dict[str, Any]]) -> list[SimpleNamespace]:
+    return [
+        SimpleNamespace(uid=uuid.uuid4(), unique_identifier=payload["unique_identifier"])
+        for payload in payloads
+    ]
+
+
 def run_registration(
     *,
     tickers: list[str],
@@ -47,15 +52,11 @@ def run_registration(
     figis_with_snapshots: set[str] | None = None,
 ) -> tuple[Any, dict[str, Mock]]:
     asset_cls = Mock()
-    asset_cls.upsert.side_effect = lambda **kwargs: SimpleNamespace(
-        uid=uuid.uuid4(), unique_identifier=kwargs["unique_identifier"]
-    )
+    asset_cls.upsert_many.side_effect = _upserted_assets
     asset_type_cls = Mock()
     details_cls = Mock()
-    snapshot_cls = Mock()
-    snapshot_node = snapshot_cls.return_value
-    snapshot_node.set_frame.return_value = snapshot_node
-    snapshot_node.run.return_value = (False, pd.DataFrame())
+    snapshots_cls = Mock()
+    snapshots_cls.publish.side_effect = len
 
     query_figi_mock = (
         Mock(return_value=figi_rows) if isinstance(figi_rows, list) else Mock(side_effect=figi_rows)
@@ -71,15 +72,10 @@ def run_registration(
         "etfhextractor.asset_registration._figis_with_snapshots",
         return_value=set(figis_with_snapshots or set()),
     ), patch("msm.services.assets.openfigi.query_figi", query_figi_mock), patch(
-        "msm.services.assets.openfigi.build_asset_snapshot_frame_from_openfigi_result",
-        side_effect=lambda normalized, *, time_index: pd.DataFrame(
-            [{"asset_identifier": normalized["unique_identifier"]}]
-        ),
-    ), patch("msm.api.assets.Asset", asset_cls), patch(
-        "msm.api.assets.AssetType", asset_type_cls
-    ), patch("msm.api.assets.OpenFigiDetails", details_cls), patch(
-        "etfhextractor.markets_models.BatchVerifiedAssetSnapshot", snapshot_cls
-    ):
+        "msm.api.assets.Asset", asset_cls
+    ), patch("msm.api.assets.AssetType", asset_type_cls), patch(
+        "msm.api.assets.OpenFigiDetails", details_cls
+    ), patch("msm.api.assets.AssetSnapshots", snapshots_cls):
         result = register_equity_assets_from_tickers(
             tickers=tickers,
             disambiguation_filters=disambiguation_filters,
@@ -89,11 +85,20 @@ def run_registration(
         "Asset": asset_cls,
         "AssetType": asset_type_cls,
         "OpenFigiDetails": details_cls,
-        "AssetSnapshot": snapshot_cls,
-        "snapshot_node": snapshot_node,
+        "AssetSnapshots": snapshots_cls,
         "query_figi": query_figi_mock,
     }
     return result, mocks
+
+
+def upserted(mock: Mock) -> list[dict[str, Any]]:
+    """Every payload passed to `upsert_many` on a mocked row class."""
+    return [payload for call in mock.upsert_many.call_args_list for payload in call.args[0]]
+
+
+def published(mock: Mock) -> list[dict[str, Any]]:
+    """Every row passed to a mocked `AssetSnapshots.publish`."""
+    return [row for call in mock.publish.call_args_list for row in call.args[0]]
 
 
 class FigiAssetRegistrationTests(unittest.TestCase):
@@ -108,18 +113,24 @@ class FigiAssetRegistrationTests(unittest.TestCase):
         self.assertEqual(result.ambiguous_figi_candidates_by_ticker, {})
         self.assertFalse(result.has_failures())
 
-        # Asset identity is the FIGI, never the ticker.
-        asset_kwargs = mocks["Asset"].upsert.call_args.kwargs
-        self.assertEqual(asset_kwargs["unique_identifier"], AAPL_FIGI)
-        self.assertEqual(asset_kwargs["asset_type"], "equity")
+        # Asset identity is the FIGI, never the ticker; one set-based write per table.
+        mocks["Asset"].upsert.assert_not_called()
+        mocks["Asset"].upsert_many.assert_called_once()
+        self.assertEqual(
+            upserted(mocks["Asset"]), [{"unique_identifier": AAPL_FIGI, "asset_type": "equity"}]
+        )
 
-        details_kwargs = mocks["OpenFigiDetails"].upsert.call_args.kwargs
-        self.assertEqual(details_kwargs["figi"], AAPL_FIGI)
-        self.assertEqual(details_kwargs["ticker"], "AAPL")
-        self.assertIn("asset_uid", details_kwargs)
+        mocks["OpenFigiDetails"].upsert.assert_not_called()
+        (details,) = upserted(mocks["OpenFigiDetails"])
+        self.assertEqual(details["figi"], AAPL_FIGI)
+        self.assertEqual(details["ticker"], "AAPL")
+        self.assertIsNotNone(details["asset_uid"])
 
-        # SDK >= 8.1 / metatables runs take no debug_mode/force_update controls.
-        mocks["snapshot_node"].run.assert_called_once_with()
+        # Snapshots are published through the Markets publication composite.
+        mocks["AssetSnapshots"].publish.assert_called_once()
+        (snapshot,) = published(mocks["AssetSnapshots"])
+        self.assertEqual(snapshot["asset_identifier"], AAPL_FIGI)
+        self.assertEqual(snapshot["ticker"], "AAPL")
 
     def test_no_figi_means_no_registration(self) -> None:
         result, mocks = run_registration(tickers=["NVDA"], figi_rows=[])
@@ -127,9 +138,9 @@ class FigiAssetRegistrationTests(unittest.TestCase):
         self.assertEqual(result.registered_figi_by_ticker, {})
         self.assertEqual(result.unmapped_tickers, ["NVDA"])
         self.assertTrue(result.has_failures())
-        mocks["Asset"].upsert.assert_not_called()
-        mocks["OpenFigiDetails"].upsert.assert_not_called()
-        mocks["AssetSnapshot"].assert_not_called()
+        mocks["Asset"].upsert_many.assert_not_called()
+        mocks["OpenFigiDetails"].upsert_many.assert_not_called()
+        mocks["AssetSnapshots"].publish.assert_not_called()
 
     def test_multiple_figis_for_one_ticker_block_registration(self) -> None:
         result, mocks = run_registration(
@@ -146,8 +157,8 @@ class FigiAssetRegistrationTests(unittest.TestCase):
             {"MSFT": [MSFT_FIGI_1, MSFT_FIGI_2]},
         )
         self.assertTrue(result.has_failures())
-        mocks["Asset"].upsert.assert_not_called()
-        mocks["AssetSnapshot"].assert_not_called()
+        mocks["Asset"].upsert_many.assert_not_called()
+        mocks["AssetSnapshots"].publish.assert_not_called()
 
     def test_duplicate_rows_with_same_figi_count_as_unique(self) -> None:
         result, mocks = run_registration(
@@ -160,7 +171,7 @@ class FigiAssetRegistrationTests(unittest.TestCase):
 
         self.assertEqual(result.registered_figi_by_ticker, {"AAPL": AAPL_FIGI})
         self.assertFalse(result.has_failures())
-        self.assertEqual(mocks["Asset"].upsert.call_count, 1)
+        self.assertEqual(len(upserted(mocks["Asset"])), 1)
 
     def test_mixed_batch_registers_only_unique_mappings(self) -> None:
         result, mocks = run_registration(
@@ -178,7 +189,7 @@ class FigiAssetRegistrationTests(unittest.TestCase):
             result.ambiguous_figi_candidates_by_ticker,
             {"MSFT": [MSFT_FIGI_1, MSFT_FIGI_2]},
         )
-        self.assertEqual(mocks["Asset"].upsert.call_count, 1)
+        self.assertEqual(len(upserted(mocks["Asset"])), 1)
 
     def test_empty_ticker_list_is_a_no_op(self) -> None:
         result = register_equity_assets_from_tickers(tickers=[])
@@ -197,10 +208,11 @@ class FigiAssetRegistrationTests(unittest.TestCase):
         self.assertEqual(result.already_registered_figi_by_ticker, {"AAPL": AAPL_FIGI})
         self.assertEqual(result.snapshots_published_for_figis, [])
         self.assertFalse(result.has_failures())
-        # The whole re-run is read-only: no asset writes, no snapshot run.
-        mocks["Asset"].upsert.assert_not_called()
-        mocks["OpenFigiDetails"].upsert.assert_not_called()
-        mocks["AssetSnapshot"].assert_not_called()
+        # The whole re-run is read-only: no asset writes, no snapshot publication.
+        mocks["AssetType"].upsert.assert_not_called()
+        mocks["Asset"].upsert_many.assert_not_called()
+        mocks["OpenFigiDetails"].upsert_many.assert_not_called()
+        mocks["AssetSnapshots"].publish.assert_not_called()
 
     def test_existing_asset_without_snapshot_gets_snapshot_repair_only(self) -> None:
         result, mocks = run_registration(
@@ -215,8 +227,8 @@ class FigiAssetRegistrationTests(unittest.TestCase):
         self.assertEqual(result.registered_figi_by_ticker, {})
         self.assertEqual(result.already_registered_figi_by_ticker, {"AAPL": AAPL_FIGI})
         self.assertEqual(result.snapshots_published_for_figis, [AAPL_FIGI])
-        mocks["Asset"].upsert.assert_not_called()
-        mocks["snapshot_node"].run.assert_called_once()
+        mocks["Asset"].upsert_many.assert_not_called()
+        mocks["AssetSnapshots"].publish.assert_called_once()
 
     def test_mixed_existing_and_new_assets_write_only_the_delta(self) -> None:
         result, mocks = run_registration(
@@ -232,10 +244,13 @@ class FigiAssetRegistrationTests(unittest.TestCase):
         self.assertEqual(result.registered_figi_by_ticker, {"NVDA": "BBG000NVDA01"})
         self.assertEqual(result.already_registered_figi_by_ticker, {"AAPL": AAPL_FIGI})
         self.assertEqual(result.snapshots_published_for_figis, ["BBG000NVDA01"])
-        self.assertEqual(mocks["Asset"].upsert.call_count, 1)
         self.assertEqual(
-            mocks["Asset"].upsert.call_args.kwargs["unique_identifier"],
-            "BBG000NVDA01",
+            [payload["unique_identifier"] for payload in upserted(mocks["Asset"])],
+            ["BBG000NVDA01"],
+        )
+        self.assertEqual(
+            [row["asset_identifier"] for row in published(mocks["AssetSnapshots"])],
+            ["BBG000NVDA01"],
         )
 
     def test_failure_message_names_ambiguous_tickers_and_candidates(self) -> None:
@@ -282,53 +297,25 @@ class FigiAssetRegistrationTests(unittest.TestCase):
         self.assertEqual(mocks["query_figi"].call_count, 2)
 
     def test_figi_ticker_alias_maps_provider_symbol_to_openfigi_symbol(self) -> None:
-        captured_snapshots: list[dict[str, Any]] = []
-
         def fake_query_figi(tickers, *, market_sector, exch_code=None, **_):
             # The alias is what goes to OpenFIGI as idValue.
             assert "BRK/B" in tickers and "BRKB" not in tickers
             return [figi_row("BRK/B", "BBG000DWG505")]
 
-        with patch(
-            "etfhextractor.asset_registration._ensure_msm_started",
-            return_value=SimpleNamespace(context=object()),
-        ), patch(
-            "etfhextractor.asset_registration._existing_asset_uids_by_figi", return_value={}
-        ), patch(
-            "etfhextractor.asset_registration._figis_with_snapshots", return_value=set()
-        ), patch("msm.services.assets.openfigi.query_figi", side_effect=fake_query_figi), patch(
-            "msm.services.assets.openfigi.build_asset_snapshot_frame_from_openfigi_result",
-            side_effect=lambda normalized, *, time_index: (
-                captured_snapshots.append(dict(normalized)),
-                pd.DataFrame([{"asset_identifier": normalized["unique_identifier"]}]),
-            )[1],
-        ), patch("msm.api.assets.Asset") as asset_cls, patch(
-            "msm.api.assets.AssetType"
-        ), patch("msm.api.assets.OpenFigiDetails") as details_cls, patch(
-            "etfhextractor.markets_models.BatchVerifiedAssetSnapshot"
-        ) as snapshot_cls:
-            asset_cls.upsert.side_effect = lambda **kwargs: SimpleNamespace(
-                uid=uuid.uuid4(), unique_identifier=kwargs["unique_identifier"]
-            )
-            snapshot_node = snapshot_cls.return_value
-            snapshot_node.set_frame.return_value = snapshot_node
-            snapshot_node.run.return_value = (False, pd.DataFrame())
-
-            result = register_equity_assets_from_tickers(
-                tickers=["BRKB"],
-                disambiguation_filters=[{"ticker": "BRKB", "figi_ticker": "BRK/B"}],
-            )
+        result, mocks = run_registration(
+            tickers=["BRKB"],
+            figi_rows=fake_query_figi,
+            disambiguation_filters=[{"ticker": "BRKB", "figi_ticker": "BRK/B"}],
+        )
 
         # Result keys by the REQUESTED ticker; identity is the FIGI.
         self.assertEqual(result.registered_figi_by_ticker, {"BRKB": "BBG000DWG505"})
-        self.assertEqual(
-            asset_cls.upsert.call_args.kwargs["unique_identifier"], "BBG000DWG505"
-        )
+        self.assertEqual(upserted(mocks["Asset"])[0]["unique_identifier"], "BBG000DWG505")
         # OpenFIGI's own symbol stays on the details row...
-        self.assertEqual(details_cls.upsert.call_args.kwargs["ticker"], "BRK/B")
+        self.assertEqual(upserted(mocks["OpenFigiDetails"])[0]["ticker"], "BRK/B")
         # ...but the snapshot carries the extraction-side ticker so the snapshot
         # resolver can match what providers actually produce.
-        self.assertEqual(captured_snapshots[0]["ticker"], "BRKB")
+        self.assertEqual(published(mocks["AssetSnapshots"])[0]["ticker"], "BRKB")
 
     def test_figi_ticker_alias_collision_raises(self) -> None:
         with self.assertRaisesRegex(ValueError, "alias collision"):

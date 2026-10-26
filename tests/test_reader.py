@@ -392,7 +392,9 @@ class MsmBoundaryTests(unittest.TestCase):
 
     `_ensure_msm_started` is replaced so no real markets runtime is started, and
     the lazily-imported msm calls are patched at their source modules (the lazy
-    `from msm... import ...` re-reads the patched attribute at call time).
+    `from msm... import ...` re-reads the patched attribute at call time). Asset
+    uids come from one `Asset.get_many_by_unique_identifier` row call; only the
+    snapshot reads still use `search_model` (no Markets API route serves them).
     """
 
     def test_resolve_existing_assets_by_ticker_classifies_zero_one_many(self) -> None:
@@ -410,11 +412,12 @@ class MsmBoundaryTests(unittest.TestCase):
             {"asset_identifier": "MSFT_ID_1", "ticker": "MSFT", "time_index": "2026-05-01T00:00:00Z"},
             {"asset_identifier": "MSFT_ID_2", "ticker": "MSFT", "time_index": "2026-05-01T00:00:00Z"},
         ]
-        asset_rows = [
-            {"unique_identifier": "AAPL_ID", "uid": str(aapl_uid)},
-            {"unique_identifier": "MSFT_ID_1", "uid": str(msft_uid_1)},
-            {"unique_identifier": "MSFT_ID_2", "uid": str(msft_uid_2)},
-        ]
+        assets_by_identifier = {
+            "AAPL_ID": SimpleNamespace(uid=aapl_uid, unique_identifier="AAPL_ID"),
+            "MSFT_ID_1": SimpleNamespace(uid=msft_uid_1, unique_identifier="MSFT_ID_1"),
+            "MSFT_ID_2": SimpleNamespace(uid=msft_uid_2, unique_identifier="MSFT_ID_2"),
+        }
+        asset_lookups: list[list[str]] = []
 
         def fake_search_model(context, *, model, in_filters=None, **kwargs):
             in_filters = in_filters or {}
@@ -423,19 +426,29 @@ class MsmBoundaryTests(unittest.TestCase):
                 return {"rows": snapshots_by_ticker}
             if name == "AssetSnapshotsStorage" and "asset_identifier" in in_filters:
                 return {"rows": latest_snapshots}
-            if name == "AssetTable":
-                return {"rows": asset_rows}
-            return {"rows": []}
+            raise AssertionError(f"compiled SQL on {name}")
+
+        def fake_get_many(unique_identifiers):
+            asset_lookups.append(list(unique_identifiers))
+            return {
+                identifier: assets_by_identifier[identifier]
+                for identifier in unique_identifiers
+                if identifier in assets_by_identifier
+            }
 
         fake_runtime = SimpleNamespace(context=object())
         with patch(
             "etfhextractor.mainsequence_categories._ensure_msm_started",
             return_value=fake_runtime,
-        ), patch("msm.repositories.crud.search_model", side_effect=fake_search_model):
+        ), patch("msm.repositories.crud.search_model", side_effect=fake_search_model), patch(
+            "msm.api.assets.Asset.get_many_by_unique_identifier", side_effect=fake_get_many
+        ):
             existing, missing, ambiguous = resolve_existing_assets_by_ticker(
                 component_symbols=["AAPL", "MSFT", "NVDA"],
             )
 
+        # One batch lookup for the resolved identifiers, never one call per asset.
+        self.assertEqual(asset_lookups, [["AAPL_ID"]])
         self.assertEqual(existing, {"AAPL": aapl_uid})
         self.assertEqual(missing, ["NVDA"])
         self.assertEqual(ambiguous, ["MSFT"])
