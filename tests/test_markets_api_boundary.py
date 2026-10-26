@@ -374,3 +374,32 @@ def test_portfolio_runtime_keeps_todays_tables_on_the_runtime_backend() -> None:
         "SignalWeightsStorage",
         "PortfoliosStorage",
     } <= names
+
+
+def test_injected_instances_leave_no_markets_table_attached(markets_api) -> None:
+    """With every series bound to the application's instances and its own ticker resolver,
+    a publish on the Markets API attaches only the application's tables."""
+    from etfhextractor.portfolio_publish import portfolio_runtime_models
+
+    signal, weights, rebalance, values = (
+        type(name, (), {}) for name in ("Signal", "Weights", "Rebalance", "Values")
+    )
+    markets_api({})
+
+    assert portfolio_runtime_models(
+        signal_output_table=signal,
+        weights_output_table=weights,
+        rebalance_output_table=rebalance,
+        portfolio_output_table=values,
+        asset_snapshots=False,
+    ) == [signal, weights, rebalance, values]
+
+
+def test_injected_instances_join_todays_tables_on_the_runtime_backend() -> None:
+    from etfhextractor.portfolio_publish import portfolio_runtime_models
+
+    values = type("Values", (), {})
+    models = portfolio_runtime_models(portfolio_output_table=values)
+
+    assert values in models
+    assert "PortfoliosStorage" in {model.__name__ for model in models}

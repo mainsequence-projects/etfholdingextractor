@@ -12,6 +12,7 @@ portfolio stack.
 from __future__ import annotations
 
 import os
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
@@ -59,9 +60,11 @@ class EtfTrackingPortfolioBuild:
     portfolio_node: Any
     ran: bool
     run_result: Any | None
+    portfolio_datasets: Any | None = None
+    """The Markets catalog row (`PortfolioDatasetState`) when the build registered one."""
 
     def summary(self) -> dict[str, Any]:
-        return {
+        summary = {
             "etf_ticker": self.etf_ticker,
             "portfolio_unique_identifier": self.portfolio_unique_identifier,
             "portfolio_uid": self.portfolio_row.uid,
@@ -77,6 +80,9 @@ class EtfTrackingPortfolioBuild:
             "ran": self.ran,
             "run_result": _summarize_run_result(self.run_result),
         }
+        if self.portfolio_datasets is not None:
+            summary["portfolio_datasets"] = _summarize_datasets(self.portfolio_datasets)
+        return summary
 
 
 def build_etf_tracker_unique_identifier(etf_ticker: str) -> str:
@@ -86,7 +92,15 @@ def build_etf_tracker_unique_identifier(etf_ticker: str) -> str:
     return f"{ETF_TRACKER_IDENTIFIER_PREFIX}{normalized_ticker.lower()}"
 
 
-def portfolio_runtime_models(extra_models: list[Any] | None = None) -> list[Any]:
+def portfolio_runtime_models(
+    extra_models: list[Any] | None = None,
+    *,
+    signal_output_table: Any | None = None,
+    portfolio_output_table: Any | None = None,
+    weights_output_table: Any | None = None,
+    rebalance_output_table: Any | None = None,
+    asset_snapshots: bool = True,
+) -> list[Any]:
     """Tables a portfolio publish attaches in this process, for the selected backend.
 
     Runtime backend (the ms-markets default): the msm_portfolios graph plus the OpenFIGI,
@@ -95,8 +109,13 @@ def portfolio_runtime_models(extra_models: list[Any] | None = None) -> list[Any]
     process reuse one runtime. Remote backend (selected by the application, ADR 0047): the
     registries run on the Markets API, so only the time series this process still reads or
     writes with MetaTables: the signal-weights, portfolio-weights, rebalance-state and
-    portfolio-values outputs and the asset snapshots read by the ticker resolver.
-    `extra_models` (e.g. the project-owned `DemoBarsStorage` price source) is appended in both.
+    portfolio-values outputs and, unless `asset_snapshots=False` (a caller-supplied ticker
+    resolver and no FIGI registration), the asset snapshots read by the ticker resolver.
+
+    An output table passed here (an instance in the application's own namespace, built with the
+    `msm_portfolios.time_index.contract_instances` factories) replaces the core table it stands
+    for under the remote backend and is added to the runtime set otherwise. `extra_models`
+    (e.g. the project-owned `DemoBarsStorage` price source) is appended in both.
 
     A process gets one `start_engine` configuration: an application that attaches its own
     tables at its composition root includes these models in that call and passes
@@ -115,12 +134,13 @@ def portfolio_runtime_models(extra_models: list[Any] | None = None) -> list[Any]
         from msm_portfolios.time_index.signals.storage import SignalWeightsStorage
 
         models: list[Any] = [
-            SignalWeightsStorage,
-            PortfolioWeightsStorage,
-            PortfolioRebalanceStateStorage,
-            PortfoliosStorage,
-            AssetSnapshotsStorage,
+            signal_output_table or SignalWeightsStorage,
+            weights_output_table or PortfolioWeightsStorage,
+            rebalance_output_table or PortfolioRebalanceStateStorage,
+            portfolio_output_table or PortfoliosStorage,
         ]
+        if asset_snapshots:
+            models.append(AssetSnapshotsStorage)
     else:
         from msm.models import (
             AssetCategoryMembershipTable,
@@ -142,19 +162,33 @@ def portfolio_runtime_models(extra_models: list[Any] | None = None) -> list[Any]
             CalendarDateTable,
             CalendarSessionTable,
         ]
+        models.extend(
+            table
+            for table in (
+                signal_output_table,
+                weights_output_table,
+                rebalance_output_table,
+                portfolio_output_table,
+            )
+            if table is not None
+        )
     return [*models, *(extra_models or [])]
 
 
-def start_portfolio_engine(extra_models: list[Any] | None = None) -> Any:
-    """Attach the markets runtime with `portfolio_runtime_models(extra_models)`.
+def start_portfolio_engine(
+    extra_models: list[Any] | None = None,
+    **output_tables: Any,
+) -> Any:
+    """Attach the markets runtime with `portfolio_runtime_models(extra_models, ...)`.
 
-    When a superset runtime is already attached, it is reused. The row backend is the
-    application's choice; this only attaches what that choice leaves in-process.
+    Keyword arguments are those of `portfolio_runtime_models` (the output tables and
+    `asset_snapshots`). When a superset runtime is already attached, it is reused. The row
+    backend is the application's choice; this only attaches what that choice leaves in-process.
     """
     import msm_portfolios
     from msm.bootstrap import resolve_runtime
 
-    models = portfolio_runtime_models(extra_models)
+    models = portfolio_runtime_models(extra_models, **output_tables)
     try:
         return resolve_runtime(models=models, row_model_name="etfhextractor.portfolio_publish")
     except RuntimeError:
@@ -187,6 +221,13 @@ def build_etf_tracking_portfolio(
     asset_identifiers: list[str] | None = None,
     allowed_asset_classes: tuple[str, ...] | None = ("Equity",),
     start_engine: bool = True,
+    signal_output_table: Any | None = None,
+    portfolio_output_table: Any | None = None,
+    weights_output_table: Any | None = None,
+    rebalance_output_table: Any | None = None,
+    register_datasets: bool | None = None,
+    update_pointers: bool = True,
+    resolve_asset_identifiers_fn: Callable[..., Any] | None = None,
 ) -> EtfTrackingPortfolioBuild:
     """Build (and by default run) the ETF-tracking portfolio pipeline.
 
@@ -218,7 +259,38 @@ def build_etf_tracking_portfolio(
     to satisfy the FK. `backtest_start_days` (default 60) backdates the
     signal's first observation so the first run backtests that window with the
     current composition before live tracking takes over.
+
+    Injection seams (ms-markets ADR 0047; every default keeps the behaviour of earlier
+    releases). Registries (calendar, Portfolio, SignalMetadata, the catalog) are row calls,
+    which run on the Markets API when the application selected the remote backend; these
+    seams decide where the time series and the remaining reads go:
+
+    - `signal_output_table`, `portfolio_output_table`, `weights_output_table` and
+      `rebalance_output_table` bind `ETFHoldingsSignal` and `PortfoliosUpdater` (with the
+      `PortfolioWeights` and `PortfolioRebalance` updaters it builds) to the caller's
+      `SignalWeightsTS`, `PortfoliosTS`, `PortfolioWeightsTS` and `PortfolioRebalanceStateTS`
+      instances (`msm_portfolios.time_index.contract_instances`) instead of the core
+      ms-markets tables. Output tables never change `update_hash` or `signal_uid`, but a
+      fresh signal instance has no history: copy the signal's existing rows into it before the
+      first bound run (see `docs/library.md`, "Moving the series to your own instances").
+    - `register_datasets` records the instances in the Markets portfolio catalog with
+      `PortfolioDatasets.register` after the run (reconciling when it ran). `None`, the
+      default, registers exactly when `portfolio_output_table` is given; `True` without it is
+      an error.
+    - `update_pointers=False` leaves the Portfolio row's table-update pointers untouched.
+    - `resolve_asset_identifiers_fn` replaces the asset-snapshot ticker resolver
+      (`resolve_asset_identifiers_by_ticker`, same signature and return value) in the
+      preflight and in the signal, so a process on the remote backend need not read the
+      Markets snapshot table.
     """
+    should_register_datasets = (
+        portfolio_output_table is not None if register_datasets is None else register_datasets
+    )
+    if should_register_datasets and portfolio_output_table is None:
+        raise ValueError(
+            "register_datasets needs portfolio_output_table: the Markets catalog records the "
+            "portfolio values instance."
+        )
     resolved_price_table_uid = price_source_table_uid or os.environ.get(
         PRICE_SOURCE_TABLE_UID_ENV
     )
@@ -231,7 +303,13 @@ def build_etf_tracking_portfolio(
         )
 
     if start_engine:
-        start_portfolio_engine()
+        start_portfolio_engine(
+            signal_output_table=signal_output_table,
+            portfolio_output_table=portfolio_output_table,
+            weights_output_table=weights_output_table,
+            rebalance_output_table=rebalance_output_table,
+            asset_snapshots=resolve_asset_identifiers_fn is None or register_missing,
+        )
 
     # Persist (or reuse) the trading calendar BEFORE any portfolio wiring: the
     # rebalance schedule and the Portfolio row both hang off it.
@@ -244,11 +322,13 @@ def build_etf_tracking_portfolio(
     # Preflight extract+resolve when the caller did not precompute the updater
     # scope, or when missing components should be FIGI-registered first.
     if register_missing or asset_identifiers is None:
-        from .mainsequence_categories import derive_component_weights_from_holdings
         from .mainsequence_categories import (
-            resolve_asset_identifiers_by_ticker as _resolve_identifiers,
+            derive_component_weights_from_holdings,
+            resolve_asset_identifiers_by_ticker,
         )
         from .reader import ETFHoldingsReader
+
+        _resolve_identifiers = resolve_asset_identifiers_fn or resolve_asset_identifiers_by_ticker
 
         reader = ETFHoldingsReader(timeout=timeout)
         fund_holdings = (
@@ -324,7 +404,10 @@ def build_etf_tracking_portfolio(
         # stays one stable series per ETF across composition changes.
         asset_list=sorted(asset_identifiers),
     )
-    signal = ETFHoldingsSignal.from_signal_configuration(signal_config)
+    signal_kwargs = {} if signal_output_table is None else {"output_table": signal_output_table}
+    signal = ETFHoldingsSignal.from_signal_configuration(signal_config, **signal_kwargs)
+    if resolve_asset_identifiers_fn is not None:
+        signal.set_asset_identifier_resolver(resolve_asset_identifiers_fn)
     valuation_source = (
         price_source_instance
         if price_source_instance is not None
@@ -378,7 +461,16 @@ def build_etf_tracking_portfolio(
         calendar_uid=calendar_row.uid,
     )
 
-    node = PortfoliosUpdater(portfolio_configuration=portfolio_configuration)
+    instance_tables = {
+        name: table
+        for name, table in (
+            ("output_table", portfolio_output_table),
+            ("weights_output_table", weights_output_table),
+            ("rebalance_output_table", rebalance_output_table),
+        )
+        if table is not None
+    }
+    node = PortfoliosUpdater(portfolio_configuration=portfolio_configuration, **instance_tables)
     node.set_portfolio_configuration(
         portfolio_configuration,
         portfolio_description=resolved_description,
@@ -394,7 +486,18 @@ def build_etf_tracking_portfolio(
     if run:
         # SDK >= 8.1 / metatables: updater runs always execute in-process and
         # immediately; the removed debug_mode/force_update controls are not passed.
-        run_result = node.run()
+        run_result = node.run(update_pointers=update_pointers)
+    portfolio_datasets = None
+    if should_register_datasets:
+        # After the run, so the Portfolio row carries its signal_uid and registration binds
+        # SignalMetadata to the signal instance; re-registering is idempotent.
+        portfolio_datasets = register_portfolio_datasets(
+            portfolio_uid=portfolio_row.uid,
+            portfolio_output_table=portfolio_output_table,
+            weights_output_table=weights_output_table,
+            signal_output_table=signal_output_table,
+            reconcile=run,
+        )
     return EtfTrackingPortfolioBuild(
         etf_ticker=normalized_ticker,
         portfolio_unique_identifier=portfolio_identifier,
@@ -413,7 +516,48 @@ def build_etf_tracking_portfolio(
         portfolio_node=node,
         ran=run,
         run_result=run_result,
+        portfolio_datasets=portfolio_datasets,
     )
+
+
+def register_portfolio_datasets(
+    *,
+    portfolio_uid: Any,
+    portfolio_output_table: Any,
+    weights_output_table: Any | None = None,
+    signal_output_table: Any | None = None,
+    reconcile: bool = True,
+) -> Any:
+    """Record a portfolio's instance tables in the Markets portfolio catalog.
+
+    One `msm_portfolios.api.datasets.PortfolioDatasets.register` row call (write-policy resource
+    `portfolio-datasets` under the remote backend). Markets verifies each table against its
+    contract and, with `reconcile=True`, refreshes the population state; the Markets workload
+    needs `data_viewer` on each table. A table left out stays uncatalogued.
+    """
+    from msm_portfolios.api.datasets import PortfolioDatasets
+
+    return PortfolioDatasets.register(
+        {
+            "portfolio_uid": portfolio_uid,
+            "values_meta_table_uid": _meta_table_uid(portfolio_output_table),
+            "weights_meta_table_uid": _meta_table_uid(weights_output_table),
+            "signal_meta_table_uid": _meta_table_uid(signal_output_table),
+        },
+        reconcile=reconcile,
+    )
+
+
+def _meta_table_uid(table: Any | None) -> str | None:
+    if table is None:
+        return None
+    uid = table.get_meta_table_uid()
+    if not uid:
+        raise RuntimeError(
+            f"{getattr(table, '__name__', table)!r} has no MetaTable uid: attach it (start_engine) "
+            "after its migration Job registered it."
+        )
+    return str(uid)
 
 
 def publish_etf_tracking_portfolio(
@@ -442,8 +586,18 @@ def publish_etf_tracking_portfolio(
     asset_identifiers: list[str] | None = None,
     allowed_asset_classes: tuple[str, ...] | None = ("Equity",),
     start_engine: bool = True,
+    signal_output_table: Any | None = None,
+    portfolio_output_table: Any | None = None,
+    weights_output_table: Any | None = None,
+    rebalance_output_table: Any | None = None,
+    register_datasets: bool | None = None,
+    update_pointers: bool = True,
+    resolve_asset_identifiers_fn: Callable[..., Any] | None = None,
 ) -> dict[str, Any]:
-    """Build an ETF-tracking portfolio and return its JSON-friendly summary."""
+    """Build an ETF-tracking portfolio and return its JSON-friendly summary.
+
+    Takes the arguments of `build_etf_tracking_portfolio`, including its injection seams.
+    """
     build = build_etf_tracking_portfolio(
         etf_ticker=etf_ticker,
         provider=provider,
@@ -469,8 +623,20 @@ def publish_etf_tracking_portfolio(
         asset_identifiers=asset_identifiers,
         allowed_asset_classes=allowed_asset_classes,
         start_engine=start_engine,
+        signal_output_table=signal_output_table,
+        portfolio_output_table=portfolio_output_table,
+        weights_output_table=weights_output_table,
+        rebalance_output_table=rebalance_output_table,
+        register_datasets=register_datasets,
+        update_pointers=update_pointers,
+        resolve_asset_identifiers_fn=resolve_asset_identifiers_fn,
     )
     return build.summary()
+
+
+def _summarize_datasets(state: Any) -> Any:
+    dump = getattr(state, "model_dump", None)
+    return dump(mode="json") if callable(dump) else state
 
 
 def _summarize_run_result(run_result: Any) -> Any:
@@ -502,6 +668,7 @@ __all__ = [
     "ensure_trading_calendar",
     "portfolio_runtime_models",
     "publish_etf_tracking_portfolio",
+    "register_portfolio_datasets",
     "required_calendar_window",
     "start_portfolio_engine",
 ]

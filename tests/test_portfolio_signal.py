@@ -103,6 +103,25 @@ class ETFHoldingsSignalConfigTests(unittest.TestCase):
 
 
 class ETFHoldingsSignalTests(unittest.TestCase):
+    def test_injected_resolver_replaces_the_snapshot_layer(self) -> None:
+        # ADR 0047 seam: an application on the Markets API resolves tickers itself,
+        # so the signal never reads the Markets asset-snapshot table.
+        signal = build_signal(build_config(backtest_start_days=0), stored=None)
+        resolver = Mock(return_value=({"AAPL": AAPL_ID, "MSFT": MSFT_ID}, [], []))
+        self.assertIs(signal.set_asset_identifier_resolver(resolver), signal)
+
+        with patch("etfhextractor.portfolio_signal.ETFHoldingsReader") as reader_cls, patch(
+            "etfhextractor.portfolio_signal.resolve_asset_identifiers_by_ticker"
+        ) as snapshot_resolver:
+            reader_cls.return_value.read_ticker.return_value = build_fund_holdings()
+            frame = signal._calculate_signal_weights()
+
+        resolver.assert_called_once_with(component_symbols=["AAPL", "MSFT"])
+        snapshot_resolver.assert_not_called()
+        self.assertEqual(
+            sorted(frame.index.get_level_values(ASSET_IDENTIFIER)), [AAPL_ID, MSFT_ID]
+        )
+
     def test_first_run_emits_normalized_weights_on_as_of_session_close(self) -> None:
         # backtest_start_days=0 disables the bootstrap backdating: the first
         # observation lands on the as-of date's MARKET CLOSE (2026-04-27 is a

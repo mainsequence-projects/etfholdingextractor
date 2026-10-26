@@ -14,6 +14,7 @@ pure extraction never imports the msm_portfolios stack.
 from __future__ import annotations
 
 import datetime as dt
+from collections.abc import Callable
 from typing import Any
 
 import pandas as pd
@@ -148,6 +149,21 @@ class ETFHoldingsSignal(SignalWeights):
     def maximum_forward_fill(self) -> dt.timedelta:
         return dt.timedelta(days=self.etf_holdings_config.signal_validity_days)
 
+    def set_asset_identifier_resolver(
+        self,
+        resolver: Callable[..., tuple[dict[str, str], list[str], list[str]]] | None,
+    ) -> ETFHoldingsSignal:
+        """Resolve component tickers with `resolver` instead of the asset-snapshot layer.
+
+        `resolver(component_symbols=[...])` returns `(identifiers_by_symbol, missing,
+        ambiguous)` like `resolve_asset_identifiers_by_ticker`; `None` restores that default.
+        Runtime wiring only: it enters neither `update_hash` nor `signal_uid`. An application
+        on the Markets API uses it to avoid the one direct Markets read left, the
+        asset-snapshot table (ms-markets ADR 0047).
+        """
+        self._asset_identifier_resolver = resolver
+        return self
+
     def _signal_uid_payload(self) -> dict[str, Any]:
         """Signal identity payload with the updater scope neutralized.
 
@@ -216,7 +232,10 @@ class ETFHoldingsSignal(SignalWeights):
                 "an empty tracking signal."
             )
 
-        identifiers_by_symbol, missing, ambiguous = resolve_asset_identifiers_by_ticker(
+        resolver = (
+            getattr(self, "_asset_identifier_resolver", None) or resolve_asset_identifiers_by_ticker
+        )
+        identifiers_by_symbol, missing, ambiguous = resolver(
             component_symbols=sorted(weights_by_symbol),
         )
         if missing or ambiguous:
