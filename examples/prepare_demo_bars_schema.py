@@ -267,7 +267,9 @@ def _run_metatables(args: list[str]) -> None:
         raise RuntimeError("This example runs metatables commands only with --local.")
     env = os.environ.copy()
     existing_pythonpath = env.get("PYTHONPATH")
-    paths = [str(_PROJECT_ROOT)]
+    # The project root for etfhextractor_migrations, examples/ for the example application's
+    # own instances provider (etfh_example_migrations).
+    paths = [str(_PROJECT_ROOT), str(_PROJECT_ROOT / "examples")]
     if existing_pythonpath:
         paths.append(existing_pythonpath)
     env["PYTHONPATH"] = os.pathsep.join(paths)

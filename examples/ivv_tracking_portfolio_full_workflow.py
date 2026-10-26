@@ -15,21 +15,25 @@ Environment, or, with `--local`, the laptop's running local MetaTables API
 `metatables serve --local`, `metatables --local runtime initialize`). The
 flag-free run does everything else itself:
 
-0. Get the **project-owned** `DemoBarsTS` price-table schema ready
-   (`examples/prepare_demo_bars_schema.py`; skip with `--skip-schema-prep`; not
-   needed when `--price-source-table-uid` supplies an external price table):
-   - with `--local`, apply the project provider to the local runtime, exactly like
-     `metatables --local migrations upgrade --provider
-     etfhextractor_migrations:migration head`, then verify the registered
-     `TimeIndexMetaTable`;
-   - on a hosted runtime, only verify it. Hosted runtimes are migrated only by a
-     deployment workflow's migration Job, and etfholdingextractor has no
-     deployment: the application that deploys code using these tables applies
-     `etfhextractor_migrations:migration` in its own migration Job.
-1. Attach the markets runtime once (`start_portfolio_engine`: on the default runtime
-   backend the portfolio graph + asset snapshots + category tables + `DemoBarsStorage`;
-   with `MSM_API_BACKEND=remote` the registries run on the Markets API and only the
-   portfolio time series, asset snapshots and `DemoBarsStorage` are attached).
+0. Get the schemas ready (skip with `--skip-schema-prep`):
+   - the example application's **own portfolio instances**
+     (`examples/example_instances.py`: signal weights, portfolio weights, rebalance
+     state and portfolio values in the `etfhextractor-example` namespace, migrated by
+     `etfh_example_migrations:migration`; `examples/prepare_example_instances_schema.py`).
+     etfhextractor never writes the Markets core portfolio tables (ms-markets ADR 0047);
+   - the **project-owned** `DemoBarsTS` price table (`examples/prepare_demo_bars_schema.py`;
+     not needed when `--price-source-table-uid` supplies an external price table).
+   For both:
+   - with `--local`, apply the provider to the local runtime, exactly like
+     `metatables --local migrations upgrade --provider <provider> head`, then verify
+     the registered `TimeIndexMetaTable`s;
+   - on a hosted runtime, only verify them. Hosted runtimes are migrated only by a
+     deployment workflow's migration Job: the application that deploys code using
+     these tables applies their providers in its own migration Job.
+1. Attach the markets runtime once (`start_portfolio_engine(instances, ...)`: the
+   example instances and `DemoBarsStorage`, plus, on the default runtime backend, the
+   Markets registry tables; with `MSM_API_BACKEND=remote` the registries run on the
+   Markets API and only the application's tables are attached). Not in `--plan-only`.
 2. Extract the ETF holdings with the same `ETFHoldingsReader` the category workflow uses.
 3. Derive component weights (shared equity filter) and resolve tickers to ms-markets
    asset identifiers through the snapshot layer.
@@ -45,19 +49,21 @@ flag-free run does everything else itself:
    price source — no external market-data feed required. Bars land on the
    **NYSE session closes** (pandas_market_calendars), aligned with the
    portfolio's valuation index.
-6. Publish the tracking portfolio: the `ETFHoldingsSignal` (insert at most once per day,
-   only on weight changes) wired into `PortfoliosUpdater` with the price source —
+6. Publish the tracking portfolio into the example instances, which the build then
+   registers in the Markets portfolio catalog: the `ETFHoldingsSignal` (insert at most
+   once per day, only on weight changes) wired into `PortfoliosUpdater` with the price
+   source —
    demo bars by default, or a registered table when `--price-source-table-uid` /
    `ETFH_PORTFOLIO_PRICE_SOURCE_TABLE_UID` is given; or run the signal node alone
-   with `--signal-only`. A US ETF follows the US trading calendar: the NYSE
+   with `--signal-only` (its instance bound with `register_signal_dataset`). A US ETF follows the US trading calendar: the NYSE
    calendar is persisted as ms-markets Calendar/CalendarSession rows (msm util
    `Calendar.create_from_pandas_calendar`) and attached to the Portfolio row by
    FK (`calendar_uid`), so valuations land on real session closes only. The
    signal's first observation is backdated `--backtest-start-days` (default 60)
    so the portfolio backtests that window before live tracking takes over.
 7. Verify by reading back the platform rows: signal weights, portfolio values and
-   portfolio weights through the updaters that wrote them, and the `Portfolio` identity
-   row (including its calendar FK) through the row API.
+   portfolio weights from the example instances through the updaters that wrote them,
+   and the `Portfolio` identity row (including its calendar FK) through the row API.
 
 Markets registries (assets, calendars, categories, portfolios) are written with `msm.api`
 row calls. Set `MSM_API_BACKEND=remote` to run them on the Markets API instead of the
@@ -83,6 +89,8 @@ import os
 import sys
 from typing import Any
 
+from example_instances import example_instances
+
 from etfhextractor import (
     ETFHoldingsReader,
     build_holdings_asset_category_plan,
@@ -90,12 +98,13 @@ from etfhextractor import (
     resolve_asset_identifiers_by_ticker,
     sync_holdings_asset_category,
 )
+from etfhextractor.calendars import US_EQUITY_CALENDAR_KEY
 from etfhextractor.models import FundHoldings
 from etfhextractor.portfolio_publish import (
     PRICE_SOURCE_TABLE_UID_ENV,
-    US_EQUITY_CALENDAR_KEY,
     build_etf_tracker_unique_identifier,
     build_etf_tracking_portfolio,
+    register_signal_dataset,
     start_portfolio_engine,
 )
 from etfhextractor.portfolio_signal import ETFHoldingsSignal, ETFHoldingsSignalConfig
@@ -224,19 +233,26 @@ def _publish_demo_bars(
 
 def _run_signal_only(
     *,
+    instances: Any,
     etf_ticker: str,
     provider: str | None,
     fund_url: str | None,
     timeout: float,
 ) -> tuple[dict[str, Any], ETFHoldingsSignal]:
-    """Run only the holdings signal node — writes canonical SignalWeights rows."""
+    """Run only the holdings signal into the example's signal-weights instance and bind it.
+
+    The run writes the signal's `SignalMetadata` row, which `register_signal_dataset`
+    (`PortfolioDatasets.register_signal`) needs to record the instance in the Markets catalog.
+    """
     signal_config = ETFHoldingsSignalConfig(
         etf_ticker=etf_ticker,
         provider=provider,
         fund_url=fund_url,
         timeout=timeout,
     )
-    signal = ETFHoldingsSignal.from_signal_configuration(signal_config)
+    signal = ETFHoldingsSignal.from_signal_configuration(
+        signal_config, output_table=instances.signal_weights
+    )
     run_result = signal.run()
     if isinstance(run_result, tuple) and len(run_result) == 2:
         error_on_last_update, frame = run_result
@@ -245,7 +261,14 @@ def _run_signal_only(
         rows = 0 if frame is None else int(getattr(frame, "shape", (0,))[0])
     else:
         rows = None
-    return {"signal_uid": signal.signal_uid, "signal_rows_written": rows}, signal
+    registration = register_signal_dataset(
+        signal_uid=signal.signal_uid, signal_output_table=instances.signal_weights
+    )
+    return {
+        "signal_uid": signal.signal_uid,
+        "signal_rows_written": rows,
+        "signal_dataset": registration.model_dump(mode="json"),
+    }, signal
 
 
 def _frame_rows(frame: Any) -> list[dict[str, Any]]:
@@ -352,6 +375,19 @@ def run_full_workflow(
     #    first. A local runtime gets the project provider applied here; a hosted
     #    runtime is only verified, because hosted runtimes are migrated only by
     #    the migration Job of the application that deploys these tables.
+    instances = example_instances()
+    if prepare_schema and not plan_only:
+        _log(
+            "schema",
+            "Applying the example instances provider to the local runtime..."
+            if local
+            else "Verifying the example instances (hosted runtimes are migrated by the "
+            "deploying application's migration Job)...",
+        )
+        from prepare_example_instances_schema import prepare_example_instances_schema
+
+        summary["instances_preparation"] = prepare_example_instances_schema(local=local)
+
     if use_demo_prices and prepare_schema and not plan_only:
         if local:
             _log("schema", "Applying the DemoBarsTS provider to the local runtime...")
@@ -368,16 +404,18 @@ def run_full_workflow(
             revision_message=revision_message,
         )
 
-    # 1. One runtime for the whole workflow (portfolio graph + snapshots + categories).
-    #    A process gets one start_engine config, so the project-owned demo bars
-    #    table must be in this first attach when demo prices are used.
-    extra_models: list[Any] = []
-    if use_demo_prices:
-        from etfhextractor.markets_models import DemoBarsStorage
+    # 1. One runtime for the whole workflow: the example instances (and the Markets
+    #    registries on the runtime backend). A process gets one start_engine config, so
+    #    the project-owned demo bars table must be in this first attach when demo prices
+    #    are used. Plan-only writes nothing, and ticker resolution attaches what it reads.
+    if not plan_only:
+        extra_models: list[Any] = []
+        if use_demo_prices:
+            from etfhextractor.markets_models import DemoBarsStorage
 
-        extra_models.append(DemoBarsStorage)
-    _log("engine", "Attaching markets runtime (msm_portfolios superset)...")
-    start_portfolio_engine(extra_models=extra_models or None)
+            extra_models.append(DemoBarsStorage)
+        _log("engine", "Attaching the markets runtime with the example instances...")
+        start_portfolio_engine(instances, extra_models or None)
 
     # 2. Extract holdings — the same reader the category workflow uses.
     _log("extract", f"Extracting {etf_ticker} holdings...")
@@ -501,6 +539,7 @@ def run_full_workflow(
     if signal_only:
         _log("signal", "Signal-only mode: running ETFHoldingsSignal without a portfolio...")
         signal_result, signal = _run_signal_only(
+            instances=instances,
             etf_ticker=etf_ticker,
             provider=provider,
             fund_url=fund_url,
@@ -515,6 +554,9 @@ def run_full_workflow(
         )
         build = build_etf_tracking_portfolio(
             etf_ticker=etf_ticker,
+            # Every series goes to the example's own instances, registered in the
+            # Markets catalog after the run.
+            instances=instances,
             provider=provider,
             fund_url=fund_url,
             price_source_table_uid=price_source_table_uid,
@@ -580,8 +622,8 @@ def main(argv: list[str] | None = None) -> int:
         "--skip-schema-prep",
         action="store_true",
         help=(
-            "Skip the DemoBarsTS schema step. Use only when the table is already "
-            "migrated and registered in the selected runtime."
+            "Skip the schema steps (example instances and DemoBarsTS). Use only when "
+            "those tables are already migrated and registered in the selected runtime."
         ),
     )
     parser.add_argument(
