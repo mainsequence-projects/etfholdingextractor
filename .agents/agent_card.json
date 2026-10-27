@@ -1,7 +1,7 @@
 {
   "name": "etfholdingextractor-161",
   "description": "Agent for extracting ETF holdings weights from supported providers, planning or syncing MainSequence HOLDINGS__<ETF> asset categories (FIGI-registering missing components on demand), and providing an ETF-holdings tracking SIGNAL for the ms-markets portfolio pipeline \u2014 portfolio assembly itself is ms-markets functionality, demonstrated in the repository example.",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "supportedInterfaces": [
     {
       "protocolBinding": "HTTP+JSON",

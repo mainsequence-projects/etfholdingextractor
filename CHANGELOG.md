@@ -3,6 +3,20 @@
 All notable changes to `etfhextractor` are recorded here. Earlier releases are described by
 their Git tags and by the implementation tasks in `docs/implementation_task/`.
 
+## [0.5.1] - 2026-10-27
+
+Moves the pin to ms-markets 3.0.1. The library's code and API are unchanged.
+
+### Changed
+
+- Require exactly `ms-markets==3.0.1`, the release the Markets deployment runs (the exact-pin
+  policy of 0.4.4); its client API is unchanged from 3.0.0. Its Markets API no longer has the
+  registry-writer allow-list, so an application that runs the library's calls on the remote
+  backend needs only `reader` on the `MainSequenceMarkets` branch. `uv.lock` and
+  `requirements.txt` resolve ms-markets 3.0.1; no other dependency moved.
+- The docs no longer mention the `MARKETS_REGISTRY_WRITERS` constant (commit 805323e); the 0.5.0
+  upgrade note that asks for it no longer applies.
+
 ## [0.5.0] - 2026-10-27
 
 Moves the library to ms-markets 3.0.0 and its Markets API boundary (ms-markets ADR 0047), and
