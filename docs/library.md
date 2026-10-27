@@ -422,24 +422,22 @@ use_remote_backend(LazyRemoteBackend())   # or MSM_API_BACKEND=remote, which als
   library attaches no registry table. The application needs no grant on `mainsequence.markets`
   for these calls.
 
-| Library call | Markets row calls | Write-policy resources |
-|---|---|---|
-| `resolve_existing_assets_by_ticker`, `resolve_asset_identifiers_by_ticker`, `build_holdings_asset_category_plan` | `AssetSnapshots.latest(tickers=...)` (each asset that ever carried a ticker, with its latest snapshot; kept when that ticker still matches) | none (reads) |
-| `sync_holdings_asset_category` | `AssetCategory.upsert`, `AssetCategory.replace_memberships` | `asset-category` |
-| `register_equity_assets_from_tickers` | `Asset.get_many_by_unique_identifier`, `AssetType.upsert`, `Asset.upsert_many`, `OpenFigiDetails.upsert_many`, `AssetSnapshots.latest(asset_identifiers=...)`, `AssetSnapshots.publish` | `asset-type`, `asset`, `open-figi-details`, `asset-snapshots` |
-| `ensure_trading_calendar` | `Calendar.filter`; `Calendar.create_from_pandas_calendar`, or for always-open keys `Calendar.upsert`, `CalendarDate.upsert_many`, `CalendarSession.upsert_many` | `calendar`, `calendar-date`, `calendar-session` |
-| `register_signal_dataset` | `PortfolioDatasets.register_signal` | `portfolio-datasets` |
-| `build_etf_tracking_portfolio`, `publish_etf_tracking_portfolio` | the calendar and (with `register_missing`) registration calls, `Portfolio.upsert` (the row and, after a run, its pointers), `SignalMetadata.upsert` (by the signal updater), `PortfolioDatasets.register` after the run | `portfolio`, `signal-metadata`, `portfolio-datasets`, plus those of the calls it makes |
+| Library call | Markets row calls |
+|---|---|
+| `resolve_existing_assets_by_ticker`, `resolve_asset_identifiers_by_ticker`, `build_holdings_asset_category_plan` | `AssetSnapshots.latest(tickers=...)` (each asset that ever carried a ticker, with its latest snapshot; kept when that ticker still matches) |
+| `sync_holdings_asset_category` | `AssetCategory.upsert`, `AssetCategory.replace_memberships` |
+| `register_equity_assets_from_tickers` | `Asset.get_many_by_unique_identifier`, `AssetType.upsert`, `Asset.upsert_many`, `OpenFigiDetails.upsert_many`, `AssetSnapshots.latest(asset_identifiers=...)`, `AssetSnapshots.publish` |
+| `ensure_trading_calendar` | `Calendar.filter`; `Calendar.create_from_pandas_calendar`, or for always-open keys `Calendar.upsert`, `CalendarDate.upsert_many`, `CalendarSession.upsert_many` |
+| `register_signal_dataset` | `PortfolioDatasets.register_signal` |
+| `build_etf_tracking_portfolio`, `publish_etf_tracking_portfolio` | the calendar and (with `register_missing`) registration calls, `Portfolio.upsert` (the row and, after a run, its pointers), `SignalMetadata.upsert` (by the signal updater), `PortfolioDatasets.register` after the run |
 
 An application that runs these calls on the remote backend needs:
 
 1. `access.branches: [{repository: MainSequenceMarkets, policy: reader}]` on every workflow
    resource that makes them, so `LazyRemoteBackend` can discover the Markets API (`api` release)
-   in its Environment (`MARKETS_API_URL` points a local run at a local API);
-2. its workload User uid listed in the Environment's `MARKETS_REGISTRY_WRITERS` constant under
-   each write-policy resource of the calls it makes; otherwise the write raises
-   `msm.api.remote.MarketsAccessError` (a `PermissionError`, HTTP 403);
-3. an Environment whose Markets deployment runs ms-markets 3.0.0 and has applied its revisions.
+   in its Environment and write through it (`MARKETS_API_URL` points a local run at a local API);
+2. an Environment whose Markets deployment runs ms-markets 3.0.1 or later and has applied its
+   revisions.
 
 ### What still touches a Markets table
 

@@ -373,10 +373,9 @@ def sync_holdings_asset_category(
 
     Uses the ms-markets typed-row API: ``AssetCategory.upsert`` then
     ``AssetCategory.replace_memberships`` (delete-all-then-insert), on the Markets API under
-    the remote backend (write-policy resource ``asset-category``). That two-step
-    is **not** atomic (separate operations, see task 0001 §10.2), but it is
-    idempotent — re-running restores the full set — so any failure is allowed to
-    propagate and the caller must treat it as a hard error and re-run.
+    the remote backend. That two-step is **not** atomic (separate operations, see task
+    0001 §10.2), but it is idempotent — re-running restores the full set — so any failure
+    is allowed to propagate and the caller must treat it as a hard error and re-run.
     """
     from msm.api.assets import AssetCategory
 

@@ -14,8 +14,7 @@ normalized OpenFIGI rows), then set-based row calls — `Asset.upsert_many`,
 `OpenFigiDetails.upsert_many` — and one `AssetSnapshots.publish` so the
 snapshot-layer ticker resolver finds the new assets immediately. Under the
 ms-markets remote backend (ADR 0047), which the application selects, every write
-runs on the Markets API (write-policy resources `asset-type`, `asset`,
-`open-figi-details` and `asset-snapshots`).
+runs on the Markets API.
 
 Requires the `OPEN_FIGI_API_KEY` Main Sequence secret (or an explicit
 `api_key`).

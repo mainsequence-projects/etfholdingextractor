@@ -3,8 +3,8 @@
 Every ms-markets Portfolio row references a persisted Calendar (`calendar_uid` NOT NULL FK), so
 `ensure_trading_calendar` always returns a Calendar row. It uses Markets registry row calls only
 (`Calendar`, `CalendarDate`, `CalendarSession`), which run on the Markets API when the
-application selected the ms-markets remote backend (ADR 0047; write-policy resources
-`calendar`, `calendar-date` and `calendar-session`) and on the attached runtime otherwise.
+application selected the ms-markets remote backend (ADR 0047) and on the attached runtime
+otherwise.
 
 This module imports ms-markets lazily and never the `msm_portfolios` stack, so applications that
 only need calendars can import it without the portfolio layer.

@@ -123,18 +123,16 @@ does. With ms-markets' remote row backend selected
 (`use_remote_backend(LazyRemoteBackend())`, or `MSM_API_BACKEND=remote`, which also covers
 `etfh`), every Markets registry call the library makes (assets, OpenFIGI details, snapshots
 publication, categories, calendars, portfolios, the portfolio catalog) runs on the Markets API,
-and the application needs `reader` on the `MainSequenceMarkets` branch plus entries in the
-Environment's `MARKETS_REGISTRY_WRITERS` constant instead of grants on `mainsequence.markets`.
-Ticker resolution reads the latest asset snapshots the same way.
+and the application needs `reader` on the `MainSequenceMarkets` branch instead of grants on
+`mainsequence.markets`. Ticker resolution reads the latest asset snapshots the same way.
 
 The library never writes the Markets core portfolio tables: `build_etf_tracking_portfolio`,
 `publish_etf_tracking_portfolio` and `etfh portfolio-publish` require `instances`, an
 `msm_portfolios.services.series_moves.PortfolioSeriesTables` with the application's own
 signal-weights, portfolio-weights, rebalance-state and portfolio-values instances (ms-markets
 `contract_instances` factories, migrated by the application), and register them in the Markets
-portfolio catalog after each build. `examples/example_instances.py` shows one. Details, the
-write-policy resources and moving existing history:
-[docs/library.md](docs/library.md) ("Markets Access").
+portfolio catalog after each build. `examples/example_instances.py` shows one. Details and
+moving existing history: [docs/library.md](docs/library.md) ("Markets Access").
 
 ## Environment
 

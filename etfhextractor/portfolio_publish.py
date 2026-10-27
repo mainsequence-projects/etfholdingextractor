@@ -485,11 +485,11 @@ def build_etf_tracking_portfolio(
 def register_signal_dataset(*, signal_uid: str, signal_output_table: Any) -> Any:
     """Record the `SignalWeightsTS` instance that holds one signal in the Markets catalog.
 
-    One `msm_portfolios.api.datasets.PortfolioDatasets.register_signal` row call (write-policy
-    resource `portfolio-datasets` under the remote backend) for a signal whose instance no
-    portfolio registration binds, e.g. an `ETFHoldingsSignal` run without a portfolio. Markets
-    verifies the table against the signal-weights contract (its workload needs `data_viewer` on
-    it) and needs the signal's `SignalMetadata` row, which the signal's run writes.
+    One `msm_portfolios.api.datasets.PortfolioDatasets.register_signal` row call for a signal
+    whose instance no portfolio registration binds, e.g. an `ETFHoldingsSignal` run without a
+    portfolio. Markets verifies the table against the signal-weights contract (its workload
+    needs `data_viewer` on it) and needs the signal's `SignalMetadata` row, which the signal's
+    run writes.
     """
     from msm_portfolios.api.datasets import PortfolioDatasets
 
@@ -509,10 +509,10 @@ def register_portfolio_datasets(
 ) -> Any:
     """Record a portfolio's values, weights and signal instances in the Markets catalog.
 
-    One `msm_portfolios.api.datasets.PortfolioDatasets.register` row call (write-policy resource
-    `portfolio-datasets` under the remote backend). Markets verifies each table against its
-    contract and, with `reconcile=True`, refreshes the population state; the Markets workload
-    needs `data_viewer` on each table. The rebalance-state instance is not catalogued by Markets.
+    One `msm_portfolios.api.datasets.PortfolioDatasets.register` row call. Markets verifies
+    each table against its contract and, with `reconcile=True`, refreshes the population state;
+    the Markets workload needs `data_viewer` on each table. The rebalance-state instance is not
+    catalogued by Markets.
     """
     from msm_portfolios.api.datasets import PortfolioDatasets
 
