@@ -3,21 +3,21 @@
 All notable changes to `etfhextractor` are recorded here. Earlier releases are described by
 their Git tags and by the implementation tasks in `docs/implementation_task/`.
 
-## [0.5.0] - Unreleased
+## [0.5.0] - 2026-10-27
 
 Moves the library to ms-markets 3.0.0 and its Markets API boundary (ms-markets ADR 0047), and
 drops every compatibility layer. **Breaking for importers and `etfh` users** (see "Removed" and
 "Upgrade notes"); hence a minor release rather than the 0.4.5 first prepared: the repository has
 no written versioning policy, but its last breaking migration went from 0.3.x to 0.4.1, and
-semantic versioning puts breaking changes of a 0.x package in the minor version. Not tagged yet:
-`uv.lock` and `requirements.txt` still resolve ms-markets 2.2.10 and are regenerated once 3.0.0
-is on PyPI.
+semantic versioning puts breaking changes of a 0.x package in the minor version.
 
 ### Changed
 
 - Pin `ms-markets==3.0.0`, the release the Markets deployment runs once it moves to the Markets
   API boundary (the exact-pin policy of 0.4.4). ms-markets 3.0.0 requires `mainsequence>=9.0.29`
-  and `mainsequence-metatable>=0.1.57`, which the ranges here already admit.
+  and `mainsequence-metatable>=0.1.57`, which the ranges here already admit. `uv.lock` and
+  `requirements.txt` resolve ms-markets 3.0.0, SDK 9.0.33 (9.0.31 is the first that parses the
+  platform's Agent reads) and MetaTables 0.1.57.
 - **Portfolio series go only to the application's own instances.** `build_etf_tracking_portfolio`
   and `publish_etf_tracking_portfolio` require `instances`, an
   `msm_portfolios.services.series_moves.PortfolioSeriesTables` with the application's
@@ -118,8 +118,8 @@ is on PyPI.
 
 ### Not verified
 
-- Everything was verified offline only (tests with outbound network blocked, against ms-markets
-  3.0.0 installed from its development source): no run against a deployed Markets API or a local
+- Everything was verified offline only (128 tests with outbound network blocked, against the
+  published ms-markets 3.0.0): no run against a deployed Markets API or a local
   runtime, the example instances provider was never applied to a runtime, and the ms-markets
   2.2.10 local SQLite defects listed under 0.4.4 were not re-checked.
 
