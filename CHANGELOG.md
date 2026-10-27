@@ -3,6 +3,17 @@
 All notable changes to `etfhextractor` are recorded here. Earlier releases are described by
 their Git tags and by the implementation tasks in `docs/implementation_task/`.
 
+## [0.5.2] - 2026-10-28
+
+Moves the pin to ms-markets 3.0.2. The library's code and API are unchanged.
+
+### Changed
+
+- Require exactly `ms-markets==3.0.2`, the release the Markets deployment runs (the exact-pin
+  policy of 0.4.4). 3.0.2 only makes portfolio contract instances carry their core storage
+  layout, which the library does not use. `uv.lock` and `requirements.txt` resolve ms-markets
+  3.0.2; no other dependency moved.
+
 ## [0.5.1] - 2026-10-27
 
 Moves the pin to ms-markets 3.0.1. The library's code and API are unchanged.
