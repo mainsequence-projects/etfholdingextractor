@@ -1,7 +1,7 @@
 schema=1
 library_name=mainsequence-metatable
 namespace=metatables
-pinned_version=0.1.35
+pinned_version=0.1.57
 skills_path=/Users/jose/mainsequence-dev/main-sequence-workbench/projects/etfholdingextractor-41ddaf20-9077-4e42-bc24-cace28efd5d7/.venv/lib/python3.13/site-packages/metatables/_client_skills
-copied_at_utc=2026-10-14T13:54:36Z
+copied_at_utc=2026-10-28T03:10:20Z
 command=metatables copy-metatables-skills

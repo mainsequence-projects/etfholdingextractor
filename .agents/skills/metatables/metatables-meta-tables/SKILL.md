@@ -58,7 +58,7 @@ contract. Preserve the user's existing authorization and scope.
 
 A UID is catalog identity. An optional identifier is unique in the connected catalog.
 A physical binding is DataSource + schema + table name. A catalog
-namespace groups resources and grants; it is not a SQL schema. Contract hashes
+namespace groups tables for access: a role on it applies to every table in it. It is not a SQL schema. Contract hashes
 are fingerprints, not table identity. See `docs/concepts/identity-and-scope.md`.
 
 ## SQLAlchemy contract rules
@@ -104,12 +104,54 @@ __storage_layout__ = {
 Physical names remain stable across schema changes. Evolve through new Alembic
 revisions; do not recompute identity from columns or rewrite applied history.
 
+## Secrets in columns: application-encrypted columns
+
+A password, API key, token or similar value that an application stores in a table
+is declared with `EncryptedString`, never with `String`
+([ADR 0025](../../../../docs/adr/client/0025-application-encrypted-columns.md),
+[guide](../../../../docs/client/define-and-migrate-tables.md#protect-a-column-with-application-encryption)).
+Table grants decide who reads the row; the Secret decides who reads the value.
+
+```python
+api_key: Mapped[str | None] = mapped_column(
+    EncryptedString(secret="LEDGER_DATA_KEY"),
+    info={"label": "API key", "description": "Key the collector presents to the broker."},
+)
+```
+
+- `secret` names one Environment Secret per application, reused on every
+  protected column of that application. Its value is a keyring; create it once
+  with `metatables encryption new-keyring` and store the output as the Secret (in
+  Command Center or `mainsequence secrets create LEDGER_DATA_KEY`). The client
+  never creates or changes a Secret.
+- Grant the Secret to every workload that writes or reads the column, in the
+  workflow file (`access.secrets: [{name: LEDGER_DATA_KEY, policy: value_reader}]`).
+  Migrations do not need it: the column is `TEXT`, autogenerate renders
+  `sa.Text()`, and the key is first needed when a row is written or read.
+- Values are encrypted in the application process. The API, the Admin, the
+  Analyst, raw SQL and the database only see envelopes (`mt1.<key id>.<...>`), and
+  Organization admins are no exception. Compiled statements through the model's
+  column, frame uploads and updater writes encrypt; `read_rows`, time-index reads
+  and updater inputs decrypt. A process without the Secret gets the row with the
+  column sealed and named in `undecrypted_columns`
+  (`frame.attrs["undecrypted_columns"]` for frames); a write without it fails, and
+  the API refuses plaintext uploads to the column.
+- Never filter, join, index or key on the column: every write is a fresh random
+  envelope. Where a lookup by the value is needed, store a separate keyed hash in
+  another column. Never put the value in a label, description, log or error.
+- Rotate with `metatables encryption rotate LEDGER_DATA_KEY`, store the printed
+  ring as the Secret's new value, run `metatables encryption re-encrypt --table
+  <uid>` per table, then drop the old key from the ring.
+- Raw results from `run_query` or `execute_operation` stay sealed;
+  `decrypt_values(values, secret=..., table=<physical name>, column=...)` opens one
+  column by hand.
+
 ## Queries and mutations
 
 Read `docs/client/query-and-mutate.md` and `src/metatables/examples/query.py`. Use
 `compile_sqlalchemy_statement` with bound parameters. The request sends SQL and
 selects one DataSource; the API executes as the authenticated user, and the
-selected database backend enforces Reader/Writer permissions on the tables
+selected database backend enforces the caller's roles (`data_viewer` reads, `data_writer` and above write) on the tables
 actually touched. The API does not parse SQL for authorization. The compiler can
 resolve DataSource and dialect from the selected runtime; supply both explicitly
 for offline compilation. Preserve execution mode, row limits and timeouts.
@@ -129,14 +171,18 @@ to the separate migration-provider workflow.
 To find tables, use `MetaTable.search` as described in the
 [table discovery skill](../metatables-table-discovery/SKILL.md). Legacy convenience
 sharing/label actions are not supported API workflows.
-Use `get_access`, `set_access` and `revoke_access` for supported Reader/Writer
-sharing. Labels can be changed through the documented table PATCH path. Authorization is
-owned by the API catalog; see `docs/concepts/permissions-namespaces-labels.md`.
+Use `get_access`, `grant_role`, `revoke_role`, `allowed_actions` and `explain` on a
+table or `Namespace` for roles (`metadata_viewer`, `data_viewer`, `data_writer`,
+`editor`, `owner`); `Namespace.create(name)` makes the caller its owner. Registering a
+table into a missing namespace also creates it: a person gets `owner`, a workload `editor`
+(see the [migrations skill](../metatables-migrations/SKILL.md)). Labels can be
+changed through the documented table PATCH path. Authorization is owned by the API
+catalog; see `docs/security/ownership-and-sharing.md`.
 
 Updater output rollback uses `TimeIndexMetaTable.delete_after_date` with an
 inclusive time cutoff and explicit dimension/coordinate scope when appropriate.
 A null cutoff requires a scope. Do not replace that workflow with ad hoc SQL.
-Deletion/cascade requires edit access, relevant protection checks, and explicit
+Deletion/cascade requires `tables.delete` (`editor`), relevant protection checks, and explicit
 cascade intent; it is not an administrator-role bypass or migration repair.
 
 Before a destructive action, or to show impact in an application UI, call
@@ -144,12 +190,12 @@ Before a destructive action, or to show impact in an application UI, call
 The API returns whether the caller may run it, every blocker, and a graph of
 affected tables, foreign-key effects and reading updates; render that result
 rather than re-deriving foreign-key or permission rules in the client. Cascading
-foreign keys are allowed. Write on a table depends only on its own grants; the
+foreign keys are allowed. Write on a table depends only on its own roles; the
 cascade effects in the result are information, never a reason the action is blocked.
 
 On a TimescaleDB DataSource, time-index tables are hypertables. Their compression
 and retention policies are set only through `TimeIndexMetaTable.set_timescale_policies`
-(Writer) and read with `get_timescale_policies`. Do not add policies to table
+(`tables.update`, `editor`) and read with `get_timescale_policies`. Do not add policies to table
 contracts or Alembic revisions; to keep them in code, call the client from a
 bootstrap Job. Retention permanently drops older chunks, including backfills.
 
