@@ -3,6 +3,21 @@
 All notable changes to `etfhextractor` are recorded here. Earlier releases are described by
 their Git tags and by the implementation tasks in `docs/implementation_task/`.
 
+## [0.5.3] - 2026-11-12
+
+Moves the pin to ms-markets 3.4.0. The library's code and API are unchanged.
+
+### Changed
+
+- Require exactly `ms-markets==3.4.0` (the exact-pin policy of 0.4.4), so applications that use
+  its composite account registration (`registerAccount`, ms-markets ADR 0051) can install this
+  package; the Markets deployment they reach must run 3.4.0. 3.4.0 changes
+  `AssetSnapshots.publish` to return `AssetSnapshotPublication(written=, skipped=)` instead of an
+  `int` and to skip rows that do not change the snapshot in effect; the library's one
+  `AssetSnapshots.publish` call ignores the result, and its `upsert_many` calls still get every
+  row back. `uv.lock` and `requirements.txt` resolve ms-markets 3.4.0 and MetaTables 0.1.63, which
+  3.4.0 requires (`>=0.1.61`); no other dependency moved.
+
 ## [0.5.2] - 2026-10-28
 
 Moves the pin to ms-markets 3.0.2. The library's code and API are unchanged.
