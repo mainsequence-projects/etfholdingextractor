@@ -3,6 +3,16 @@
 All notable changes to `etfhextractor` are recorded here. Earlier releases are described by
 their Git tags and by the implementation tasks in `docs/implementation_task/`.
 
+## [0.5.4] - 2026-11-14
+
+Moves the pin to ms-markets 3.4.1. The library's code and API are unchanged.
+
+### Changed
+
+- Require exactly `ms-markets==3.4.1` (the exact-pin policy of 0.4.4). 3.4.1 only raises its
+  MetaTables minimum to `>=0.1.64`; `uv.lock` and `requirements.txt` resolve ms-markets 3.4.1 and
+  MetaTables 0.1.64, and no other dependency moved.
+
 ## [0.5.3] - 2026-11-12
 
 Moves the pin to ms-markets 3.4.0. The library's code and API are unchanged.
