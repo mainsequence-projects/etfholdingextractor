@@ -27,7 +27,7 @@ namespace, as etfhextractor requires (ms-markets ADR 0047): `example_instances.p
 signal-weights, portfolio-weights, rebalance-state and portfolio-values instances in the
 `etfhextractor-example` namespace (tables `etfh_example__<contract>__main`),
 `etfh_example_migrations/` is their migration provider (`etfh_example_migrations:migration`,
-revision `0001`), and `prepare_example_instances_schema.py` applies it with `--local` or verifies
+revisions `0001` and `0002`), and `prepare_example_instances_schema.py` applies it with `--local` or verifies
 a hosted runtime. The build registers the instances in the Markets portfolio catalog; the same
 object serves `etfh portfolio-publish --instances example_instances:example_instances` with
 `examples/` on `PYTHONPATH`.

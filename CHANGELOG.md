@@ -3,6 +3,21 @@
 All notable changes to `etfhextractor` are recorded here. Earlier releases are described by
 their Git tags and by the implementation tasks in `docs/implementation_task/`.
 
+## [0.5.6] - 2026-11-16
+
+Moves the lock to ms-markets 3.8.1 and gives the example's weights instances the series-leading
+indexes 3.8.1 declares. The library's code and API are unchanged.
+
+### Changed
+
+- `uv.lock` and `requirements.txt` resolve ms-markets 3.8.1; the requirement stays
+  `ms-markets>=3.4.1,<4`, and no other dependency moved.
+- The example's migration provider gains revision `0002`, which adds
+  `(signal_uid, time_index)` to `etfh_example__signalweightsts__main` and
+  `(portfolio_identifier, time_index)` to `etfh_example__portfolioweightsts__main`, the indexes
+  ms-markets 3.8.1 declares on every weights instance (its revision 0026 migrates only the
+  Markets-owned tables).
+
 ## [0.5.5] - 2026-11-16
 
 Replaces the exact ms-markets pin with a compatible range. The library's code and API are

@@ -30,7 +30,10 @@ from etfh_example_migrations import migration  # noqa: E402
 
 PROVIDER_DIR = EXAMPLES_DIR / "etfh_example_migrations"
 VERSIONS_DIR = PROVIDER_DIR / "versions" / "etfhextractor_example"
-REVISION_0001 = VERSIONS_DIR / "0001_etfhextractor_example_portfolio_instances.py"
+REVISIONS = (
+    VERSIONS_DIR / "0001_etfhextractor_example_portfolio_instances.py",
+    VERSIONS_DIR / "0002_weights_series_lookup_indexes.py",
+)
 INSTANCE_TABLES = {
     "etfh_example__signalweightsts__main": "etfhextractor-example.SignalWeightsTS.main",
     "etfh_example__portfolioweightsts__main": "etfhextractor-example.PortfolioWeightsTS.main",
@@ -41,12 +44,15 @@ INSTANCE_TABLES = {
 }
 
 
-def load_revision_0001():
-    spec = importlib.util.spec_from_file_location("etfh_example_revision_0001", REVISION_0001)
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
+def load_revisions():
+    modules = []
+    for path in REVISIONS:
+        spec = importlib.util.spec_from_file_location(f"etfh_example_revision_{path.stem}", path)
+        assert spec is not None and spec.loader is not None
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        modules.append(module)
+    return modules
 
 
 class ExampleInstanceTests(unittest.TestCase):
@@ -75,20 +81,23 @@ class ExampleInstanceTests(unittest.TestCase):
             list(migration.metatable_models), list(example_instances.EXAMPLE_INSTANCE_MODELS)
         )
 
-    def test_history_is_the_single_revision_0001(self) -> None:
+    def test_history_ends_at_revision_0002(self) -> None:
         config = Config()
         config.set_main_option("path_separator", "os")
         config.set_main_option("script_location", str(PROVIDER_DIR))
         config.set_main_option("version_locations", str(VERSIONS_DIR))
         script = ScriptDirectory.from_config(config)
-        self.assertEqual(script.get_heads(), ["0001"])
+        self.assertEqual(script.get_heads(), ["0002"])
+        self.assertEqual(
+            [revision.revision for revision in script.walk_revisions()], ["0002", "0001"]
+        )
 
-    def test_models_match_revision_0001_on_sqlite(self) -> None:
-        revision = load_revision_0001()
+    def test_models_match_the_revisions_on_sqlite(self) -> None:
         engine = sa.create_engine("sqlite://")
         with engine.begin() as connection:
             with Operations.context(MigrationContext.configure(connection)):
-                revision.upgrade()
+                for revision in load_revisions():
+                    revision.upgrade()
             created = set(sa.inspect(connection).get_table_names())
             context = MigrationContext.configure(
                 connection,

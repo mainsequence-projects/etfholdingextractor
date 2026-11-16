@@ -2,7 +2,7 @@
 
 The example application keeps every portfolio series in its own `etfhextractor-example`
 namespace (`examples/example_instances.py`), migrated by its own provider
-`etfh_example_migrations:migration`, whose revision `0001` ships in
+`etfh_example_migrations:migration`, whose revisions `0001` and `0002` ship in
 `examples/etfh_example_migrations/versions/`.
 
 - **Local development** (`--local`): select the laptop's running local MetaTables API, check
