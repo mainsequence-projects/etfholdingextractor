@@ -72,8 +72,10 @@ When serving those capabilities:
   `instances` (a `PortfolioSeriesTables`) and register them in the Markets catalog.
 - No backward compatibility: no aliases, re-exports, legacy entry points or defaults kept for
   earlier callers. A removal is a breaking change recorded in the CHANGELOG.
-- `ms-markets` is pinned exactly to the release the Markets deployment runs (CHANGELOG 0.4.4), so
-  moving Markets needs a new release of this package.
+- `ms-markets` is a compatible range, `>=<oldest tested>,<next major>` (CHANGELOG 0.5.5), never an
+  exact pin: applications that import this package resolve the ms-markets their Markets deployment
+  runs, and pip refuses their release image if this package pins another. Raise the floor only
+  when the code needs a newer ms-markets; the lock follows the release the Markets deployment runs.
 - Since SDK 9.0.5, `mainsequence code-repository sync` only refreshes local dependencies
   (`uv lock`, `uv sync`, `uv export --locked --no-dev --no-hashes`); it never bumps, tags,
   commits or pushes. Publishing is a plain `git push` plus the version tag, and this repository

@@ -213,7 +213,7 @@ wheels = [
 
 [[package]]
 name = "etfhextractor"
-version = "0.5.4"
+version = "0.5.5"
 source = { editable = "." }
 dependencies = [
     { name = "certifi" },
@@ -234,7 +234,7 @@ requires-dist = [
     { name = "certifi", specifier = ">=2026.10.19" },
     { name = "mainsequence", specifier = ">=9.0.22,<10" },
     { name = "mainsequence-metatable", specifier = ">=0.1.35,<0.2" },
-    { name = "ms-markets", specifier = "==3.4.1" },
+    { name = "ms-markets", specifier = ">=3.4.1,<4" },
     { name = "pandas-market-calendars", specifier = ">=5.4.0" },
 ]
 
@@ -812,7 +812,7 @@ wheels = [
 
 [[package]]
 name = "ms-markets"
-version = "3.4.1"
+version = "3.8.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "alembic" },
@@ -832,9 +832,9 @@ dependencies = [
     { name = "sqlalchemy" },
     { name = "uvicorn" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/c8/e5/5e851e6d54d3c57339fc97ad85ca6c7dd22c554461bcc5e55db46ddf08eb/ms_markets-3.4.1.tar.gz", hash = "sha256:7193d2693494f1c3b7ecdf4034f7fdd0fd5b1309a6791e8252143d36700366b3", size = 2704501, upload-time = "2026-11-13T12:49:28.732Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/3b/72/df035aab7033ff1868be44b671a405acada6faa84d971f4a3e5c6d97f8bc/ms_markets-3.8.0.tar.gz", hash = "sha256:61d143fd0644f719f13b0ed3618ce68d340e5acf7dc67557a32da3fa5ca4fbc6", size = 2759282, upload-time = "2026-11-16T09:58:41.694Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/49/2a/3e01e14809be55c06aaa63b7d7d2d7b08f0cbc52f60de939e9ede37eb356/ms_markets-3.4.1-py3-none-any.whl", hash = "sha256:03b68c3c889a46923ed902cb5ebfcbd4ea9412d3edad588f336324733e9c5135", size = 865673, upload-time = "2026-11-13T12:49:26.519Z" },
+    { url = "https://files.pythonhosted.org/packages/a6/05/31e1ab0e041e17a7516613281fdf2b8215a2fa34cc3f0dcc5150cad96a63/ms_markets-3.8.0-py3-none-any.whl", hash = "sha256:cf254590578609c2a99d754689fc2e37e350cd9589e07cc14e369a41a3136d82", size = 877879, upload-time = "2026-11-16T09:58:39.109Z" },
 ]
 
 [[package]]

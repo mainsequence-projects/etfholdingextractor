@@ -1,10 +1,10 @@
 # etfhextractor
 
 [![Package](https://img.shields.io/badge/package-etfhextractor-black.svg)](pyproject.toml)
-[![Version](https://img.shields.io/badge/version-0.5.4-blue.svg)](pyproject.toml)
+[![Version](https://img.shields.io/badge/version-0.5.5-blue.svg)](pyproject.toml)
 [![Python](https://img.shields.io/badge/python-3.13-blue.svg)](pyproject.toml)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
-[![ms-markets](https://img.shields.io/badge/ms--markets-%3D%3D3.4.1-black.svg)](pyproject.toml)
+[![ms-markets](https://img.shields.io/badge/ms--markets-%3E%3D3.4.1%2C%3C4-black.svg)](pyproject.toml)
 [![Tests](https://img.shields.io/badge/tests-128%20passing-green.svg)](tests/)
 [![Maintained](https://img.shields.io/badge/maintained-actively-green.svg)](docs/)
 
@@ -35,11 +35,11 @@ kept out of `__init__` so pure extraction never loads the msm_portfolios stack).
 
 ## Project Status
 
-- Current package version: `0.5.4`
+- Current package version: `0.5.5`
 - Python: `>=3.13,<3.14`
 - Key dependencies: `mainsequence >=9.0.22,<10` (identity, secrets, logging),
   `mainsequence-metatable >=0.1.35,<0.2` (the MetaTables client, imported as `metatables`),
-  `ms-markets ==3.4.1` (typed rows, on the Markets API when the application selects it;
+  `ms-markets >=3.4.1,<4` (typed rows, on the Markets API when the application selects it;
   obligatory-calendar portfolio architecture; pinned to the release the deployed MainSequence
   Markets runs),
   `pandas-market-calendars` (trading sessions)

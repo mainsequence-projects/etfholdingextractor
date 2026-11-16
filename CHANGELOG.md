@@ -3,6 +3,22 @@
 All notable changes to `etfhextractor` are recorded here. Earlier releases are described by
 their Git tags and by the implementation tasks in `docs/implementation_task/`.
 
+## [0.5.5] - 2026-11-16
+
+Replaces the exact ms-markets pin with a compatible range. The library's code and API are
+unchanged.
+
+### Changed
+
+- Require `ms-markets>=3.4.1,<4` instead of exactly `==3.4.1`, ending the exact-pin policy of
+  0.4.4. An exact pin made every application that imports this package unable to build its
+  release image on any other ms-markets: the platform's dependency image runs
+  `pip wheel --requirement requirements.txt` and `pip check`, which ignore uv's
+  `override-dependencies`, so alpaca-connectors could not release on ms-markets 3.8.0.
+  `uv.lock` and `requirements.txt` resolve ms-markets 3.8.0, the release alpaca-connectors runs;
+  no other dependency moved. On 3.8.1 the example's instance tables need a revision for the
+  `(identifier, time_index)` indexes 3.8.1 adds to the weights tables.
+
 ## [0.5.4] - 2026-11-14
 
 Moves the pin to ms-markets 3.4.1. The library's code and API are unchanged.
