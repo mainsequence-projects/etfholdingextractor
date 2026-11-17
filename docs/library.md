@@ -81,9 +81,7 @@ neither the msm_portfolios stack nor ms-markets at import time:
 
 ```python
 from etfhextractor.calendars import (
-    ensure_trading_calendar, required_calendar_window,
-    US_EQUITY_CALENDAR_KEY, ALWAYS_OPEN_CALENDAR_KEYS,
-    CALENDAR_PAST_BUFFER_DAYS, CALENDAR_FUTURE_HORIZON_DAYS,
+    ensure_trading_calendar, US_EQUITY_CALENDAR_KEY, ALWAYS_OPEN_CALENDAR_KEYS,
 )
 ```
 
@@ -97,8 +95,9 @@ JSON, `--timeout` sets the HTTP timeout on every command):
   `etfh extract-ticker --provider <provider> --ticker <ticker> [--ticker ...] [--format weights|full]`
 - **Category sync** —
   `etfh category-sync --ticker <etf> (--fund-url <url> | --provider <provider>)
-  [--register-missing] [--figi-filter '<json>' ...]`
-  `--register-missing` FIGI-registers unresolved components first (re-plans with the cached
+  [--register-missing] [--calendar-key <key>] [--figi-filter '<json>' ...]`
+  `--register-missing` FIGI-registers unresolved components first, on the trading calendar
+  `--calendar-key` names (default `NYSE`), (re-plans with the cached
   holdings, no re-extraction); repeatable `--figi-filter` narrows OpenFIGI per ticker or aliases
   a provider ticker (`'{"ticker": "BRKB", "figi_ticker": "BRK/B"}'`).
 - **Portfolio publish** —
@@ -110,8 +109,9 @@ JSON, `--timeout` sets the HTTP timeout on every command):
   - `--price-source-table-uid <uid>` — registered bars table with `close`+`volume`
     (default: `ETFH_PORTFOLIO_PRICE_SOURCE_TABLE_UID`)
   - `--portfolio-name <name>` — display name (default `ETF Tracker <TICKER>`)
-  - `--calendar-key <key>` — trading calendar (default `NYSE`); persisted via the msm util and
-    attached to the Portfolio row by FK
+  - `--calendar-key <key>` — trading calendar (default `NYSE`); written once via the msm util
+    when it is not stored, attached to the Portfolio row by FK, and the trading calendar of the
+    components `--register-missing` registers
   - `--backtest-start-days <n>` — first-observation backtest window (default `60`; `0` disables)
   - `--signal-validity-days <n>` — forward-fill validity (default `90`; must exceed the backtest
     window by ≥ 5 days of headroom)
@@ -355,14 +355,17 @@ ADR 0003):
   controls, and every run executes immediately in-process.
 - **Trading calendar — an ms-markets contract the wiring honors**
   ([ADR 0006](adr/0006-trading-calendar-and-backtest-bootstrap.md)):
-  ms-markets 1.x and 2.x require every Portfolio row to reference a persisted Calendar
-  (`calendar_uid` NOT NULL FK, `ondelete=RESTRICT`; the legacy `calendar_name` field is gone).
-  `calendar_key` defaults to `NYSE` for US ETFs. `ensure_trading_calendar()`
-  (`etfhextractor.calendars`) persists it through the msm util
-  `Calendar.create_from_pandas_calendar` (Calendar + CalendarDate/CalendarSession rows generated
-  from pandas_market_calendars) and reuses a covering row with zero writes; always-open keys
-  ("24/7") persist an always-open Calendar row for the FK, with its dates and sessions written by
-  one `CalendarDate.upsert_many` and one `CalendarSession.upsert_many`. Since ms-markets
+  every Portfolio row references a stored Calendar (`calendar_uid` NOT NULL FK,
+  `ondelete=RESTRICT`), and since ms-markets 4.0.0 every asset with price bars is linked to one
+  (`AssetCalendar`, ms-markets ADR 0056): a price update refuses an asset without a link.
+  `calendar_key` defaults to `NYSE` for US ETFs. `ensure_trading_calendar(calendar_key)`
+  (`etfhextractor.calendars`) returns the stored calendar with one `Calendar.filter`, and writes a
+  missing one once with the msm util `Calendar.create_from_pandas_calendar` (session rules and
+  exceptions to the last date pandas_market_calendars answers for, ms-markets ADR 0055);
+  always-open keys (`24/7`, `CRYPTO_24_7`) are written from the library's `24/7` calendar. A
+  stored calendar is never extended or written again by this package: that is the Markets
+  deployment's `resync-calendars` Job. `register_missing` links the components it registers to
+  the same calendar. Since ms-markets
   1.0.6 the portfolio executes on the signal's observations and values on the valuation source's
   observations, so with a session-close price source (the example's demo bars) valuations land
   on real session closes — never weekends/holidays.
@@ -389,9 +392,13 @@ candidates stay unregistered blockers so same-ticker assets are never mixed.
 (ticker→FIGI), then **one batch lookup** of all mapped FIGIs in the asset registry
 (`Asset.get_many_by_unique_identifier`) and one read of their latest snapshots
 (`AssetSnapshots.latest(asset_identifiers=...)`), then writes **only
-the deltas**, set-based (one `Asset.upsert_many` of `unique_identifier=figi` and one
-`OpenFigiDetails.upsert_many` for the missing FIGIs; one `AssetSnapshots.publish` for the FIGIs
-lacking a snapshot). A fully-registered universe re-runs with zero writes. Registered identity is the US
+the deltas**, set-based (one `Asset.upsert_many` of `unique_identifier=figi` with
+`calendar_identifier` and one `OpenFigiDetails.upsert_many` for the missing FIGIs; one
+`AssetCalendar.link_many(..., relink=False)` that gives the already-registered FIGIs without a
+trading calendar the requested one; one `AssetSnapshots.publish` for the FIGIs lacking a
+snapshot). `calendar_identifier` is required: ms-markets 4 refuses a price update for an asset
+without a trading calendar and links no asset to a calendar nobody chose. A fully-registered,
+linked universe re-runs with zero writes. Registered identity is the US
 composite FIGI (e.g. MSFT → `BBG000BPH459`); ticker/share-class/venue live on `OpenFigiDetails`. Failures name the blocked tickers with their FIGI candidates
 (`format_failures()` / `FigiRegistrationError`), and ambiguity is resolved explicitly with
 per-ticker disambiguation filters, e.g.
@@ -426,8 +433,8 @@ use_remote_backend(LazyRemoteBackend())   # or MSM_API_BACKEND=remote, which als
 |---|---|
 | `resolve_existing_assets_by_ticker`, `resolve_asset_identifiers_by_ticker`, `build_holdings_asset_category_plan` | `AssetSnapshots.latest(tickers=...)` (each asset that ever carried a ticker, with its latest snapshot; kept when that ticker still matches) |
 | `sync_holdings_asset_category` | `AssetCategory.upsert`, `AssetCategory.replace_memberships` |
-| `register_equity_assets_from_tickers` | `Asset.get_many_by_unique_identifier`, `AssetType.upsert`, `Asset.upsert_many`, `OpenFigiDetails.upsert_many`, `AssetSnapshots.latest(asset_identifiers=...)`, `AssetSnapshots.publish` |
-| `ensure_trading_calendar` | `Calendar.filter`; `Calendar.create_from_pandas_calendar`, or for always-open keys `Calendar.upsert`, `CalendarDate.upsert_many`, `CalendarSession.upsert_many` |
+| `register_equity_assets_from_tickers` | `Asset.get_many_by_unique_identifier`, the `ensure_trading_calendar` calls, `AssetType.upsert`, `Asset.upsert_many` (each payload naming `calendar_identifier`), `OpenFigiDetails.upsert_many`, `AssetCalendar.link_many(..., relink=False)` of the assets already registered, `AssetSnapshots.latest(asset_identifiers=...)`, `AssetSnapshots.publish` |
+| `ensure_trading_calendar` | `Calendar.filter`; `Calendar.create_from_pandas_calendar` when it is missing |
 | `register_signal_dataset` | `PortfolioDatasets.register_signal` |
 | `build_etf_tracking_portfolio`, `publish_etf_tracking_portfolio` | the calendar and (with `register_missing`) registration calls, `Portfolio.upsert` (the row and, after a run, its pointers), `SignalMetadata.upsert` (by the signal updater), `PortfolioDatasets.register` after the run |
 

@@ -266,66 +266,53 @@ def test_figi_registration_writes_each_table_once(markets_api, no_engine) -> Non
                 if identifier in {"BBG000BPH459"}
             ],
             ("asset-snapshots", "publish"): lambda arguments: len(arguments["snapshots"]),
+            ("calendar", "filter"): lambda arguments: [_calendar({"unique_identifier": "NYSE"})],
+            ("asset-calendar", "link_many"): lambda arguments: {
+                "calendar_uid": str(uuid.uuid4()),
+                "linked": list(arguments["asset_identifiers"]),
+            },
         }
     )
 
     with patch("msm.services.assets.openfigi.query_figi", return_value=figi_rows):
         result = asset_registration.register_equity_assets_from_tickers(
             tickers=["AAPL", "NVDA", "MSFT"],
+            calendar_identifier="NYSE",
             snapshot_time=dt.datetime(2026, 6, 10, tzinfo=dt.UTC),
         )
 
     assert result.registered_figi_by_ticker == {"AAPL": "BBG000B9XRY4", "NVDA": "BBG000BBJQV0"}
     assert result.already_registered_figi_by_ticker == {"MSFT": "BBG000BPH459"}
+    assert result.calendar_linked_figis == ["BBG000BPH459"]
     assert backend.operations() == [
         ("asset", "get_many_by_unique_identifier"),
         ("asset-snapshots", "latest"),
+        ("calendar", "filter"),
         ("asset-type", "upsert"),
         ("asset", "upsert_many"),
         ("open-figi-details", "upsert_many"),
+        ("asset-calendar", "link_many"),
         ("asset-snapshots", "publish"),
     ]
     arguments = {(resource, operation): args for resource, operation, args in backend.calls}
     assert arguments[("asset-snapshots", "latest")] == {
         "asset_identifiers": ["BBG000B9XRY4", "BBG000BBJQV0", "BBG000BPH459"]
     }
-    assert [p["unique_identifier"] for p in arguments[("asset", "upsert_many")]["payloads"]] == [
-        "BBG000B9XRY4",
-        "BBG000BBJQV0",
-    ]
+    assert [
+        (p["unique_identifier"], p["calendar_identifier"])
+        for p in arguments[("asset", "upsert_many")]["payloads"]
+    ] == [("BBG000B9XRY4", "NYSE"), ("BBG000BBJQV0", "NYSE")]
+    assert arguments[("asset-calendar", "link_many")]["asset_identifiers"] == ["BBG000BPH459"]
+    assert arguments[("asset-calendar", "link_many")]["relink"] is False
     assert [row["ticker"] for row in arguments[("asset-snapshots", "publish")]["snapshots"]] == [
         "AAPL",
         "NVDA",
     ]
 
 
-def test_always_open_calendar_is_four_markets_calls(markets_api, no_engine) -> None:
-    from etfhextractor.calendars import ensure_trading_calendar
-
-    backend = markets_api(
-        {
-            ("calendar", "filter"): lambda arguments: [],
-            ("calendar", "upsert"): _calendar,
-            ("calendar-date", "upsert_many"): lambda arguments: [],
-            ("calendar-session", "upsert_many"): lambda arguments: [],
-        }
-    )
-
-    calendar = ensure_trading_calendar("24/7", backtest_start_days=60, today=TODAY)
-
-    assert calendar.unique_identifier == "24/7"
-    assert backend.operations() == [
-        ("calendar", "filter"),
-        ("calendar", "upsert"),
-        ("calendar-date", "upsert_many"),
-        ("calendar-session", "upsert_many"),
-    ]
-    dates = backend.calls[2][2]["payloads"]
-    assert len(dates) == len(backend.calls[3][2]["payloads"]) > 400
-    assert {row["calendar_uid"] for row in dates} == {str(calendar.uid)}
-
-
-def test_market_calendars_are_materialized_by_markets(markets_api, no_engine) -> None:
+def test_a_missing_always_open_calendar_is_one_write_from_the_library(
+    markets_api, no_engine
+) -> None:
     from etfhextractor.calendars import ensure_trading_calendar
 
     backend = markets_api(
@@ -335,9 +322,29 @@ def test_market_calendars_are_materialized_by_markets(markets_api, no_engine) ->
         }
     )
 
-    ensure_trading_calendar("NYSE", backtest_start_days=60, today=TODAY)
+    ensure_trading_calendar("CRYPTO_24_7")
 
     assert backend.operations() == [("calendar", "filter"), ("calendar", "create_from_pandas_calendar")]
+    created = backend.calls[1][2]
+    assert (created["source_identifier"], created["unique_identifier"]) == ("24/7", "CRYPTO_24_7")
+
+
+def test_a_missing_market_calendar_is_one_write_from_the_library(markets_api, no_engine) -> None:
+    from etfhextractor.calendars import ensure_trading_calendar
+
+    backend = markets_api(
+        {
+            ("calendar", "filter"): lambda arguments: [],
+            ("calendar", "create_from_pandas_calendar"): _calendar,
+        }
+    )
+
+    ensure_trading_calendar("NYSE")
+
+    assert backend.operations() == [("calendar", "filter"), ("calendar", "create_from_pandas_calendar")]
+    created = backend.calls[1][2]
+    assert (created["source_identifier"], created["unique_identifier"]) == ("NYSE", "NYSE")
+    assert "valid_to" not in created
 
 
 def _instances():
@@ -387,8 +394,9 @@ def test_the_runtime_backend_attaches_registries_but_no_markets_series() -> None
         "PortfolioDatasetAvailabilityTable",
         "SignalMetadataTable",
         "CalendarTable",
-        "CalendarDateTable",
-        "CalendarSessionTable",
+        "CalendarSessionRuleTable",
+        "CalendarExceptionTable",
+        "AssetCalendarTable",
         "OpenFigiAssetDetailsTable",
         "AssetCategoryTable",
         "AssetCategoryMembershipTable",
@@ -450,11 +458,8 @@ def test_moved_names_are_not_re_exported() -> None:
 
     for name in (
         "ensure_trading_calendar",
-        "required_calendar_window",
         "US_EQUITY_CALENDAR_KEY",
         "ALWAYS_OPEN_CALENDAR_KEYS",
-        "CALENDAR_PAST_BUFFER_DAYS",
-        "CALENDAR_FUTURE_HORIZON_DAYS",
     ):
         assert not hasattr(portfolio_publish, name), name
         assert not hasattr(portfolio_signal, name), name

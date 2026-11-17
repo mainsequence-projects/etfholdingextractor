@@ -1,7 +1,7 @@
 schema=1
 library_name=ms-markets
 namespace=ms_markets
-pinned_version=2.2.10
-skills_path=msm_cli/_skills/ms_markets
-copied_at_utc=2026-10-11T20:49:01Z
+pinned_version=4.0.1
+skills_path=/Users/jose/mainsequence-dev/main-sequence-workbench/projects/etfholdingextractor-41ddaf20-9077-4e42-bc24-cace28efd5d7/.venv/lib/python3.13/site-packages/msm_cli/_skills/ms_markets
+copied_at_utc=2026-11-17T14:45:51Z
 command=msm copy-msm-skills

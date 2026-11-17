@@ -133,7 +133,7 @@ mainsequence==9.0.33
     #   etfhextractor
     #   mainsequence-metatable
     #   ms-markets
-mainsequence-metatable==0.1.64
+mainsequence-metatable==0.1.67
     # via
     #   etfhextractor
     #   ms-markets
@@ -155,7 +155,7 @@ more-itertools==11.1.0
     # via
     #   jaraco-classes
     #   jaraco-functools
-ms-markets==3.8.1
+ms-markets==4.0.1
     # via etfhextractor
 numpy==2.4.6
     # via
@@ -213,7 +213,9 @@ pandas==3.0.3
     #   ms-markets
     #   pandas-market-calendars
 pandas-market-calendars==5.4.0
-    # via etfhextractor
+    # via
+    #   etfhextractor
+    #   ms-markets
 pillow==12.3.0
     # via fastembed
 pip==26.2.2

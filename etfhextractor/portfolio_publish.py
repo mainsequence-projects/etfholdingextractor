@@ -131,8 +131,8 @@ def portfolio_runtime_models(
     project-owned `DemoBarsStorage` price source). On the remote backend (selected by the
     application, ADR 0047) that is all: every registry runs on the Markets API. On the runtime
     backend the registry row calls run in this process, so the Markets registry tables of the
-    msm_portfolios graph, the OpenFIGI, asset-snapshot, category and calendar date/session tables
-    are attached as well; no Markets time series is.
+    msm_portfolios graph, the OpenFIGI, asset-snapshot, category, calendar rule and exception, and
+    asset-calendar link tables are attached as well; no Markets time series is.
 
     A process gets one `start_engine` configuration: an application that attaches its own
     tables at its composition root includes these models in that call and passes
@@ -145,10 +145,11 @@ def portfolio_runtime_models(
     if not markets_api_selected():
         from msm.base import MarketsTimeIndexMetaTableMixin
         from msm.models import (
+            AssetCalendarTable,
             AssetCategoryMembershipTable,
             AssetCategoryTable,
-            CalendarDateTable,
-            CalendarSessionTable,
+            CalendarExceptionTable,
+            CalendarSessionRuleTable,
             OpenFigiAssetDetailsTable,
         )
         from msm.time_index.assets.storage import AssetSnapshotsStorage
@@ -165,8 +166,9 @@ def portfolio_runtime_models(
             AssetSnapshotsStorage,
             AssetCategoryTable,
             AssetCategoryMembershipTable,
-            CalendarDateTable,
-            CalendarSessionTable,
+            CalendarSessionRuleTable,
+            CalendarExceptionTable,
+            AssetCalendarTable,
             *models,
         ]
     return [*models, *(extra_models or [])]
@@ -241,14 +243,15 @@ def build_etf_tracking_portfolio(
 
     The calendar is OBLIGATORY in the portfolio architecture (ms-markets >=
     0.0.58: `PortfolioTable.calendar_uid` is a NOT NULL FK). `calendar_key`
-    (default NYSE for US-listed ETFs) is persisted through the msm util
-    `Calendar.create_from_pandas_calendar` and attached to the Portfolio row by
-    FK (`calendar_uid`), and the signal stamps every observation on the same
-    key's session closes. `ImmediateSignal` rebalances on those observations and
+    (default NYSE for US-listed ETFs) is written once through the msm util
+    `Calendar.create_from_pandas_calendar` when it is not stored and attached to
+    the Portfolio row by FK (`calendar_uid`), the components `register_missing`
+    registers are linked to it as their trading calendar, and the signal stamps
+    every observation on the same key's session closes. `ImmediateSignal` rebalances on those observations and
     ms-markets values the portfolio on the valuation source's observations
     (ms-markets >= 1.0.6), so a session-close price source keeps valuations off
-    weekends and holidays. Always-open keys ("24/7") also persist a Calendar row
-    to satisfy the FK. `backtest_start_days` (default 60) backdates the
+    weekends and holidays. Always-open keys ("24/7") are stored from the
+    library's `24/7` calendar. `backtest_start_days` (default 60) backdates the
     signal's first observation so the first run backtests that window with the
     current composition before live tracking takes over.
 
@@ -286,9 +289,7 @@ def build_etf_tracking_portfolio(
 
     # Persist (or reuse) the trading calendar BEFORE any portfolio wiring: the
     # rebalance schedule and the Portfolio row both hang off it.
-    calendar_row = calendars.ensure_trading_calendar(
-        calendar_key, backtest_start_days=backtest_start_days
-    )
+    calendar_row = calendars.ensure_trading_calendar(calendar_key)
 
     normalized_ticker_for_preflight = normalize_ticker(etf_ticker)
     registration_summary: dict[str, Any] | None = None
@@ -326,6 +327,7 @@ def build_etf_tracking_portfolio(
 
             registration = register_equity_assets_from_tickers(
                 tickers=missing,
+                calendar_identifier=str(calendar_row.unique_identifier),
                 disambiguation_filters=figi_disambiguation_filters,
             )
             registration_summary = registration.summary()

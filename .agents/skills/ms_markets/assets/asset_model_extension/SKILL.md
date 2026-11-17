@@ -1,6 +1,6 @@
 ---
 name: mainsequence-asset-model-extension
-description: Use this skill when extending or reviewing the ms-markets Asset model, including AssetType registration and one-to-one asset property/detail tables. This skill owns the rule that AssetTable stays small and extension data belongs in relational detail tables keyed by AssetTable.uid. It does not own AssetIndexedDataNode design, price history, portfolios, or general TimeIndexTableUpdater implementation.
+description: Use this skill when extending or reviewing the ms-markets Asset model, including AssetType registration and one-to-one asset property/detail tables. This skill owns the rule that AssetTable stays small and extension data belongs in relational detail tables keyed by AssetTable.uid. It does not own AssetIndexedUpdater design, price history, portfolios, or general TimeIndexTableUpdater implementation.
 ---
 
 # Main Sequence Markets Asset Model Extension
@@ -250,10 +250,74 @@ For OpenFIGI and similar providers:
 - preserve existing column mappings such as `metadata_text =
   mapped_column("metadata", Text, nullable=True)`
 
+## Trading Calendar Link: Required For Price Interpolation
+
+`AssetCalendar` is the one-to-one detail table that links an asset to the stored
+`Calendar` whose sessions decide its price bars (ADR 0056). Name the calendar
+when you register the asset (ADR 0057):
+
+```python
+from msm.api.assets import Asset, AssetCalendar
+from msm.api.calendars import Calendar
+
+Calendar.create_from_pandas_calendar("24/7", "CRYPTO_24_7", display_name="Crypto 24/7")
+Calendar.create_from_pandas_calendar("NYSE")
+
+Asset.upsert_many(
+    [
+        {"unique_identifier": "example-asset-btc", "asset_type": "crypto", "calendar_identifier": "CRYPTO_24_7"},
+        {"unique_identifier": "example-asset-acme", "asset_type": "equity", "calendar_identifier": "NYSE"},
+        {"unique_identifier": "USD", "asset_type": "currency"},
+    ]
+)
+```
+
+Assets that already exist are linked in one call, by identifier:
+
+```python
+result = AssetCalendar.link_many(
+    ["example-asset-acme", "example-asset-beta"],
+    calendar_identifier="NYSE",
+)
+result.linked, result.moved, result.unchanged, result.unknown
+```
+
+Rules:
+
+- Link every asset that will have price bars when you register it. A payload
+  without `calendar_identifier` or `calendar_uid` leaves the asset as it is: a
+  new asset then has no trading calendar.
+- `calendar_identifier` is the stored calendar's `unique_identifier`. Every
+  payload that writes an asset takes it: `Asset.create`, `Asset.upsert`,
+  `Asset.upsert_many`, `CurrencySpot`, `Bond`, `Future`, and each asset of an
+  account registration.
+- A payload that names a calendar moves an asset that is on another one. An
+  account registration does not: it links only an asset that has no calendar.
+- The calendar must exist first. With an unknown calendar, `Asset.upsert_many`
+  fails after writing the assets; send the same call again once the calendar is
+  stored. An account registration is refused before it writes anything.
+- Link many existing assets with `AssetCalendar.link_many`, in one transaction.
+  Do not loop over `AssetCalendar.upsert`. Read `result.unknown`: an identifier
+  no asset has is reported, not refused.
+- `AssetCalendar.unlinked_assets(asset_type=...)` lists the assets with no
+  trading calendar. `AssetCalendar.delete(asset_uid)` removes a link.
+- There is no default calendar. Never assume an unlinked asset is 24/7; link a
+  24/7 asset to a stored 24/7 calendar.
+- `InterpolatedPrices` resolves the link of every asset in its scope before it
+  reads a bar. One unlinked asset fails the whole run with
+  `AssetCalendarMissingError`, which names each such asset. Fix it by linking the
+  asset, not by catching the error or skipping the asset.
+- Do not pass a calendar in the asset scope. A `calendar` key in a scope mapping
+  is refused.
+- Do not link an asset to a calendar nobody chose, in a migration or a job, to
+  make a run pass.
+- An asset that is never interpolated, such as a currency used only as a
+  denomination, needs no link.
+
 ## Boundaries
 
 - For timestamped or panel data keyed by assets, use the
-  `AssetIndexedDataNode` skill and docs instead.
+  `AssetIndexedUpdater` skill and docs instead.
 - For price histories, do not add price columns to asset or detail tables.
 - For portfolio or holding semantics, use portfolio-specific models.
 - For provider lookup services, keep API-key and normalization logic in

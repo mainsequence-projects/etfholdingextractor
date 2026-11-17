@@ -130,9 +130,10 @@ def _extract_holdings(
 def _register_missing_assets_via_figi(
     *,
     missing_symbols: list[str],
+    calendar_key: str,
     figi_disambiguation_filters: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    """FIGI-register unresolved components (ADR 0004).
+    """FIGI-register unresolved components (ADR 0004), linked to `calendar_key`.
 
     No asset is registered without a FIGI, and a ticker must map to exactly one
     FIGI — multiple candidates would risk mixing different assets that share a
@@ -145,12 +146,14 @@ def _register_missing_assets_via_figi(
 
     registration = register_equity_assets_from_tickers(
         tickers=missing_symbols,
+        calendar_identifier=calendar_key,
         disambiguation_filters=figi_disambiguation_filters,
     )
     _log(
         "register",
         f"FIGI-registered {len(registration.registered_figi_by_ticker)} new assets "
         f"({len(registration.already_registered_figi_by_ticker)} already registered, "
+        f"{len(registration.calendar_linked_figis)} linked to {calendar_key}, "
         f"{len(registration.snapshots_published_for_figis)} snapshots published); "
         f"unmapped={registration.unmapped_tickers} "
         f"ambiguous={sorted(registration.ambiguous_figi_candidates_by_ticker)}",
@@ -455,6 +458,7 @@ def run_full_workflow(
         )
         summary["asset_registration"] = _register_missing_assets_via_figi(
             missing_symbols=missing,
+            calendar_key=calendar_key,
             figi_disambiguation_filters=figi_disambiguation_filters,
         )
         existing, missing, ambiguous = resolve_asset_identifiers_by_ticker(

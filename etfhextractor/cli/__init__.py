@@ -138,6 +138,15 @@ def build_subcommand_parser() -> argparse.ArgumentParser:
             "OPEN_FIGI_API_KEY secret; only unique ticker→FIGI mappings are registered)."
         ),
     )
+    category_sync_parser.add_argument(
+        "--calendar-key",
+        default="NYSE",
+        help=(
+            "Stored trading calendar --register-missing links the components to "
+            "(default NYSE for US-listed components); written once from "
+            "pandas_market_calendars when it is not stored."
+        ),
+    )
     _add_figi_filter_arg(category_sync_parser)
     _add_timeout_arg(category_sync_parser)
     _add_compact_arg(category_sync_parser)
@@ -203,9 +212,10 @@ def build_subcommand_parser() -> argparse.ArgumentParser:
         "--calendar-key",
         default="NYSE",
         help=(
-            "Trading calendar for the rebalance schedule and the Portfolio row's "
-            "calendar FK (default NYSE for US ETFs). Persisted from "
-            "pandas_market_calendars via the ms-markets calendar util."
+            "Trading calendar for the rebalance schedule, the Portfolio row's "
+            "calendar FK and the components --register-missing registers (default "
+            "NYSE for US ETFs). Written once from pandas_market_calendars via the "
+            "ms-markets calendar util when it is not stored."
         ),
     )
     portfolio_publish_parser.add_argument(
@@ -419,6 +429,7 @@ def _run_subcommand(
 
         registration = register_equity_assets_from_tickers(
             tickers=plan.missing_registered_symbols,
+            calendar_identifier=args.calendar_key,
             disambiguation_filters=figi_filters,
         )
         registration_summary = registration.summary()

@@ -8,6 +8,7 @@ from unittest.mock import Mock, patch
 
 from etfhextractor.asset_registration import register_equity_assets_from_tickers
 
+CALENDAR = "NYSE"
 AAPL_FIGI = "BBG000B9XRY4"
 MSFT_FIGI_1 = "BBG000BPH459"
 MSFT_FIGI_2 = "BBG000BPH460"
@@ -50,8 +51,14 @@ def run_registration(
     disambiguation_filters: list[dict[str, Any]] | None = None,
     existing_figis: dict[str, Any] | None = None,
     figis_with_snapshots: set[str] | None = None,
+    unlinked_figis: set[str] | None = None,
 ) -> tuple[Any, dict[str, Mock]]:
     asset_cls = Mock()
+    asset_calendar_cls = Mock()
+    asset_calendar_cls.link_many.side_effect = lambda identifiers, **_: SimpleNamespace(
+        linked=[identifier for identifier in identifiers if identifier in (unlinked_figis or set())]
+    )
+    ensure_calendar = Mock(return_value=SimpleNamespace(unique_identifier=CALENDAR))
     asset_cls.upsert_many.side_effect = _upserted_assets
     asset_type_cls = Mock()
     details_cls = Mock()
@@ -75,14 +82,19 @@ def run_registration(
         "msm.api.assets.Asset", asset_cls
     ), patch("msm.api.assets.AssetType", asset_type_cls), patch(
         "msm.api.assets.OpenFigiDetails", details_cls
-    ), patch("msm.api.assets.AssetSnapshots", snapshots_cls):
+    ), patch("msm.api.assets.AssetSnapshots", snapshots_cls), patch(
+        "msm.api.assets.AssetCalendar", asset_calendar_cls
+    ), patch("etfhextractor.calendars.ensure_trading_calendar", ensure_calendar):
         result = register_equity_assets_from_tickers(
             tickers=tickers,
+            calendar_identifier=CALENDAR,
             disambiguation_filters=disambiguation_filters,
         )
 
     mocks = {
         "Asset": asset_cls,
+        "AssetCalendar": asset_calendar_cls,
+        "ensure_trading_calendar": ensure_calendar,
         "AssetType": asset_type_cls,
         "OpenFigiDetails": details_cls,
         "AssetSnapshots": snapshots_cls,
@@ -116,9 +128,16 @@ class FigiAssetRegistrationTests(unittest.TestCase):
         # Asset identity is the FIGI, never the ticker; one set-based write per table.
         mocks["Asset"].upsert.assert_not_called()
         mocks["Asset"].upsert_many.assert_called_once()
+        # A created asset names its trading calendar in its payload (ms-markets ADR 0057),
+        # after the calendar is ensured; nothing else is linked.
         self.assertEqual(
-            upserted(mocks["Asset"]), [{"unique_identifier": AAPL_FIGI, "asset_type": "equity"}]
+            upserted(mocks["Asset"]),
+            [{"unique_identifier": AAPL_FIGI, "asset_type": "equity", "calendar_identifier": CALENDAR}],
         )
+        mocks["ensure_trading_calendar"].assert_called_once_with(CALENDAR)
+        mocks["AssetCalendar"].link_many.assert_not_called()
+        self.assertEqual(result.calendar_identifier, CALENDAR)
+        self.assertEqual(result.calendar_linked_figis, [])
 
         mocks["OpenFigiDetails"].upsert.assert_not_called()
         (details,) = upserted(mocks["OpenFigiDetails"])
@@ -141,6 +160,8 @@ class FigiAssetRegistrationTests(unittest.TestCase):
         mocks["Asset"].upsert_many.assert_not_called()
         mocks["OpenFigiDetails"].upsert_many.assert_not_called()
         mocks["AssetSnapshots"].publish.assert_not_called()
+        mocks["ensure_trading_calendar"].assert_not_called()
+        mocks["AssetCalendar"].link_many.assert_not_called()
 
     def test_multiple_figis_for_one_ticker_block_registration(self) -> None:
         result, mocks = run_registration(
@@ -192,9 +213,31 @@ class FigiAssetRegistrationTests(unittest.TestCase):
         self.assertEqual(len(upserted(mocks["Asset"])), 1)
 
     def test_empty_ticker_list_is_a_no_op(self) -> None:
-        result = register_equity_assets_from_tickers(tickers=[])
+        result = register_equity_assets_from_tickers(tickers=[], calendar_identifier=CALENDAR)
         self.assertEqual(result.registered_figi_by_ticker, {})
         self.assertFalse(result.has_failures())
+
+    def test_a_blank_calendar_is_refused(self) -> None:
+        with self.assertRaisesRegex(ValueError, "calendar_identifier"):
+            register_equity_assets_from_tickers(tickers=["AAPL"], calendar_identifier=" ")
+
+    def test_an_existing_asset_without_a_calendar_is_linked(self) -> None:
+        result, mocks = run_registration(
+            tickers=["AAPL"],
+            figi_rows=[figi_row("AAPL", AAPL_FIGI)],
+            existing_figis={AAPL_FIGI: uuid.uuid4()},
+            figis_with_snapshots={AAPL_FIGI},
+            unlinked_figis={AAPL_FIGI},
+        )
+
+        # An asset registered before ms-markets 4.0.0 has no calendar; one link_many that
+        # keeps any calendar already chosen (relink=False) gives it this one.
+        mocks["AssetCalendar"].link_many.assert_called_once_with(
+            [AAPL_FIGI], calendar_identifier=CALENDAR, relink=False
+        )
+        self.assertEqual(result.calendar_linked_figis, [AAPL_FIGI])
+        self.assertEqual(result.summary()["calendar_linked_count"], 1)
+        mocks["Asset"].upsert_many.assert_not_called()
 
     def test_already_registered_assets_cost_zero_writes(self) -> None:
         result, mocks = run_registration(
@@ -208,7 +251,12 @@ class FigiAssetRegistrationTests(unittest.TestCase):
         self.assertEqual(result.already_registered_figi_by_ticker, {"AAPL": AAPL_FIGI})
         self.assertEqual(result.snapshots_published_for_figis, [])
         self.assertFalse(result.has_failures())
-        # The whole re-run is read-only: no asset writes, no snapshot publication.
+        # The whole re-run writes nothing: no asset writes, no snapshot publication, and the
+        # one link call finds the asset already on a calendar.
+        self.assertEqual(result.calendar_linked_figis, [])
+        mocks["AssetCalendar"].link_many.assert_called_once_with(
+            [AAPL_FIGI], calendar_identifier=CALENDAR, relink=False
+        )
         mocks["AssetType"].upsert.assert_not_called()
         mocks["Asset"].upsert_many.assert_not_called()
         mocks["OpenFigiDetails"].upsert_many.assert_not_called()
@@ -321,6 +369,7 @@ class FigiAssetRegistrationTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "alias collision"):
             register_equity_assets_from_tickers(
                 tickers=["BRKB", "BRK/B"],
+                calendar_identifier=CALENDAR,
                 disambiguation_filters=[{"ticker": "BRKB", "figi_ticker": "BRK/B"}],
             )
 
@@ -328,6 +377,7 @@ class FigiAssetRegistrationTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "'ticker' key"):
             register_equity_assets_from_tickers(
                 tickers=["USO"],
+                calendar_identifier=CALENDAR,
                 disambiguation_filters=[{"market_sector": "Equity"}],
             )
 
@@ -335,6 +385,7 @@ class FigiAssetRegistrationTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Unknown disambiguation filter keys"):
             register_equity_assets_from_tickers(
                 tickers=["USO"],
+                calendar_identifier=CALENDAR,
                 disambiguation_filters=[{"ticker": "USO", "exchange": "US"}],
             )
 

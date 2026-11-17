@@ -16,6 +16,12 @@ snapshot-layer ticker resolver finds the new assets immediately. Under the
 ms-markets remote backend (ADR 0047), which the application selects, every write
 runs on the Markets API.
 
+Every asset a registration resolves gets a trading calendar (ms-markets ADR 0056
+and 0057): a price update refuses an asset without one. A created asset names
+the calendar in its `Asset.upsert_many` payload; an existing asset without one is
+linked by one `AssetCalendar.link_many(..., relink=False)`, which keeps a
+calendar someone already chose.
+
 Requires the `OPEN_FIGI_API_KEY` Main Sequence secret (or an explicit
 `api_key`).
 """
@@ -47,11 +53,16 @@ class FigiAssetRegistrationResult:
 
     `registered_figi_by_ticker` holds only the assets actually created this
     pass; `already_registered_figi_by_ticker` holds the tickers whose FIGI was
-    found in the asset registry by the batch existence check (no writes).
+    found in the asset registry by the batch existence check.
+    `calendar_linked_figis` holds the existing assets this pass linked to
+    `calendar_identifier` because they had no trading calendar; created assets
+    are linked with their payload.
     """
 
+    calendar_identifier: str | None = None
     registered_figi_by_ticker: dict[str, str] = field(default_factory=dict)
     already_registered_figi_by_ticker: dict[str, str] = field(default_factory=dict)
+    calendar_linked_figis: list[str] = field(default_factory=list)
     snapshots_published_for_figis: list[str] = field(default_factory=list)
     unmapped_tickers: list[str] = field(default_factory=list)
     ambiguous_figi_candidates_by_ticker: dict[str, list[str]] = field(default_factory=dict)
@@ -61,11 +72,14 @@ class FigiAssetRegistrationResult:
 
     def summary(self) -> dict[str, Any]:
         return {
+            "calendar_identifier": self.calendar_identifier,
             "registered_count": len(self.registered_figi_by_ticker),
             "already_registered_count": len(self.already_registered_figi_by_ticker),
+            "calendar_linked_count": len(self.calendar_linked_figis),
             "snapshots_published_count": len(self.snapshots_published_for_figis),
             "registered_figi_by_ticker": self.registered_figi_by_ticker,
             "already_registered_figi_by_ticker": self.already_registered_figi_by_ticker,
+            "calendar_linked_figis": self.calendar_linked_figis,
             "unmapped_tickers": self.unmapped_tickers,
             "ambiguous_figi_candidates_by_ticker": self.ambiguous_figi_candidates_by_ticker,
         }
@@ -139,13 +153,19 @@ def _normalize_disambiguation_filters(
 def register_equity_assets_from_tickers(
     *,
     tickers: list[str],
+    calendar_identifier: str,
     market_sector: str = "Equity",
     exch_code: str | None = "US",
     disambiguation_filters: Sequence[Mapping[str, Any]] | None = None,
     api_key: str | None = None,
     snapshot_time: dt.datetime | None = None,
 ) -> FigiAssetRegistrationResult:
-    """Resolve tickers to FIGIs and register only the missing assets.
+    """Resolve tickers to FIGIs, register only the missing assets, and give each a calendar.
+
+    `calendar_identifier` is the `unique_identifier` of the stored trading calendar the
+    assets trade on, such as `NYSE` for US-listed equities; it is written once when it is
+    missing (`ensure_trading_calendar`). There is no default: ms-markets links no asset to a
+    calendar nobody chose (ADR 0056).
 
     Smart-resolution flow (always):
 
@@ -158,11 +178,12 @@ def register_equity_assets_from_tickers(
        (`Asset.get_many_by_unique_identifier(figis)`) plus one batch read of
        their latest snapshots (`AssetSnapshots.latest(asset_identifiers=figis)`).
     3. Write only the deltas, set-based: one `Asset.upsert_many` of
-       `{unique_identifier: figi, asset_type: "equity"}` and one
-       `OpenFigiDetails.upsert_many` for the FIGIs not in the registry, and one
-       `AssetSnapshots.publish` covering every mapped FIGI that lacks a snapshot
-       (repairs interrupted earlier registrations). Already-registered FIGIs
-       cost zero writes on re-runs.
+       `{unique_identifier: figi, asset_type: "equity", calendar_identifier}` and
+       one `OpenFigiDetails.upsert_many` for the FIGIs not in the registry, one
+       `AssetCalendar.link_many(..., relink=False)` of the FIGIs already in it, and
+       one `AssetSnapshots.publish` covering every mapped FIGI that lacks a snapshot
+       (repairs interrupted earlier registrations). Already-registered FIGIs that
+       have a calendar and a snapshot cost zero writes on re-runs.
 
     `disambiguation_filters` narrows the OpenFIGI query per ticker so ambiguous
     mappings can be resolved explicitly, e.g.::
@@ -175,9 +196,12 @@ def register_equity_assets_from_tickers(
     security_type_2 (others raise). Tickers without an entry use the
     function-level `market_sector` / `exch_code` defaults.
     """
+    calendar_identifier = str(calendar_identifier).strip()
+    if not calendar_identifier:
+        raise ValueError("calendar_identifier must name the assets' stored trading calendar.")
     requested = sorted({normalize_ticker(ticker) for ticker in tickers if ticker.strip()})
     if not requested:
-        return FigiAssetRegistrationResult()
+        return FigiAssetRegistrationResult(calendar_identifier=calendar_identifier)
 
     overrides_by_ticker = _normalize_disambiguation_filters(disambiguation_filters)
 
@@ -211,9 +235,11 @@ def register_equity_assets_from_tickers(
     _ensure_msm_started()
 
     from mainsequence.logconf import logger as _ms_logger
-    from msm.api.assets import Asset, AssetSnapshots, AssetType, OpenFigiDetails
+    from msm.api.assets import Asset, AssetCalendar, AssetSnapshots, AssetType, OpenFigiDetails
     from msm.constants import ASSET_TYPE_EQUITY
     from msm.services.assets.openfigi import query_figi
+
+    from .calendars import ensure_trading_calendar
 
     log = _ms_logger.bind(sub_application="etfhextractor", component="asset_registration")
 
@@ -291,6 +317,10 @@ def register_equity_assets_from_tickers(
         f"{len(all_figis) - len(figis_with_snapshots)} snapshots to publish."
     )
 
+    if all_figis:
+        # A calendar that does not exist fails the links after the assets are written.
+        ensure_trading_calendar(calendar_identifier)
+
     if registered_figi_by_ticker:
         AssetType.upsert(asset_type=ASSET_TYPE_EQUITY, display_name="Equity")
         to_create = [
@@ -301,6 +331,7 @@ def register_equity_assets_from_tickers(
                 {
                     "unique_identifier": normalized["unique_identifier"],
                     "asset_type": ASSET_TYPE_EQUITY,
+                    "calendar_identifier": calendar_identifier,
                 }
                 for normalized in to_create
             ]
@@ -323,6 +354,20 @@ def register_equity_assets_from_tickers(
             ]
         )
         log.info(f"Registered {len(to_create)} new assets with their OpenFIGI details.")
+
+    # An asset registered before ms-markets 4.0.0 has no trading calendar. Link the existing
+    # ones that have none; one already on a calendar keeps it.
+    calendar_linked_figis: list[str] = []
+    existing_figis = sorted(set(already_registered_figi_by_ticker.values()))
+    if existing_figis:
+        links = AssetCalendar.link_many(
+            existing_figis, calendar_identifier=calendar_identifier, relink=False
+        )
+        calendar_linked_figis = sorted(links.linked)
+        if calendar_linked_figis:
+            log.info(
+                f"Linked {len(calendar_linked_figis)} existing assets to {calendar_identifier}."
+            )
 
     # Snapshots make assets resolvable by ticker; publish them for every mapped
     # FIGI that lacks one (covers assets created here AND assets that exist but
@@ -349,8 +394,10 @@ def register_equity_assets_from_tickers(
         log.info(f"Snapshots published: {len(snapshot_target_figis)} assets now resolvable.")
 
     return FigiAssetRegistrationResult(
+        calendar_identifier=calendar_identifier,
         registered_figi_by_ticker=dict(sorted(registered_figi_by_ticker.items())),
         already_registered_figi_by_ticker=dict(sorted(already_registered_figi_by_ticker.items())),
+        calendar_linked_figis=calendar_linked_figis,
         snapshots_published_for_figis=sorted(snapshot_target_figis),
         unmapped_tickers=sorted(unmapped_tickers),
         ambiguous_figi_candidates_by_ticker=dict(sorted(ambiguous_by_ticker.items())),

@@ -9,13 +9,7 @@ from unittest.mock import MagicMock, patch
 from metatables import TimeIndexTableRef, TimeIndexTableUpdater
 from msm_portfolios.rebalance_strategy.immediate_signal import ImmediateSignal
 
-from etfhextractor.calendars import (
-    CALENDAR_FUTURE_HORIZON_DAYS,
-    CALENDAR_PAST_BUFFER_DAYS,
-    US_EQUITY_CALENDAR_KEY,
-    ensure_trading_calendar,
-    required_calendar_window,
-)
+from etfhextractor.calendars import US_EQUITY_CALENDAR_KEY, ensure_trading_calendar
 from etfhextractor.portfolio_publish import (
     EtfTrackingPortfolioBuild,
     build_etf_tracker_unique_identifier,
@@ -67,88 +61,16 @@ def build_calendar_row(
     )
 
 
-class RequiredCalendarWindowTests(unittest.TestCase):
-    def test_window_covers_backtest_with_buffer_and_future_horizon(self) -> None:
-        start, end = required_calendar_window(backtest_start_days=60, today=TODAY)
-        self.assertEqual(start, TODAY - dt.timedelta(days=60 + CALENDAR_PAST_BUFFER_DAYS))
-        self.assertEqual(end, TODAY + dt.timedelta(days=CALENDAR_FUTURE_HORIZON_DAYS))
-
-    def test_zero_backtest_still_keeps_past_buffer(self) -> None:
-        start, _end = required_calendar_window(backtest_start_days=0, today=TODAY)
-        self.assertEqual(start, TODAY - dt.timedelta(days=CALENDAR_PAST_BUFFER_DAYS))
-
-
 class EnsureTradingCalendarTests(unittest.TestCase):
-    def test_always_open_keys_persist_a_calendar_row_for_the_obligatory_fk(self) -> None:
-        # Rebalance strategies take no calendar in ms-markets 2.x, but the Portfolio
-        # row's calendar remains obligatory (NOT NULL calendar_uid FK), so even
-        # always-open keys persist a Calendar row + dates and sessions — through
-        # set-based registry row calls, never a runtime context.
-        materialization_rows = SimpleNamespace(
-            dates=[{"local_date": TODAY}], sessions=[{"local_date": TODAY}]
-        )
-        with (
-            patch("msm.api.calendars.Calendar") as calendar_cls,
-            patch("msm.api.calendars.CalendarDate") as calendar_date_cls,
-            patch("msm.api.calendars.CalendarSession") as calendar_session_cls,
-            patch("msm.bootstrap.resolve_runtime") as resolve_runtime,
-            patch(
-                "msm.services.calendars.build_always_open_calendar_materialization",
-                return_value=materialization_rows,
-            ) as build_rows,
-            patch("msm.services.calendars.materialize_calendar_rows") as materialize,
-        ):
-            calendar_cls.filter.return_value = []
-            created = build_calendar_row(
-                valid_from=TODAY - dt.timedelta(days=90),
-                valid_to=TODAY + dt.timedelta(days=CALENDAR_FUTURE_HORIZON_DAYS),
-                source_identifier="24/7",
-            )
-            calendar_cls.upsert.return_value = created
-
-            result = ensure_trading_calendar("24/7", backtest_start_days=60, today=TODAY)
-
-        self.assertIs(result, created)
-        upsert_kwargs = calendar_cls.upsert.call_args.kwargs
-        self.assertEqual(upsert_kwargs["unique_identifier"], "24/7")
-        self.assertEqual(upsert_kwargs["source"], "always_open")
-        build_rows.assert_called_once_with(
-            calendar_uid=created.uid,
-            start_date=TODAY - dt.timedelta(days=60 + CALENDAR_PAST_BUFFER_DAYS),
-            end_date=TODAY + dt.timedelta(days=CALENDAR_FUTURE_HORIZON_DAYS),
-        )
-        calendar_date_cls.upsert_many.assert_called_once_with(materialization_rows.dates)
-        calendar_session_cls.upsert_many.assert_called_once_with(materialization_rows.sessions)
-        resolve_runtime.assert_not_called()
-        materialize.assert_not_called()
-        calendar_cls.create_from_pandas_calendar.assert_not_called()
-
-    def test_covering_always_open_calendar_is_reused_without_writes(self) -> None:
+    def test_a_stored_calendar_is_returned_without_writes(self) -> None:
         existing = build_calendar_row(
-            valid_from=TODAY - dt.timedelta(days=400),
-            valid_to=TODAY + dt.timedelta(days=400),
-            source_identifier="24/7",
+            valid_from=dt.date(1990, 1, 1),
+            valid_to=dt.date(2200, 12, 31),
         )
         with patch("msm.api.calendars.Calendar") as calendar_cls:
             calendar_cls.filter.return_value = [existing]
 
-            result = ensure_trading_calendar("24/7", backtest_start_days=60, today=TODAY)
-
-        self.assertIs(result, existing)
-        calendar_cls.upsert.assert_not_called()
-        calendar_cls.create_from_pandas_calendar.assert_not_called()
-
-    def test_covering_calendar_is_reused_without_writes(self) -> None:
-        existing = build_calendar_row(
-            valid_from=TODAY - dt.timedelta(days=400),
-            valid_to=TODAY + dt.timedelta(days=400),
-        )
-        with patch("msm.api.calendars.Calendar") as calendar_cls:
-            calendar_cls.filter.return_value = [existing]
-
-            result = ensure_trading_calendar(
-                US_EQUITY_CALENDAR_KEY, backtest_start_days=60, today=TODAY
-            )
+            result = ensure_trading_calendar(US_EQUITY_CALENDAR_KEY)
 
         self.assertIs(result, existing)
         calendar_cls.filter.assert_called_once_with(
@@ -156,50 +78,52 @@ class EnsureTradingCalendarTests(unittest.TestCase):
         )
         calendar_cls.create_from_pandas_calendar.assert_not_called()
 
-    def test_missing_calendar_is_created_from_pandas_market_calendars(self) -> None:
-        with patch("msm.api.calendars.Calendar") as calendar_cls:
-            calendar_cls.filter.return_value = []
-            created = build_calendar_row(
-                valid_from=TODAY - dt.timedelta(days=90),
-                valid_to=TODAY + dt.timedelta(days=CALENDAR_FUTURE_HORIZON_DAYS),
-            )
-            calendar_cls.create_from_pandas_calendar.return_value = created
-
-            result = ensure_trading_calendar(
-                US_EQUITY_CALENDAR_KEY, backtest_start_days=60, today=TODAY
-            )
-
-        self.assertIs(result, created)
-        kwargs = calendar_cls.create_from_pandas_calendar.call_args.kwargs
-        self.assertEqual(kwargs["source_identifier"], US_EQUITY_CALENDAR_KEY)
-        self.assertEqual(kwargs["unique_identifier"], US_EQUITY_CALENDAR_KEY)
-        self.assertEqual(
-            kwargs["valid_from"], TODAY - dt.timedelta(days=60 + CALENDAR_PAST_BUFFER_DAYS)
-        )
-        self.assertEqual(
-            kwargs["valid_to"], TODAY + dt.timedelta(days=CALENDAR_FUTURE_HORIZON_DAYS)
-        )
-
-    def test_short_calendar_window_is_extended_by_merging(self) -> None:
-        # Existing row covers a window that ends too early: the refresh must merge
-        # (never shrink) the persisted validity and keep its source mapping.
+    def test_a_stored_calendar_is_not_extended(self) -> None:
+        # ms-markets 4 stores rules and exceptions to the library's last date; a calendar that
+        # ends early is the Markets resync-calendars Job's to fix, not this helper's.
         existing = build_calendar_row(
             valid_from=TODAY - dt.timedelta(days=700),
             valid_to=TODAY + dt.timedelta(days=10),
-            source_identifier="XNYS",
         )
         with patch("msm.api.calendars.Calendar") as calendar_cls:
             calendar_cls.filter.return_value = [existing]
-            calendar_cls.create_from_pandas_calendar.return_value = existing
 
-            ensure_trading_calendar(US_EQUITY_CALENDAR_KEY, backtest_start_days=60, today=TODAY)
+            result = ensure_trading_calendar(US_EQUITY_CALENDAR_KEY)
 
-        kwargs = calendar_cls.create_from_pandas_calendar.call_args.kwargs
-        self.assertEqual(kwargs["source_identifier"], "XNYS")
-        self.assertEqual(kwargs["valid_from"], TODAY - dt.timedelta(days=700))
+        self.assertIs(result, existing)
+        calendar_cls.create_from_pandas_calendar.assert_not_called()
+
+    def test_a_missing_market_calendar_is_written_once_from_the_library(self) -> None:
+        with patch("msm.api.calendars.Calendar") as calendar_cls:
+            calendar_cls.filter.return_value = []
+            created = build_calendar_row(
+                valid_from=dt.date(1990, 1, 1), valid_to=dt.date(2200, 12, 31)
+            )
+            calendar_cls.create_from_pandas_calendar.return_value = created
+
+            result = ensure_trading_calendar(US_EQUITY_CALENDAR_KEY)
+
+        self.assertIs(result, created)
+        args = calendar_cls.create_from_pandas_calendar.call_args
+        self.assertEqual(args.args, (US_EQUITY_CALENDAR_KEY, US_EQUITY_CALENDAR_KEY))
+        self.assertNotIn("valid_from", args.kwargs)
+        self.assertNotIn("valid_to", args.kwargs)
+
+    def test_a_missing_always_open_calendar_is_written_from_the_library_24_7(self) -> None:
+        with patch("msm.api.calendars.Calendar") as calendar_cls:
+            calendar_cls.filter.return_value = []
+            created = build_calendar_row(
+                valid_from=dt.date(1990, 1, 1), valid_to=None, source_identifier="24/7"
+            )
+            calendar_cls.create_from_pandas_calendar.return_value = created
+
+            result = ensure_trading_calendar("CRYPTO_24_7")
+
+        self.assertIs(result, created)
         self.assertEqual(
-            kwargs["valid_to"], TODAY + dt.timedelta(days=CALENDAR_FUTURE_HORIZON_DAYS)
+            calendar_cls.create_from_pandas_calendar.call_args.args, ("24/7", "CRYPTO_24_7")
         )
+        calendar_cls.upsert.assert_not_called()
 
 
 class TrackerIdentifierTests(unittest.TestCase):

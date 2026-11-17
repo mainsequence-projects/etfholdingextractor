@@ -23,10 +23,14 @@ Before changing portfolio workflow code, inspect:
 1. `src/msm/models/portfolios/core.py`
 2. `src/msm/models/portfolios/groups.py`
 3. `src/msm_portfolios/models/portfolios/metadata.py`
-4. `src/msm_portfolios/data_nodes/portfolios/storage.py`
-5. `src/msm_portfolios/data_nodes/portfolios/__init__.py`
+4. `src/msm_portfolios/time_index/portfolios/storage.py`
+5. `src/msm_portfolios/time_index/portfolios/__init__.py`
 6. `docs/knowledge/msm_portfolios/portfolios/index.md`
 7. `docs/knowledge/msm/accounts/index.md`
+
+For the calendar a portfolio references (getting one, reading its sessions,
+correcting it), read
+`.agents/skills/ms_markets/calendars/calendar_workflow/SKILL.md`.
 
 For position-aware accounting, lifecycle cash flows, or portfolio valuation,
 also read:
@@ -83,6 +87,25 @@ Rules:
 - Exactly one exposure column must be present:
   `weight_notional_exposure`, `constant_notional_exposure`, or
   `single_asset_quantity`.
+
+## Retiring A Portfolio
+
+Account history is never rewritten to remove a portfolio (ADR 0049). Target
+snapshots and virtual funds reference `PortfolioTable` with `RESTRICT`; do not
+delete them, relax those foreign keys, or delete a portfolio that accounts
+referenced. Retire it instead:
+
+- `MarketsClient.portfolio_account_targets(uid)`
+  (`GET /api/v1/portfolio/{uid}/account-targets/`) lists the accounts whose
+  current target names the portfolio. Write their targets without it first.
+- `MarketsClient.retire_portfolio(uid)` (`POST /api/v1/portfolio/{uid}/retire/`)
+  sets `Portfolio.retired_at`; it is refused while that list is not empty.
+  `reinstate_portfolio(uid)` clears it.
+- While retired, no target snapshot may name the portfolio, whatever its date,
+  no virtual-fund holdings are written for it from `retired_at` on, lists and
+  target search hide it unless `include_retired=true`, and the portfolio
+  updaters write nothing dated at or after `retired_at`.
+- Delete a portfolio only when nothing references it.
 
 ## Portfolio Group Boundary
 
@@ -141,8 +164,34 @@ msm.start_engine(
 )
 ```
 
+Before `InterpolatedPrices` runs, every asset it prices must be linked to a
+stored calendar (ADR 0056):
+
+```python
+from msm.api.assets import AssetCalendar
+
+result = AssetCalendar.link_many(
+    [asset.unique_identifier for asset in assets],
+    calendar_uid=calendar.uid,
+)
+assert not result.unknown
+```
+
+One call links them all in one transaction. Do not loop over
+`AssetCalendar.upsert`.
+
+- There is no default calendar. An asset with no `AssetCalendar` link fails the
+  whole price update, and the error names it. Link the asset; do not catch the
+  error.
+- The `asset_list` of `InterpolatedPricesConfig` holds identifiers only. A
+  `calendar` key in a scope mapping is refused.
+- A `CalendarEventSignal` must use the calendar of `Portfolio.calendar_uid`.
+  `PortfoliosUpdater` refuses to run when its `calendar_identifier` names another
+  calendar.
+- Attach `AssetCalendar` in the runtime models where price updates run.
+
 Example workflows should stay chainable. The reusable portfolio example exposes
-`build_equal_weight_portfolio(run_data_nodes=True, runtime_models=None)` so
+`build_equal_weight_portfolio(run_updaters=True, runtime_models=None)` so
 other examples can pass a superset model list and avoid starting a second
 incompatible runtime.
 
@@ -150,7 +199,7 @@ The equal-weight example uses contributed `InterpolatedPrices`, whose output
 storage is a dynamic `PlatformTimeIndexMetaTable` keyed from the source
 `TimeIndexMetaTable` UID and cadence. That schema preparation belongs to
 `msm_portfolios.contrib.prices`; it is not portfolio core registration and it
-does not mean `PortfoliosDataNode` may construct prices internally. For the
+does not mean `PortfoliosUpdater` may construct prices internally. For the
 example, prepare that interpolation storage before the normal run:
 
 ```bash
@@ -175,13 +224,13 @@ SignalWeights --------------------+
 calendar events / execution bars -+           |
 execution valuations --------------+           |
                                                v
-valuation source ----------------------> PortfoliosDataNode --> PortfoliosStorage
+valuation source ----------------------> PortfoliosUpdater --> PortfoliosStorage
                                                                |
                                                                v
                                                      optional PortfolioAnalytics
 ```
 
-`PortfoliosDataNode` must not construct `InterpolatedPrices` from
+`PortfoliosUpdater` must not construct `InterpolatedPrices` from
 `AssetsConfiguration`/`PricesConfiguration`. If persistent interpolation is
 needed, prepare or attach the interpolation node first and pass it as
 `PortfolioBuildConfiguration.valuation_source_instance`. Keep any local
@@ -224,11 +273,11 @@ Rules:
 - `InterpolatedPrices.dependencies()` must expose the resolved source price
   object in both cases.
 - Persistent interpolation belongs to `msm_portfolios.contrib.prices`, not to
-  `PortfoliosDataNode`.
+  `PortfoliosUpdater`.
 - `PortfolioWeights.dependencies()` exposes `signal_weights` and the explicit
   execution valuation source. It owns event selection, signal cutoff, previous
   executed state, and `PortfolioWeightsStorage` production.
-- `PortfoliosDataNode.dependencies()` exposes canonical `portfolio_weights` and
+- `PortfoliosUpdater.dependencies()` exposes canonical `portfolio_weights` and
   `valuation_source`. Signal weights are a transitive execution dependency, not
   a direct valuation dependency.
 - `ImmediateSignal` executes only at original signal observation timestamps.
@@ -236,8 +285,12 @@ Rules:
   persisted market open or close. Its calendar identifier, session label,
   event, offset, cadence, signal selection, and execution valuation convention
   are hash-bearing configuration. The calendar identifier is required and must
-  resolve to persisted `CalendarSession` rows; missing, ambiguous, or failed
+  be the `unique_identifier` of a stored `Calendar`; a `source_identifier` does
+  not name one. Sessions are computed from the calendar's `CalendarSessionRule`
+  and `CalendarException` rows with `Calendar.sessions(...)`. Missing or failed
   governed lookups must not fall back to a local pandas or synthetic calendar.
+  A window outside the calendar's `valid_from`..`valid_to` raises
+  `CalendarRangeError`.
 - `TimeWeighted` and `VolumeParticipation` are not supported public strategies
   until their bar-driven execution implementations are complete.
 - The authoritative portfolio universe is the signal output frame. A signal
@@ -279,14 +332,14 @@ Rules:
 - Repair legacy midnight-indexed `PortfoliosStorage` rows only through a
   dry-run-validated, `portfolio_identifier`-scoped inclusive tail delete using
   `TimeIndexMetaTable.delete_after_date(...)`, followed immediately by a
-  deterministic portfolio replay. Require persisted `CalendarSession` and
-  historical `close_time` agreement, prove the inspection reaches the latest
-  stored row, and apply one portfolio at a time. Never update indexed
-  coordinates in place or use raw SQL.
-- `PortfoliosDataNode.run(..., update_pointers=True)` is the default portfolio
+  deterministic portfolio replay. Require agreement between the session closes
+  computed from the stored calendar and the historical `close_time`, prove the
+  inspection reaches the latest stored row, and apply one portfolio at a time.
+  Never update indexed coordinates in place or use raw SQL.
+- `PortfoliosUpdater.run(..., update_pointers=True)` is the default portfolio
   workflow behavior. After the graph publishes, it must upsert the resolved
-  `PortfolioTable` row with `signal_uid`, `signal_weights_data_node_uid`,
-  `portfolio_weights_data_node_uid`, and `portfolio_data_node_uid`. Examples
+  `PortfolioTable` row with `signal_uid`, `signal_weights_table_update_uid`,
+  `portfolio_weights_table_update_uid`, and `portfolio_table_update_uid`. Examples
   should not perform this final pointer upsert manually.
 - Rerunning before a new execution event or valuation observation must return an
   empty incremental update. Job run time is never an economic timestamp.
@@ -300,6 +353,10 @@ Contributed signal rules:
 
 - `FixedWeightsConfig` must not require asset/price configuration for portfolio
   core behavior.
+- Weights a provider receives (not computes) use `ApplicationWeights` bound to the
+  provider's `SignalWeightsTS` instance; do not write a provider signal class for
+  them. Its identity is `ApplicationWeightsConfig(provider, key)`, never the weights;
+  `publish` refuses unknown assets and observations at or before the last stored time.
 - External weights and market-cap signals must receive their asset universe or
   market-data dependencies explicitly.
 - ETF replication must expose both basket and ETF price sources explicitly.
@@ -315,7 +372,7 @@ from portfolio core or contributed signals.
 
 Use `PortfolioEngine` only when the portfolio needs instrument quantities,
 currency balances, obligations, or position-driven lifecycle events. Preserve
-`PortfoliosDataNode` as the unchanged default when accounting configuration is
+`PortfoliosUpdater` as the unchanged default when accounting configuration is
 omitted or explicitly `None`.
 
 A Portfolio is a backtest model. It has no Account and must not ingest broker
@@ -353,16 +410,13 @@ or the ADR.
 ```python
 from msm.api.calendars import Calendar
 from msm.api.portfolios import Portfolio
-from msm.data_nodes.accounts import TargetPositions
+from msm.time_index.accounts import TargetPositions
 from msm.services import build_target_positions_frame
 
 calendar = Calendar.create_from_pandas_calendar(
-    source_identifier="24/7",
-    unique_identifier="EXAMPLE_CRYPTO_24_7",
+    "24/7",
+    "EXAMPLE_CRYPTO_24_7",
     display_name="Example Crypto 24/7",
-    valid_from="2026-05-25",
-    valid_to="2026-05-25",
-    timezone="UTC",
 )
 portfolio_sleeve = Portfolio.upsert(
     unique_identifier="example-sleeve",
@@ -414,15 +468,15 @@ the account target-position table.
 For explicit portfolio valuation-source changes, run:
 
 ```bash
-uv run --extra portfolios --extra dev ruff check src/msm_portfolios/configuration.py src/msm_portfolios/data_nodes/portfolios src/msm_portfolios/contrib/signals examples/msm_portfolios tests/msm_portfolios/data_nodes/test_portfolio_contracts.py
-uv run --extra portfolios --extra dev pytest tests/msm_portfolios/data_nodes/test_portfolio_contracts.py tests/msm_portfolios/examples/test_equal_weight_portfolio_schema.py tests/msm_portfolios/configuration/test_prices_configuration.py
+uv run --extra portfolios --extra dev ruff check src/msm_portfolios/configuration.py src/msm_portfolios/time_index/portfolios src/msm_portfolios/contrib/signals examples/msm_portfolios tests/msm_portfolios/time_index/test_portfolio_contracts.py
+uv run --extra portfolios --extra dev pytest tests/msm_portfolios/time_index/test_portfolio_contracts.py tests/msm_portfolios/examples/test_equal_weight_portfolio_schema.py tests/msm_portfolios/configuration/test_prices_configuration.py
 uv run --extra portfolios --extra dev mkdocs build --strict --site-dir /private/tmp/msmarkets-docs-site
 ```
 
 For position-aware accounting changes, also run:
 
 ```bash
-uv run --extra portfolios --extra dev ruff check src/msm_portfolios/accounting src/msm_portfolios/data_nodes/portfolios examples/msm_portfolios tests/msm_portfolios/accounting
+uv run --extra portfolios --extra dev ruff check src/msm_portfolios/accounting src/msm_portfolios/time_index/portfolios examples/msm_portfolios tests/msm_portfolios/accounting
 uv run --extra portfolios --extra dev pytest tests/msm_portfolios/accounting/test_accounting.py
 uv run --extra portfolios python examples/msm_portfolios/portfolio_cashflows_and_fx_valuation_example.py
 uv run --extra portfolios python examples/msm_portfolios/portfolio_custom_cashflow_model_example.py
@@ -432,6 +486,6 @@ uv run --extra portfolios python examples/msm_portfolios/portfolio_perpetual_fun
 For portfolio target-position changes, run:
 
 ```bash
-uv run --extra dev ruff check src/msm/data_nodes/accounts src/msm/services/target_positions.py tests/msm/data_nodes/test_target_positions_contracts.py
-uv run --extra dev pytest tests/msm/data_nodes/test_target_positions_contracts.py tests/msm_portfolios/models/test_model_graph.py
+uv run --extra dev ruff check src/msm/time_index/accounts src/msm/services/target_positions.py tests/msm/time_index/test_target_positions_contracts.py
+uv run --extra dev pytest tests/msm/time_index/test_target_positions_contracts.py tests/msm_portfolios/models/test_model_graph.py
 ```

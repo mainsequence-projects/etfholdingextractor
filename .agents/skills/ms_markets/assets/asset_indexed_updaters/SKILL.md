@@ -1,6 +1,6 @@
 ---
-name: mainsequence-markets-asset-indexed-data-nodes
-description: Use this skill when creating, extending, reviewing, or documenting ms-markets AssetIndexedDataNode implementations, especially timestamped market tables keyed by (time_index, asset_identifier). This skill owns ms-markets asset identity conventions, AssetTable foreign keys, namespace behavior, output metadata, and frame insertion patterns. It does not own the full Main Sequence TimeIndexTableUpdater lifecycle, orchestration, hashing theory, scheduling, or generic TimeIndexTableUpdater API behavior.
+name: mainsequence-markets-asset-indexed-updaters
+description: Use this skill when creating, extending, reviewing, or documenting ms-markets AssetIndexedUpdater implementations, especially timestamped market tables keyed by (time_index, asset_identifier). This skill owns ms-markets asset identity conventions, AssetTable foreign keys, namespace behavior, output metadata, and frame insertion patterns. It does not own the full Main Sequence TimeIndexTableUpdater lifecycle, orchestration, hashing theory, scheduling, or generic TimeIndexTableUpdater API behavior.
 ---
 
 # Main Sequence Markets Asset-Indexed TimeIndexTableUpdaters
@@ -12,7 +12,7 @@ legs, and canonical Index values to the derived-index workflow skill.
 
 Use this skill for the ms-markets layer on top of Main Sequence `TimeIndexTableUpdater`s.
 
-An `AssetIndexedDataNode` is still a Main Sequence `TimeIndexTableUpdater`. The base SDK owns
+An `AssetIndexedUpdater` is still a Main Sequence `TimeIndexTableUpdater`. The base SDK owns
 generic behavior such as storage and update hashes, execution, update statistics,
 dependencies, persistence, and scheduling. This skill only owns the markets
 conventions added around asset identity.
@@ -78,17 +78,17 @@ guessing.
 
 Before changing code, inspect the current local implementation:
 
-1. `src/msm/data_nodes/assets/asset_indexed.py`
-2. `src/msm/data_nodes/assets/snapshots.py`
-3. `src/msm/data_nodes/assets/storage.py`
-4. `src/msm/data_nodes/utils/stamped.py`
-5. `src/msm/data_nodes/indices/timestamped.py`
+1. `src/msm/time_index/assets/asset_indexed.py`
+2. `src/msm/time_index/assets/snapshots.py`
+3. `src/msm/time_index/assets/storage.py`
+4. `src/msm/time_index/utils/stamped.py`
+5. `src/msm/time_index/indices/timestamped.py`
 6. `src/msm/settings.py`
-7. `docs/knowledge/msm/assets/asset_indexed_data_nodes.md`
+7. `docs/knowledge/msm/assets/asset_indexed_updaters.md`
 8. `docs/knowledge/msm/migrations/index.md`
 
 For generic SDK behavior, verify against the latest Main Sequence TimeIndexTableUpdater docs
-and the `mainsequence-data-nodes` skill.
+and the `metatables-time-index-table-updates` skill.
 
 ## Core Contract
 
@@ -96,7 +96,7 @@ Default asset-indexed time series tables use this shape:
 
 ```text
 +-----------------------------+      source-table FK       +-----------------------------+
-| AssetIndexedDataNode table  |--------------------------->| AssetTable                  |
+| AssetIndexedUpdater table   |--------------------------->| AssetTable                  |
 |-----------------------------| asset_identifier           |-----------------------------|
 | time_index           index  |                            | uid                         |
 | asset_identifier     index  |                            | unique_identifier unique    |
@@ -120,8 +120,8 @@ Rules:
 
 Use a storage-first pattern. The SQLAlchemy storage class owns table identity,
 columns, dtypes, indexes, labels, descriptions, nullability, and the asset
-foreign key. `AssetIndexedDataNodeConfiguration` and
-`AssetDataNodeConfiguration` carry update-scoped fields such as `asset_list`;
+foreign key. `AssetIndexedUpdaterConfiguration` and
+`AssetUpdaterConfiguration` carry update-scoped fields such as `asset_list`;
 they do not declare records, table metadata, time-index names, index names,
 dtype maps, nullability maps, or foreign keys.
 
@@ -160,9 +160,9 @@ from sqlalchemy import DateTime, Float, ForeignKey, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from msm.base import MarketsBase, MarketsTimeIndexMetaTableMixin
-from msm.data_nodes.assets import (
-    AssetDataNodeConfiguration,
-    AssetTimestampedDataNode,
+from msm.time_index.assets import (
+    AssetUpdaterConfiguration,
+    AssetTimestampedUpdater,
 )
 from msm.models.assets.core import AssetTable
 
@@ -200,11 +200,11 @@ class ExampleAssetMetricStorage(MyProjectMarketsStorageMixin, MarketsBase):
     )
 
 
-class ExampleAssetMetricConfiguration(AssetDataNodeConfiguration):
+class ExampleAssetMetricConfiguration(AssetUpdaterConfiguration):
     pass
 
 
-class ExampleAssetMetric(AssetTimestampedDataNode):
+class ExampleAssetMetric(AssetTimestampedUpdater):
     configuration_class = ExampleAssetMetricConfiguration
 
     @classmethod
@@ -225,11 +225,11 @@ the old updater-side foreign-key or records pattern.
 ## TimeIndexTableUpdater Class Pattern
 
 For timestamped asset fact nodes, use the local timestamped base from
-`src/msm/data_nodes/assets/snapshots.py`. The node class should be thin and
+`src/msm/time_index/assets/snapshots.py`. The node class should be thin and
 storage-bound:
 
 ```python
-class ExampleAssetMetric(AssetTimestampedDataNode):
+class ExampleAssetMetric(AssetTimestampedUpdater):
     configuration_class = ExampleAssetMetricConfiguration
 
     @classmethod
@@ -259,14 +259,14 @@ Do not create free-floating service functions when the behavior naturally
 belongs to the TimeIndexTableUpdater class.
 
 The timestamped frame/config mechanics are shared in
-`src/msm/data_nodes/utils/stamped.py`. Keep new asset and index timestamped nodes
+`src/msm/time_index/utils/stamped.py`. Keep new asset and index timestamped nodes
 on that base instead of copying validation, storage-schema lookup, namespace, or
 `datetime64[ns, UTC]` normalization logic. Asset-specific TimeIndexTableUpdaters belong under
-`src/msm/data_nodes/assets/`, and index-specific TimeIndexTableUpdaters belong under
-`src/msm/data_nodes/indices/`. Non-model-specific helpers belong under
-`src/msm/data_nodes/utils/`. For timestamped facts keyed to `IndexTable`, use
-`IndexTimestampedDataNode` and `IndexDataNodeConfiguration` from
-`src/msm/data_nodes/indices/timestamped.py`; the only intended difference is the
+`src/msm/time_index/assets/`, and index-specific TimeIndexTableUpdaters belong under
+`src/msm/time_index/indices/`. Non-model-specific helpers belong under
+`src/msm/time_index/utils/`. For timestamped facts keyed to `IndexTable`, use
+`IndexTimestampedUpdater` and `IndexUpdaterConfiguration` from
+`src/msm/time_index/indices/timestamped.py`; the only intended difference is the
 canonical source-table foreign key target.
 
 ## Namespaces And Identifiers
@@ -277,8 +277,8 @@ Use one rule for markets MetaTables and markets TimeIndexTableUpdaters:
   `asset_snapshots`
 - when `MSM_AUTO_REGISTER_NAMESPACE` is set to a non-default namespace, prefix
   logical identifiers with that namespace
-- use `markets_data_node_identifier(...)` for TimeIndexTableUpdater identifiers
-- let `AssetIndexedDataNode` apply the default markets `hash_namespace`
+- use `markets_identifier(...)` for TimeIndexTableUpdater identifiers
+- let `AssetIndexedUpdater` apply the default markets `hash_namespace`
 - pass explicit `hash_namespace` only for tests, isolated experiments, or
   parallel runs that must not collide
 
@@ -292,6 +292,22 @@ from the storage MetaTable identifier through `_required_output_table()`.
 
 `asset_list` is updater scope. It must not define the storage identity of the
 published dataset.
+
+A scope names assets and nothing else. It never carries a calendar:
+
+- `InterpolatedPrices` refuses a scope mapping with a `calendar` key.
+- An asset's trading calendar is its stored `AssetCalendar` link. Link many
+  assets in one call with
+  `AssetCalendar.link_many(asset_identifiers, calendar_identifier="NYSE")`, or
+  name the calendar when the asset is registered
+  (`Asset.upsert_many([{..., "calendar_identifier": "NYSE"}])`). Every asset in
+  the scope of a price interpolation must have a link; an unlinked asset fails
+  the whole run and is named in the error. There is no default calendar.
+  `AssetCalendar.unlinked_assets()` lists the assets that have none.
+- `time_index` is the time of observation. A price source stamps each bar at its
+  end, a daily bar at its session close, with the open in `open_time`. A bar
+  stamped at its open is not handled; a source that receives such bars shifts
+  them to the close itself.
 
 Asset-scoped configuration has two categories:
 
@@ -310,7 +326,7 @@ from pydantic import Field
 from metatables import TimeIndexTableUpdateConfig
 
 
-class AssetIndexedDataNodeConfiguration(TimeIndexTableUpdateConfig):
+class AssetIndexedUpdaterConfiguration(TimeIndexTableUpdateConfig):
     asset_list: list | None = Field(
         default=None,
         description=(
@@ -399,14 +415,14 @@ representations of an asset.
 
 Before marking work complete:
 
-- Timestamped asset fact nodes subclass `AssetTimestampedDataNode`; lower-level
-  custom nodes subclass `AssetIndexedDataNode` only when they genuinely need a
+- Timestamped asset fact nodes subclass `AssetTimestampedUpdater`; lower-level
+  custom nodes subclass `AssetIndexedUpdater` only when they genuinely need a
   non-stamped update path.
 - The storage table subclasses `PlatformTimeIndexMetaTable` through
   `MarketsTimeIndexMetaTableMixin`.
 - The storage table has an intention-rich `__metatable_description__`.
-- The config subclasses `AssetIndexedDataNodeConfiguration` or
-  `AssetDataNodeConfiguration`.
+- The config subclasses `AssetIndexedUpdaterConfiguration` or
+  `AssetUpdaterConfiguration`.
 - The storage table declares `time_index`, `asset_identifier`, and all value
   columns.
 - The storage time index is timezone-aware and frames normalize to

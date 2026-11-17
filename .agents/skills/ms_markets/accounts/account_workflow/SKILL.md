@@ -23,9 +23,11 @@ Use these adjacent skills when the task crosses their boundary:
 - Asset identity and asset detail rows:
   `.agents/skills/ms_markets/assets/asset_model_extension/SKILL.md`
 - Asset-indexed TimeIndexTableUpdater conventions:
-  `.agents/skills/ms_markets/assets/asset_indexed_data_nodes/SKILL.md`
+  `.agents/skills/ms_markets/assets/asset_indexed_updaters/SKILL.md`
 - Portfolio construction examples and portfolio calculation workflows:
   `.agents/skills/ms_markets/portfolios/portfolio_workflow/SKILL.md`
+- Calendars: getting, reading and correcting one:
+  `.agents/skills/ms_markets/calendars/calendar_workflow/SKILL.md`
 - Bootstrap/catalog registration:
   `.agents/skills/ms_markets/platform/bootstrap_registration/SKILL.md`
 
@@ -36,8 +38,8 @@ Before changing account code, inspect:
 1. `src/msm/models/accounts/core.py`
 2. `src/msm/models/accounts/groups.py`
 3. `src/msm/api/accounts.py`
-4. `src/msm/data_nodes/accounts/__init__.py`
-5. `src/msm/data_nodes/accounts/storage.py`
+4. `src/msm/time_index/accounts/__init__.py`
+5. `src/msm/time_index/accounts/storage.py`
 6. `src/msm/services/holdings.py`
 7. `src/msm/services/target_positions.py`
 8. `examples/msm/accounts/account_portfolio_full_workflow.py`
@@ -109,6 +111,30 @@ Rules:
   publisher. It is not the allocation policy engine.
 - TimeIndexTableUpdaters do not fabricate bootstrap rows. Attach a real frame or implement a
   real source-specific `update()`.
+- Account history is never removed from an account that stays (ADR 0049).
+  `AccountHoldingsSet`, `AccountTargetAllocation`, `PositionSet`, `VirtualFund` and
+  `VirtualFundHoldingsSet` raise `MarketsOperationUnsupported` from `delete` under both
+  backends and delete nothing; a test double for them should refuse the same way. The only
+  delete is the whole account: `Account.delete(uid)` / `Account.bulk_delete(uids=...)`
+  or `DELETE /api/v1/account/{uid}/` remove the account with its orders, trades and
+  their order events, order managers, virtual funds, targets and holdings in one
+  transaction (ADR 0050). Preflight a selection with
+  `POST /api/v1/account/bulk-delete/preflight/`. Markets sends deletes only to its own
+  tables; another application's table loses rows only through its own `CASCADE` key,
+  and its `RESTRICT` key refuses the delete.
+- A connector registers a brokerage account, and syncs its holdings, with one call:
+  `MarketsClient.register_account(...)` (`POST /api/v1/account/registration/`, ADR
+  0051). In one transaction it creates the missing asset types, assets and cash currency
+  asset, writes changed asset snapshots, creates or updates the account and writes the
+  holdings snapshot. Don't chain `Asset.upsert`, `AssetSnapshots.publish`,
+  `Account.upsert` and `AccountHoldingsSnapshots.publish` for this. The call is
+  idempotent on `(account.unique_identifier, holdings_date)`. It never changes an
+  existing asset's `asset_type`; a different type is a conflict. Give each asset its
+  `calendar_identifier`, the `unique_identifier` of its stored trading calendar: an
+  asset with no trading calendar is linked in the same transaction, and one that has a
+  calendar keeps it (ADR 0057). The calendar must exist first; an unknown one refuses
+  the call. A provider sidecar is
+  written afterwards by the provider, with the returned account uid.
 
 ## Runtime Attachment
 
@@ -124,8 +150,8 @@ msm.start_engine(
         "AssetType",
         "Asset",
         "Calendar",
-        "CalendarDate",
-        "CalendarSession",
+        "CalendarSessionRule",
+        "CalendarException",
         "IndexType",
         "Index",
         "AssetSnapshotsStorage",
@@ -162,7 +188,7 @@ contributed interpolation output storage needed by the reusable equal-weight
 portfolio example, chains that portfolio workflow, reuses the resulting
 `Portfolio` row, and assigns that portfolio UID as one of the account target
 positions. This preparation is not portfolio core registration:
-`PortfoliosDataNode` must still consume an explicit
+`PortfoliosUpdater` must still consume an explicit
 `PortfolioBuildConfiguration.valuation_source_instance` and configured
 `valuation_column`. The same full workflow can be extended with a dry-run
 account virtual-fund allocation plan using
@@ -180,26 +206,66 @@ contributed interpolation output table has already been migrated.
 ## Virtual-Fund Allocation Pattern
 
 Use `plan_account_virtual_fund_allocations(...)` to compute allocation before
-writing. The canonical workflow takes exactly the service inputs from ADR 0029:
-`position_set_uid`, `valuation_time`, `valuation_asset_uid`,
-`holdings_selection_policy`, `valuation_resolver`, and `allocation_policy`.
+writing (ADR 0053, ADR 0054). It takes `position_set_uid`, `valuation_time`,
+`sized_targets` and an optional `policy` (`{"id", "version", "arguments"}`);
+without one, `proportional_attribution` runs with its defaults.
+
+The account target states exposure: a portfolio row holds
+`weight_notional_exposure` (a share of NAV) or `constant_notional_exposure` (an
+amount), never units. Writing it creates the `VirtualFund`. The caller sizes each
+exposure into units with its own prices and passes them as `sized_targets`:
+`{"target_type", "target_uid", "positions": [{"asset_uid", "quantity",
+"direction"}]}`. The planner takes no price, NAV or valuation. See
+`.agents/skills/ms_markets/accounts/target_sizing/SKILL.md`.
 Do not expose repository context, raw account UID, raw holdings-set UID, raw
-source holdings, raw target demands, scan limits, or input-resolver callbacks
-as public planner arguments. Internal vector helpers may use already-resolved
-frames for tests, but examples and user workflows must use the canonical
-planner inputs.
+source holdings, raw target demands or scan limits as public planner arguments.
+Internal helpers such as `plan_from_inputs(...)` may use already-resolved inputs
+for tests, but examples and user workflows must use the canonical planner
+inputs.
 
-The default policy is `proportional_attribution`: virtual-fund claims consume
-the asset-level gross source capacity first, and the direct account sleeve is
-the residual. `strict_feasible` is a validation mode that fails when
-virtual-fund demand exceeds source capacity.
+A plan has one line per owner and asset, where the owner is a virtual fund or
+the direct account sleeve: `target`, `assigned` and `delta = target - assigned`.
+A positive delta means units are missing; a negative one means more units than
+the target asks for. `account_deltas` gives each asset's total target minus what
+the account holds. A plan has no status and no deficits list; a shortfall is a
+positive delta.
 
-Valuation is supplied through a valuation resolver protocol. The resolver uses
-`valuation_asset_uid` as an `AssetTable.uid`, receives
-`requested_metrics=("nav",)`, and returns totals plus optional
-per-line valuation output. For notional target rows, it must also return
-`target_quantity_demands` so the planner can allocate by signed quantities. Do
-not pass ISO codes, tickers, or hidden global pricing state into the planner.
+`valuation_time` selects the holdings capture exactly; the `PositionSet` is used
+as passed and is in force from its own time on. To attribute a capture taken
+after the target was written, pass the capture's time and the earlier
+`position_set_uid`. A `PositionSet` written after `valuation_time` is refused.
+
+An application that reaches ms-markets only through the Markets API writes and
+reads the target with `add_account_target_positions`, `account_target_positions`
+and `clear_account_target_positions`; an empty target clears it and leaves an
+empty snapshot in its history. A target that names a retired portfolio is refused
+(`MarketsConflictError`). It allocates with
+`virtual_fund_allocation_policies`, `virtual_fund_allocation_policy`,
+`plan_account_virtual_funds` and `allocate_account_virtual_funds`. The allocate
+route plans again and writes in one transaction; it never accepts a plan from
+the client. It writes no fund for a portfolio retired at or before the
+snapshot's time (ADR 0049). `holdings/by-fund/` reads what was written.
+
+`apply_account_virtual_fund_allocation_plan(plan)` writes, in one transaction,
+one holdings set for every fund of the target, each fund's assigned holdings
+rows, and the allocation's lines in `AccountAllocationLinesStorage`. A line is
+one owner and one asset, where the owner is a fund or the account's direct part:
+it stores the sized target (`target_quantity`, `target_direction`) and the
+assigned units (`assigned_quantity`, `assigned_direction`), so the delta is read
+from it. A fund the account holds nothing of has its lines with nothing
+assigned. `account_virtual_fund_allocation(account_uid)` reads the lines of a
+sync back. An applied allocation is account history: the same plan again
+writes nothing (`already_applied`), and a different allocation of the same
+snapshot is refused (`allocation_exists`). A correction is a new holdings
+snapshot.
+
+The registry has one policy, `proportional_attribution`: every fund's claim on
+an asset is filled in the same proportion, the holding divided by the funds'
+total claims, capped at one; the direct account sleeve keeps the rest. Its one
+argument, `quantity_tolerance`, has a default. A shortfall is not refused:
+refusing it is the provider's decision, made by planning first and allocating
+only when no delta is positive. Policies are described from the class that
+validates their arguments; never hand-write a policy's schema.
 
 Use `virtual_fund_unique_identifier_for_target(...)` for deterministic
 VirtualFund business keys. The key must be based on account, target portfolio,
@@ -222,9 +288,9 @@ from msm.api.accounts import (
     PositionSet,
 )
 from msm.api.assets import Asset, AssetType
-from msm.data_nodes.accounts import AccountHoldings
-from msm.data_nodes.accounts import TargetPositions
-from msm.data_nodes.assets import AssetSnapshot
+from msm.time_index.accounts import AccountHoldings
+from msm.time_index.accounts import TargetPositions
+from msm.time_index.assets import AssetSnapshot
 from msm.services import build_account_holdings_frame
 from msm.services import build_target_positions_frame
 from msm.api.portfolios import Portfolio
@@ -408,6 +474,8 @@ and uses `extra_details["ticker"]` when available.
 
 - `msm.accounts` compatibility shims.
 - `AccountTargetPositionAssignmentTable`.
+- Deletes of single virtual funds, target allocations, position sets or holdings sets
+  (`delete_virtual_fund`, `delete_account_target_allocation`, `delete_position_set`).
 - Account allocation-model references directly on `AccountTable`.
 - Fake schema-bootstrap rows or placeholder holdings.
 - updater-side dtype, nullable, index-name, or FK mirrors.
@@ -419,8 +487,8 @@ and uses `extra_details["ticker"]` when available.
 For account changes, run at least:
 
 ```bash
-uv run --extra dev ruff check src/msm/api/accounts.py src/msm/models/accounts src/msm/data_nodes/accounts src/msm/services/holdings.py src/msm/services/target_positions.py examples/msm/accounts
-uv run --extra dev pytest tests/msm/api/test_rows.py tests/msm/data_nodes/test_contracts.py tests/msm/data_nodes/test_target_positions_contracts.py tests/msm/models/test_metatable_models.py
+uv run --extra dev ruff check src/msm/api/accounts.py src/msm/models/accounts src/msm/time_index/accounts src/msm/services/holdings.py src/msm/services/target_positions.py examples/msm/accounts
+uv run --extra dev pytest tests/msm/api/test_rows.py tests/msm/time_index/test_contracts.py tests/msm/time_index/test_target_positions_contracts.py tests/msm/models/test_metatable_models.py
 uv run --extra dev mkdocs build --strict --site-dir /private/tmp/msmarkets-docs-site
 git diff --check
 ```

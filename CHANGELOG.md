@@ -3,6 +3,40 @@
 All notable changes to `etfhextractor` are recorded here. Earlier releases are described by
 their Git tags and by the implementation tasks in `docs/implementation_task/`.
 
+## [0.6.0] - 2026-11-17
+
+Moves to ms-markets 4.0.1, which stores calendars as rules and exceptions (ms-markets ADR 0055)
+and refuses a price update for an asset with no trading calendar (ms-markets ADR 0056, 0057).
+Every asset this package registers now gets one. The calendar helpers and the registration
+signature change.
+
+### Changed
+
+- Require `ms-markets>=4.0.1,<5`; `uv.lock` and `requirements.txt` resolve ms-markets 4.0.1 and
+  mainsequence-metatable 0.1.67. 4.0.0 removed `CalendarDate`, `CalendarSession` and the
+  always-open materialization this package called, so no release before 4.0.1 works.
+- `ensure_trading_calendar(calendar_key)` returns the stored calendar with one `Calendar.filter`
+  and writes a missing one once with `Calendar.create_from_pandas_calendar(<library>, <key>)`,
+  from the library's `24/7` calendar for `24/7` and `CRYPTO_24_7`. It no longer extends a
+  calendar: a stored calendar reaches the library's last date, and moving it to a newer library
+  release is the Markets deployment's `resync-calendars` Job.
+- `register_equity_assets_from_tickers` takes a required `calendar_identifier`: each asset it
+  creates names that calendar in its `Asset.upsert_many` payload, and the assets already
+  registered are linked with one `AssetCalendar.link_many(..., relink=False)`, which keeps a
+  calendar already chosen. The calendar is written first when it is missing. The result gains
+  `calendar_identifier` and `calendar_linked_figis`.
+- `portfolio-publish` and `build_etf_tracking_portfolio` register missing components on their
+  `calendar_key`; `category-sync` takes `--calendar-key` (default `NYSE`).
+- On the runtime backend a portfolio publish attaches `CalendarSessionRuleTable`,
+  `CalendarExceptionTable` and `AssetCalendarTable` in place of the date and session tables.
+- `.agents/skills/ms_markets` is copied from ms-markets 4.0.1 (it was 2.2.10) and has the
+  calendar workflow skill.
+
+### Removed
+
+- `required_calendar_window`, `CALENDAR_PAST_BUFFER_DAYS`, `CALENDAR_FUTURE_HORIZON_DAYS`, and the
+  `backtest_start_days` and `today` arguments of `ensure_trading_calendar`.
+
 ## [0.5.6] - 2026-11-16
 
 Moves the lock to ms-markets 3.8.1 and gives the example's weights instances the series-leading

@@ -1,6 +1,6 @@
 # ADR 0006: Tracking Portfolios Follow a Persisted Trading Calendar and Backtest a Bootstrap Window
 
-- Status: Accepted; amended 2026-10-01 for ms-markets 2.x and 2026-10-26 for ms-markets 3.0 (see Amendments)
+- Status: Accepted; amended 2026-10-01 for ms-markets 2.x, 2026-10-26 for ms-markets 3.0 and 2026-11-17 for ms-markets 4.0 (see Amendments)
 - Date: 2026-06-10
 
 ## Context
@@ -137,3 +137,28 @@ always-open calendars write their dates and sessions with `CalendarDate.upsert_m
 `CalendarSession.upsert_many` on the same conflict keys as `materialize_calendar_rows`, which is
 no longer called. The default IVV/ishares signal uid still computes offline to
 `495a8b180d0a216e563cd3f83316da7f` on ms-markets 3.0.0.
+
+## Amendment (2026-11-17): ms-markets 4.0, stored calendars and asset calendar links
+
+ms-markets 4.0.0 stores a calendar as session rules and exceptions written to the last date
+pandas-market-calendars can answer for, and removes `CalendarDate`, `CalendarSession` and the
+always-open materialization (ms-markets ADR 0055). It also links every asset to its trading
+calendar, `AssetCalendar`, and refuses a price update for an asset without a link (ms-markets
+ADR 0056); 4.0.1 lets a registration name the calendar (ms-markets ADR 0057).
+
+- `ensure_trading_calendar(calendar_key)` no longer computes a window or extends a calendar:
+  `required_calendar_window`, `CALENDAR_PAST_BUFFER_DAYS`, `CALENDAR_FUTURE_HORIZON_DAYS` and the
+  `backtest_start_days` and `today` arguments are removed. It returns the stored calendar, and
+  writes a missing one once with `Calendar.create_from_pandas_calendar(<library>, <key>)`; the
+  always-open keys come from the library's `24/7` calendar. Taking a stored calendar to a newer
+  library release is the Markets deployment's `resync-calendars` Job, never this package.
+- `register_equity_assets_from_tickers` takes a required `calendar_identifier`. A created asset
+  names it in its `Asset.upsert_many` payload; an asset already registered without a calendar is
+  linked by one `AssetCalendar.link_many(..., relink=False)`, which keeps a calendar someone chose.
+  `portfolio-publish` registers on its `calendar_key`, and `category-sync` takes `--calendar-key`
+  (default `NYSE`).
+- On the runtime backend a publish attaches `CalendarSessionRuleTable`, `CalendarExceptionTable`
+  and `AssetCalendarTable` in place of the date and session tables.
+
+The default IVV/ishares signal uid still computes offline to `495a8b180d0a216e563cd3f83316da7f`
+on ms-markets 4.0.1.
